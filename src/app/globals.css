@@ -37,8 +37,8 @@
   --color-hubsom-blue: var(--hubsom-blue);
   --color-hubsom-cyan: var(--hubsom-cyan);
   --color-hubsom-orange: var(--hubsom-orange);
-  --font-sans: var(--font-body);
-  --font-display: var(--font-display);
+  --font-sans: var(--font-plus-jakarta);
+  --font-display: var(--font-plus-jakarta);
 }
 
 * {
@@ -56,7 +56,7 @@ body {
     radial-gradient(700px 420px at 50% 100%, rgba(124, 191, 44, 0.08), transparent 50%),
     linear-gradient(180deg, #eef7fc 0%, #f5fbfe 42%, #e7f4fb 100%);
   color: var(--foreground);
-  font-family: var(--font-body), "Segoe UI", sans-serif;
+  font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
   min-height: 100%;
 }
 
@@ -64,8 +64,8 @@ h1,
 h2,
 h3,
 .font-display {
-  font-family: var(--font-display), "Segoe UI", sans-serif;
-  letter-spacing: -0.03em;
+  font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
+  letter-spacing: -0.02em;
 }
 
 ::selection {

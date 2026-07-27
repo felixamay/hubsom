@@ -1,18 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Syne, Figtree } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
-const display = Syne({
-  variable: "--font-display",
+const plusJakarta = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-});
-
-const body = Figtree({
-  variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -55,8 +50,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en-GH" className={`${display.variable} ${body.variable} h-full`}>
-      <body className="flex min-h-full flex-col antialiased">
+    <html lang="en-GH" className={`${plusJakarta.variable} h-full`}>
+      <body className={`${plusJakarta.className} flex min-h-full flex-col antialiased`}>
         <AppShell>{children}</AppShell>
       </body>
     </html>
