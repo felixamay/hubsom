@@ -7,19 +7,31 @@ import type { ChatMessage } from "@/types";
 export function LiveChat({
   streamId,
   initialMessages,
+  draftText,
+  onDraftConsumed,
 }: {
   streamId: string;
   initialMessages: ChatMessage[];
+  draftText?: string | null;
+  onDraftConsumed?: () => void;
 }) {
   const { data: session } = useSession();
   const [messages, setMessages] = useState(initialMessages);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!draftText) return;
+    setText(draftText);
+    onDraftConsumed?.();
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [draftText, onDraftConsumed]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -57,6 +69,7 @@ export function LiveChat({
         {error && <p className="mb-2 text-xs text-hubsom-live">{error}</p>}
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Say something…"

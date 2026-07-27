@@ -12,6 +12,7 @@ export function FollowButton({
   initialFollowers,
   isOwnStore = false,
   size = "md",
+  variant = "default",
   className,
   onFollowersChange,
 }: {
@@ -20,6 +21,7 @@ export function FollowButton({
   initialFollowers?: number;
   isOwnStore?: boolean;
   size?: "sm" | "md";
+  variant?: "default" | "live";
   className?: string;
   onFollowersChange?: (count: number) => void;
 }) {
@@ -96,9 +98,13 @@ export function FollowButton({
           size === "sm"
             ? "h-8 rounded-lg px-2.5 text-[11px]"
             : "h-10 rounded-xl px-3.5 text-xs",
-          following
-            ? "border border-hubsom-forest/15 bg-white text-hubsom-forest"
-            : "bg-hubsom-forest text-white shadow-[0_10px_20px_-14px_rgba(10,61,92,0.85)]",
+          variant === "live"
+            ? following
+              ? "border border-white/25 bg-white/15 text-white"
+              : "bg-hubsom-gold text-hubsom-ink shadow-[0_10px_20px_-14px_rgba(247,148,29,0.85)]"
+            : following
+              ? "border border-hubsom-forest/15 bg-white text-hubsom-forest"
+              : "bg-hubsom-forest text-white shadow-[0_10px_20px_-14px_rgba(10,61,92,0.85)]",
         )}
       >
         {following ? (

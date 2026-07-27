@@ -29,6 +29,7 @@ import { AuctionPanel } from "@/components/live/AuctionPanel";
 import { FloatingReactions } from "@/components/live/FloatingReactions";
 import { LiveCartDrawer } from "@/components/live/LiveCartDrawer";
 import { LiveChat } from "@/components/live/LiveChat";
+import { LiveSellerProfileSheet } from "@/components/live/LiveSellerProfileSheet";
 import { ModeratorPanel } from "@/components/live/ModeratorPanel";
 import { PinnedProduct } from "@/components/live/PinnedProduct";
 import { ProductCarousel } from "@/components/live/ProductCarousel";
@@ -71,6 +72,8 @@ export function LiveRoom({
   const [chatOpen, setChatOpen] = useState(false);
   const [hostTrayOpen, setHostTrayOpen] = useState(false);
   const [auctionOpen, setAuctionOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [chatDraft, setChatDraft] = useState<string | null>(null);
 
   const muted = useLiveStore((s) => s.muted);
   const setMuted = useLiveStore((s) => s.setMuted);
@@ -208,23 +211,36 @@ export function LiveRoom({
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 py-1 pl-1 pr-2 backdrop-blur">
-            {seller && (
-              <Image
-                src={seller.avatar}
-                alt={seller.name}
-                width={28}
-                height={28}
-                className="rounded-full object-cover"
-              />
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-xs font-bold leading-tight">
-                {seller?.name ?? "Hubsom Live"}
-              </p>
-              <p className="text-[10px] text-white/70">
-                {stream.viewerCount.toLocaleString()} watching
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!seller) return;
+                setProfileOpen(true);
+                setShopOpen(false);
+                setChatOpen(false);
+                setHostTrayOpen(false);
+              }}
+              className="flex min-w-0 items-center gap-2 text-left"
+              aria-label={seller ? `Open ${seller.name} profile` : "Seller profile"}
+            >
+              {seller && (
+                <Image
+                  src={seller.avatar}
+                  alt={seller.name}
+                  width={28}
+                  height={28}
+                  className="rounded-full object-cover"
+                />
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold leading-tight">
+                  {seller?.name ?? "Hubsom Live"}
+                </p>
+                <p className="text-[10px] text-white/70">
+                  {stream.viewerCount.toLocaleString()} watching
+                </p>
+              </div>
+            </button>
             {seller ? (
               <FollowButton
                 sellerId={seller.id}
@@ -232,6 +248,7 @@ export function LiveRoom({
                 initialFollowers={seller.followers}
                 isOwnStore={isOwnStore || hostMode}
                 size="sm"
+                variant="live"
                 className="pointer-events-auto shrink-0"
               />
             ) : null}
@@ -400,10 +417,36 @@ export function LiveRoom({
             </button>
           </div>
           <div className="h-[calc(42svh-3rem)]">
-            <LiveChat streamId={stream.id} initialMessages={initialChat} />
+            <LiveChat
+              streamId={stream.id}
+              initialMessages={initialChat}
+              draftText={chatDraft}
+              onDraftConsumed={() => setChatDraft(null)}
+            />
           </div>
         </div>
       )}
+
+      {seller ? (
+        <LiveSellerProfileSheet
+          open={profileOpen}
+          onClose={() => setProfileOpen(false)}
+          sellerId={seller.id}
+          sellerName={seller.name}
+          sellerAvatar={seller.avatar}
+          initialFollowing={initialFollowing}
+          initialFollowers={seller.followers}
+          isOwnStore={isOwnStore || hostMode}
+          streamId={stream.id}
+          onMention={(handle) => {
+            const mention = `@${handle.replace(/\s+/g, "")} `;
+            setChatDraft(mention);
+            setChatOpen(true);
+            setShopOpen(false);
+            setProfileOpen(false);
+          }}
+        />
+      ) : null}
 
       {/* More / host tray */}
       {hostTrayOpen && (
