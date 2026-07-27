@@ -11,18 +11,39 @@ export const metadata: Metadata = {
   title: "Marketplace",
 };
 
-export default async function MarketplacePage() {
+export default async function MarketplacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const query = (q ?? "").trim().toLowerCase();
   const products = await listProducts();
+  const filtered = query
+    ? products.filter((p) => {
+        const haystack = [
+          p.name,
+          p.description,
+          p.category,
+          ...(p.tags ?? []),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+    : products;
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-extrabold text-hubsom-forest">
-            Marketplace
+            {query ? "Search results" : "Marketplace"}
           </h1>
           <p className="mt-2 text-sm text-hubsom-ink/65">
-            Buy Now across every Hubsom category.
+            {query
+              ? `${filtered.length} result${filtered.length === 1 ? "" : "s"} for “${q}”`
+              : "Buy Now across every Hubsom category."}
           </p>
         </div>
         <Link
@@ -46,14 +67,18 @@ export default async function MarketplacePage() {
       </div>
 
       <div className="mt-5">
-        {products.length ? (
-          <ProductGrid products={products} />
+        {filtered.length ? (
+          <ProductGrid products={filtered} />
         ) : (
           <EmptyState
-            title="Marketplace is empty"
-            body="List your first product to appear here."
-            actionHref="/seller/products/new"
-            actionLabel="Add product"
+            title={query ? "No matches" : "Marketplace is empty"}
+            body={
+              query
+                ? "Try another search or browse categories."
+                : "List your first product to appear here."
+            }
+            actionHref={query ? "/categories" : "/seller/products/new"}
+            actionLabel={query ? "Browse categories" : "Add product"}
           />
         )}
       </div>

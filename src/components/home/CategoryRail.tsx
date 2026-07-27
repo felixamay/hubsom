@@ -3,14 +3,14 @@ import { CATEGORIES } from "@/lib/categories";
 
 export function CategoryRail() {
   return (
-    <section className="px-4 py-6">
+    <section className="px-4 pb-2 pt-4">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-xl font-bold text-hubsom-forest">
-            Categories
+            Shop by category
           </h2>
           <p className="mt-1 text-xs text-hubsom-ink/60">
-            Same playbook for every aisle.
+            Tap a category or open the full list from the top bar.
           </p>
         </div>
         <Link href="/categories" className="text-xs font-bold text-hubsom-cyan">

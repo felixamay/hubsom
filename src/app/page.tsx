@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { CategoryRail } from "@/components/home/CategoryRail";
-import { Hero } from "@/components/home/Hero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -19,14 +18,15 @@ export default async function HomePage() {
   ]);
   const live = streams.filter((s) => s.status === "live");
   const featured = products.slice(0, 6);
-  const liveHref = live[0] ? `/live/${live[0].id}` : "/live";
 
   return (
     <>
-      <Hero liveHref={liveHref} hasLive={live.length > 0} />
       <CategoryRail />
       <LiveStrip
-        streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(0, 2)}
+        streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(
+          0,
+          2,
+        )}
       />
 
       <section className="px-4 py-6">
@@ -59,7 +59,9 @@ export default async function HomePage() {
             <h2 className="font-display text-xl font-bold text-hubsom-forest">
               Flash sales
             </h2>
-            <p className="mt-1 text-xs text-hubsom-ink/60">Timed drops, all categories.</p>
+            <p className="mt-1 text-xs text-hubsom-ink/60">
+              Timed drops, all categories.
+            </p>
           </div>
           <Link href="/flash-sales" className="text-xs font-bold text-hubsom-cyan">
             All
