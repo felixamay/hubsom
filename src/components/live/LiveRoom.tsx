@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -12,6 +13,7 @@ import {
   MicOff,
   MoreHorizontal,
   Package,
+  PhoneOff,
   PictureInPicture2,
   Shield,
   ShoppingBag,
@@ -66,6 +68,7 @@ export function LiveRoom({
   initialFollowing?: boolean;
   isOwnStore?: boolean;
 }) {
+  const router = useRouter();
   const playerRef = useRef<AgoraPlayerHandle>(null);
   const [pinnedId, setPinnedId] = useState(
     stream.auction?.productId ?? stream.pinnedProductId,
@@ -83,6 +86,9 @@ export function LiveRoom({
   const [auctionOpen, setAuctionOpen] = useState(Boolean(stream.auction));
   const [profileOpen, setProfileOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState<string | null>(null);
+  const [streamStatus, setStreamStatus] = useState(stream.status);
+  const [ending, setEnding] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const muted = useLiveStore((s) => s.muted);
   const setMuted = useLiveStore((s) => s.setMuted);
@@ -110,30 +116,119 @@ export function LiveRoom({
   const onLatencySample = useCallback((ms: number) => setLatencyMs(ms), []);
 
   useEffect(() => {
-    if (!auction) return;
     let cancelled = false;
 
-    async function refreshAuction() {
+    async function refreshStream() {
       try {
         const res = await fetch(`/api/streams/${stream.id}`, {
           credentials: "same-origin",
         });
         if (!res.ok || cancelled) return;
         const data = (await res.json()) as { stream?: LiveStream };
-        if (!cancelled && data.stream?.auction) {
-          setAuction(data.stream.auction);
-        }
+        if (cancelled || !data.stream) return;
+        setStreamStatus(data.stream.status);
+        if (data.stream.auction) setAuction(data.stream.auction);
       } catch {
         /* ignore poll errors */
       }
     }
 
-    const id = window.setInterval(() => void refreshAuction(), 4000);
+    const id = window.setInterval(() => void refreshStream(), 4000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [auction, stream.id]);
+  }, [stream.id]);
+
+  async function endLive() {
+    if (!hostMode || ending) return;
+    setEnding(true);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/streams/${stream.id}/end`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        stream?: LiveStream;
+      };
+      if (!res.ok) {
+        setNotice(data.error ?? "Could not end live");
+        setEnding(false);
+        setConfirmEnd(false);
+        return;
+      }
+      if (data.stream?.auction) setAuction(data.stream.auction);
+      setStreamStatus(data.stream?.status ?? "ended");
+      setConfirmEnd(false);
+      setHostTrayOpen(false);
+      try {
+        await playerRef.current?.leave();
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      setNotice("Network error ending live");
+      setEnding(false);
+      setConfirmEnd(false);
+    }
+  }
+
+  const liveEnded =
+    streamStatus === "ended" || streamStatus === "replay";
+
+  if (liveEnded) {
+    return (
+      <div className="flex min-h-[100svh] flex-col items-center justify-center bg-hubsom-night px-6 text-center text-white">
+        <p className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-hubsom-gold">
+          Show ended
+        </p>
+        <h1 className="mt-4 font-display text-3xl font-extrabold">
+          {stream.title}
+        </h1>
+        <p className="mt-2 max-w-sm text-sm text-white/65">
+          {hostMode
+            ? "You ended this live show. Viewers can no longer join it as live."
+            : "The host ended this live show."}
+        </p>
+        <div className="mt-8 flex w-full max-w-xs flex-col gap-2">
+          {hostMode ? (
+            <>
+              <Link
+                href="/seller"
+                className="rounded-xl bg-hubsom-gold py-3 text-sm font-bold text-hubsom-ink"
+              >
+                Back to seller hub
+              </Link>
+              <Link
+                href="/seller/go-live"
+                className="rounded-xl border border-white/20 py-3 text-sm font-bold text-white"
+              >
+                Go live again
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/live"
+                className="rounded-xl bg-hubsom-gold py-3 text-sm font-bold text-hubsom-ink"
+              >
+                Browse other lives
+              </Link>
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="rounded-xl border border-white/20 py-3 text-sm font-bold text-white"
+              >
+                Go back
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   async function react(emoji = "❤️") {
     const x = reactionX();
@@ -293,6 +388,18 @@ export function LiveRoom({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {(hostMode || isOwnStore) && (
+            <button
+              type="button"
+              onClick={() => setConfirmEnd(true)}
+              disabled={ending}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-hubsom-live px-3 text-[11px] font-bold text-white shadow-lg shadow-hubsom-live/30 disabled:opacity-60"
+              aria-label="End live"
+            >
+              <PhoneOff className="h-3.5 w-3.5" />
+              End
+            </button>
+          )}
           <span className="animate-pulse-live rounded-md bg-hubsom-live px-2 py-1 text-[10px] font-bold uppercase">
             Live
           </span>
@@ -395,7 +502,7 @@ export function LiveRoom({
             : "max(0.75rem, env(safe-area-inset-bottom))",
         }}
       >
-        {auction && auctionOpen && !shopOpen && (
+        {auction && auctionOpen && !shopOpen && !chatOpen && (
           <div className="mb-2 max-w-[min(100%,20rem)]">
             <AuctionPanel
               auction={auction}
@@ -540,6 +647,17 @@ export function LiveRoom({
                 >
                   {recording ? "Recording…" : "Record"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmEnd(true);
+                    setHostTrayOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl bg-hubsom-live px-3 py-2 text-xs font-semibold text-white"
+                >
+                  <PhoneOff className="h-3.5 w-3.5" />
+                  End live
+                </button>
               </>
             )}
             <button
@@ -593,6 +711,36 @@ export function LiveRoom({
           />
         </div>
       )}
+
+      {confirmEnd && (hostMode || isOwnStore) ? (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-hubsom-night p-5 text-white shadow-2xl">
+            <p className="font-display text-xl font-bold">End this live show?</p>
+            <p className="mt-2 text-sm text-white/65">
+              Viewers will be disconnected and the show will leave the Live
+              feed. You can start a new show anytime.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                disabled={ending}
+                onClick={() => setConfirmEnd(false)}
+                className="min-h-11 flex-1 rounded-xl border border-white/20 text-sm font-semibold disabled:opacity-50"
+              >
+                Keep live
+              </button>
+              <button
+                type="button"
+                disabled={ending}
+                onClick={() => void endLive()}
+                className="min-h-11 flex-1 rounded-xl bg-hubsom-live text-sm font-bold text-white disabled:opacity-50"
+              >
+                {ending ? "Ending…" : "End live"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <LiveCartDrawer
         streamId={stream.id}

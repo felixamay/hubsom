@@ -61,6 +61,34 @@ export async function patchStream(
   return upsertStream(next);
 }
 
+export async function endLiveStream(id: string): Promise<LiveStream | undefined> {
+  const current = await getStreamById(id);
+  if (!current) return undefined;
+  if (current.status === "ended" || current.status === "replay") {
+    return current;
+  }
+
+  const auction =
+    current.auction &&
+    (current.auction.status === "open" || current.auction.status === "closing")
+      ? {
+          ...current.auction,
+          status:
+            current.auction.bidderCount > 0
+              ? ("sold" as const)
+              : ("unsold" as const),
+        }
+      : current.auction;
+
+  return upsertStream({
+    ...current,
+    status: "ended",
+    endedAt: new Date().toISOString(),
+    auction,
+    replayAvailable: current.replayAvailable || Boolean(current.recordingUrl),
+  });
+}
+
 export interface CreateStreamInput {
   title: string;
   description?: string;
