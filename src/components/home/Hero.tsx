@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Play, Store } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 export function Hero() {
   return (
@@ -16,24 +17,29 @@ export function Hero() {
         className="object-cover"
         sizes="100vw"
       />
-      <div className="absolute inset-0 bg-gradient-to-r from-hubsom-night/90 via-hubsom-forest/70 to-hubsom-night/35" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/92 via-[#0a3d5c]/75 to-black/40" />
       <div className="absolute inset-0 hubsom-noise" />
 
       <div className="relative mx-auto flex min-h-[100svh] max-w-7xl flex-col justify-end px-4 pb-16 pt-28 sm:px-6 sm:pb-24">
-        <motion.p
+        <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="font-display text-6xl font-extrabold tracking-tight sm:text-8xl md:text-9xl"
         >
-          Hubsom
-        </motion.p>
+          <BrandLogo
+            href="/brand"
+            heightClassName="h-16 sm:h-24 md:h-28"
+            plate={false}
+            priority
+            className="drop-shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+          />
+        </motion.div>
 
         <motion.h1
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12 }}
-          className="mt-4 max-w-2xl font-display text-2xl font-semibold leading-tight text-white/95 sm:text-4xl"
+          className="mt-5 max-w-2xl font-display text-2xl font-semibold leading-tight text-white/95 sm:text-4xl"
         >
           Live commerce from Ghana — shop every category in one stream.
         </motion.h1>

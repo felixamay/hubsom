@@ -138,8 +138,8 @@ export function AgoraPlayer({
 
       {(state === "demo" || state === "connecting" || state === "idle") && (
         <div className="absolute inset-0">
-          <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(120deg,#0b3d2e_0%,#1f7a4d_35%,#10231c_70%,#0b3d2e_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(232,185,35,0.25),transparent_45%)]" />
+          <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(120deg,#000000_0%,#0a3d5c_32%,#0054a6_58%,#000000_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,rgba(0,174,239,0.28),transparent_45%),radial-gradient(circle_at_72%_30%,rgba(247,148,29,0.22),transparent_40%)]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
             <p className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]">
               {state === "connecting" ? "Connecting Agora…" : "Hubsom Live Engine"}

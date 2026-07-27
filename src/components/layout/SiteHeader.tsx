@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Radio, ShoppingBag, X } from "lucide-react";
 import { useState } from "react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { useCartStore } from "@/lib/stores/cart";
 import { cn } from "@/lib/utils";
 
@@ -24,11 +25,9 @@ export function SiteHeader() {
   if (hideChrome) return null;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-hubsom-forest/10 bg-[#eef5f0]/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-hubsom-forest/10 bg-[#eef7fc]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/" className="font-display text-2xl font-extrabold tracking-tight text-hubsom-forest">
-          Hubsom
-        </Link>
+        <BrandLogo priority heightClassName="h-8 sm:h-9" />
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((link) => (
@@ -79,7 +78,7 @@ export function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t border-hubsom-forest/10 bg-[#eef5f0] px-4 py-3 md:hidden">
+        <div className="border-t border-hubsom-forest/10 bg-[#eef7fc] px-4 py-3 md:hidden">
           <div className="flex flex-col gap-1">
             {links.map((link) => (
               <Link

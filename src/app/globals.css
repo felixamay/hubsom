@@ -1,19 +1,24 @@
 @import "tailwindcss";
 
+/* Official Hubsom palette derived from the brand mark */
 :root {
-  --hubsom-ink: #10231c;
-  --hubsom-forest: #0b3d2e;
-  --hubsom-leaf: #1f7a4d;
-  --hubsom-mint: #d8efe3;
-  --hubsom-mist: #eef5f0;
-  --hubsom-gold: #e8b923;
-  --hubsom-sun: #ffc933;
-  --hubsom-live: #e4572e;
-  --hubsom-night: #071712;
+  --hubsom-ink: #06121f;
+  --hubsom-forest: #0a3d5c; /* deep teal-blue primary */
+  --hubsom-leaf: #00aeef; /* cyan */
+  --hubsom-mint: #d7f1fb;
+  --hubsom-mist: #eef7fc;
+  --hubsom-gold: #f7941d; /* orange-gold */
+  --hubsom-sun: #ffc107;
+  --hubsom-live: #f36f21; /* vivid orange */
+  --hubsom-night: #000000;
+  --hubsom-lime: #7cbf2c;
+  --hubsom-blue: #0054a6;
+  --hubsom-cyan: #00aeef;
+  --hubsom-orange: #f36f21;
   --background: var(--hubsom-mist);
   --foreground: var(--hubsom-ink);
-  --surface: rgba(255, 255, 255, 0.72);
-  --ring: rgba(31, 122, 77, 0.35);
+  --surface: rgba(255, 255, 255, 0.78);
+  --ring: rgba(0, 174, 239, 0.35);
 }
 
 @theme inline {
@@ -28,6 +33,10 @@
   --color-hubsom-sun: var(--hubsom-sun);
   --color-hubsom-live: var(--hubsom-live);
   --color-hubsom-night: var(--hubsom-night);
+  --color-hubsom-lime: var(--hubsom-lime);
+  --color-hubsom-blue: var(--hubsom-blue);
+  --color-hubsom-cyan: var(--hubsom-cyan);
+  --color-hubsom-orange: var(--hubsom-orange);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }
@@ -42,9 +51,10 @@ html {
 
 body {
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(232, 185, 35, 0.18), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(31, 122, 77, 0.16), transparent 50%),
-    linear-gradient(180deg, #eef5f0 0%, #f5faf7 40%, #e8f2ec 100%);
+    radial-gradient(1100px 560px at 8% -8%, rgba(247, 148, 29, 0.16), transparent 55%),
+    radial-gradient(900px 500px at 92% 0%, rgba(0, 174, 239, 0.18), transparent 52%),
+    radial-gradient(700px 420px at 50% 100%, rgba(124, 191, 44, 0.08), transparent 50%),
+    linear-gradient(180deg, #eef7fc 0%, #f5fbfe 42%, #e7f4fb 100%);
   color: var(--foreground);
   font-family: var(--font-body), "Segoe UI", sans-serif;
   min-height: 100%;
@@ -59,14 +69,14 @@ h3,
 }
 
 ::selection {
-  background: rgba(232, 185, 35, 0.35);
+  background: rgba(247, 148, 29, 0.35);
   color: var(--hubsom-ink);
 }
 
 .hubsom-grid {
   background-image:
-    linear-gradient(rgba(11, 61, 46, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(11, 61, 46, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(10, 61, 92, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 61, 92, 0.05) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 
@@ -81,6 +91,19 @@ h3,
   inset: 0;
   opacity: 0.04;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.hubsom-wordmark {
+  background-image: linear-gradient(
+    105deg,
+    #0054a6 0%,
+    #00aeef 42%,
+    #f7941d 58%,
+    #ffc107 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 @keyframes float-heart {
@@ -100,10 +123,10 @@ h3,
 @keyframes pulse-live {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(228, 87, 46, 0.55);
+    box-shadow: 0 0 0 0 rgba(243, 111, 33, 0.55);
   }
   50% {
-    box-shadow: 0 0 0 10px rgba(228, 87, 46, 0);
+    box-shadow: 0 0 0 10px rgba(243, 111, 33, 0);
   }
 }
 
@@ -135,6 +158,6 @@ h3,
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(11, 61, 46, 0.25);
+  background: rgba(10, 61, 92, 0.25);
   border-radius: 999px;
 }

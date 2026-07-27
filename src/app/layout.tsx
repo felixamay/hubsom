@@ -31,6 +31,10 @@ export const metadata: Metadata = {
     "social commerce",
     "Accra",
   ],
+  icons: {
+    icon: "/brand/hubsom-logo.png",
+    apple: "/brand/hubsom-logo.png",
+  },
 };
 
 export default function RootLayout({
