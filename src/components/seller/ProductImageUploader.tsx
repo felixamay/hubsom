@@ -6,13 +6,19 @@ import { ImagePlus, Loader2, Star, Trash2, Upload } from "lucide-react";
 type Props = {
   images: string[];
   onChange: (images: string[]) => void;
+  minImages?: number;
 };
 
-export function ProductImageUploader({ images, onChange }: Props) {
+export function ProductImageUploader({
+  images,
+  onChange,
+  minImages = 3,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const remaining = Math.max(0, minImages - images.length);
 
   async function uploadFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList).filter((f) => f.type.startsWith("image/"));
@@ -66,11 +72,17 @@ export function ProductImageUploader({ images, onChange }: Props) {
         <div>
           <p className="text-sm font-semibold text-hubsom-forest">Product images</p>
           <p className="mt-0.5 text-xs text-hubsom-ink/55">
-            Upload photos of the item. First image is the cover.
+            Upload at least {minImages} photos. First image is the cover.
           </p>
         </div>
-        <span className="text-[11px] font-semibold text-hubsom-ink/45">
-          {images.length}/8
+        <span
+          className={`text-[11px] font-semibold ${
+            images.length >= minImages
+              ? "text-hubsom-leaf"
+              : "text-hubsom-live"
+          }`}
+        >
+          {images.length}/8 · min {minImages}
         </span>
       </div>
 
@@ -115,6 +127,9 @@ export function ProductImageUploader({ images, onChange }: Props) {
         </p>
         <p className="mt-1 text-xs text-hubsom-ink/55">
           JPG, PNG, WEBP, or GIF · up to 5MB each
+          {remaining > 0
+            ? ` · add ${remaining} more required`
+            : " · minimum met"}
         </p>
         <button
           type="button"
@@ -123,7 +138,11 @@ export function ProductImageUploader({ images, onChange }: Props) {
           className="mt-4 inline-flex items-center gap-2 rounded-xl bg-hubsom-forest px-3.5 py-2.5 text-xs font-bold text-white disabled:opacity-50"
         >
           <Upload className="h-3.5 w-3.5" />
-          {images.length ? "Add more images" : "Upload images"}
+          {images.length
+            ? remaining > 0
+              ? `Add ${remaining} more`
+              : "Add more images"
+            : `Upload ${minImages}+ images`}
         </button>
       </div>
 
@@ -167,9 +186,16 @@ export function ProductImageUploader({ images, onChange }: Props) {
         </div>
       ) : (
         <p className="rounded-xl bg-hubsom-mist px-3 py-2 text-xs text-hubsom-ink/55">
-          No photos yet — Hubsom will use a placeholder until you upload.
+          Add at least {minImages} clear product photos before publishing.
         </p>
       )}
+
+      {images.length > 0 && images.length < minImages ? (
+        <p className="rounded-xl bg-hubsom-live/10 px-3 py-2 text-xs font-medium text-hubsom-live">
+          {remaining} more photo{remaining === 1 ? "" : "s"} needed to save this
+          product.
+        </p>
+      ) : null}
 
       {error ? <p className="text-sm text-hubsom-live">{error}</p> : null}
     </div>

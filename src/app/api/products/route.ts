@@ -77,6 +77,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "priceGhs required" }, { status: 400 });
   }
 
+  const images = (body.images ?? []).map((url) => url.trim()).filter(Boolean);
+  if (images.length < 3) {
+    return NextResponse.json(
+      { error: "Upload at least 3 product images before saving" },
+      { status: 400 },
+    );
+  }
+
   const user = await getUserById(session.user.id);
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -106,7 +114,7 @@ export async function POST(request: Request) {
     compareAtGhs: body.compareAtGhs,
     stock: body.stock ?? 0,
     sellerId: seller.id,
-    images: body.images,
+    images,
     tags: body.tags,
     flashSale: body.flashSale,
   });

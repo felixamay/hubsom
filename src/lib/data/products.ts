@@ -65,6 +65,11 @@ export interface CreateProductInput {
 }
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
+  const images = (input.images ?? []).filter(Boolean);
+  if (images.length < 3) {
+    throw new Error("Upload at least 3 product images before saving");
+  }
+
   const store = await load();
   const baseSlug = slugify(input.name) || "product";
   let slug = baseSlug;
@@ -82,10 +87,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
     priceGhs: Math.max(0, Number(input.priceGhs) || 0),
     compareAtGhs: input.compareAtGhs,
     currency: "GHS",
-    images:
-      input.images?.filter(Boolean).length
-        ? input.images.filter(Boolean)
-        : ["/brand/hubsom-logo.png"],
+    images,
     sellerId: input.sellerId,
     stock: Math.max(0, Math.floor(Number(input.stock) || 0)),
     rating: 0,

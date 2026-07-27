@@ -7,6 +7,8 @@ import { ProductImageUploader } from "@/components/seller/ProductImageUploader";
 import { CATEGORIES } from "@/lib/categories";
 import type { ProductCategory } from "@/types";
 
+const MIN_PRODUCT_IMAGES = 3;
+
 export default function NewProductPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -21,6 +23,10 @@ export default function NewProductPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
+    if (images.length < MIN_PRODUCT_IMAGES) {
+      setError(`Upload at least ${MIN_PRODUCT_IMAGES} product images before saving`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -33,7 +39,7 @@ export default function NewProductPage() {
           category,
           priceGhs,
           stock,
-          images: images.length ? images : undefined,
+          images,
           flashSale: flash
             ? {
                 endsAt: new Date(Date.now() + 1000 * 60 * 60 * 6).toISOString(),
@@ -55,6 +61,8 @@ export default function NewProductPage() {
       setBusy(false);
     }
   }
+
+  const canPublish = Boolean(name.trim()) && images.length >= MIN_PRODUCT_IMAGES;
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
@@ -89,7 +97,11 @@ export default function NewProductPage() {
         </label>
 
         <div className="rounded-2xl border border-hubsom-forest/10 bg-hubsom-mist/30 p-3.5">
-          <ProductImageUploader images={images} onChange={setImages} />
+          <ProductImageUploader
+            images={images}
+            onChange={setImages}
+            minImages={MIN_PRODUCT_IMAGES}
+          />
         </div>
 
         <label className="block">
@@ -161,11 +173,17 @@ export default function NewProductPage() {
 
         <button
           type="button"
-          disabled={busy || !name.trim()}
+          disabled={busy || !canPublish}
           onClick={() => void submit()}
           className="w-full rounded-xl bg-hubsom-forest py-3 text-sm font-bold text-white disabled:opacity-50"
         >
-          {busy ? "Saving…" : "Publish product"}
+          {busy
+            ? "Saving…"
+            : images.length < MIN_PRODUCT_IMAGES
+              ? `Add ${MIN_PRODUCT_IMAGES - images.length} more photo${
+                  MIN_PRODUCT_IMAGES - images.length === 1 ? "" : "s"
+                }`
+              : "Publish product"}
         </button>
 
         <Link
