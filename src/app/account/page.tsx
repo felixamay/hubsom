@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   CreditCard,
   Heart,
@@ -13,7 +12,8 @@ import {
   Store,
   UserRound,
 } from "lucide-react";
-import { auth, signOut } from "@/auth";
+import { signOut } from "@/auth";
+import { requireUser } from "@/lib/auth/session";
 import { listOrdersByUser } from "@/lib/data/orders";
 import { getUserById } from "@/lib/data/users";
 import { formatGhs } from "@/lib/currency";
@@ -25,10 +25,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AccountPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/sign-in?callbackUrl=/account");
-  }
+  const session = await requireUser("/account");
 
   const user = await getUserById(session.user.id);
   const orders = await listOrdersByUser(session.user.id);
