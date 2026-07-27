@@ -25,6 +25,8 @@ export interface HubsomUser {
   bio?: string;
   role: "buyer" | "seller" | "both";
   sellerId?: string;
+  /** Sellers this user follows */
+  followingSellerIds: string[];
   addresses: UserAddress[];
   providers: AuthProviderId[];
   oauthIds: Partial<Record<"google" | "facebook" | "apple", string>>;

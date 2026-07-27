@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   Store,
   UserRound,
+  Users,
 } from "lucide-react";
 import { signOut } from "@/auth";
 import { requireUser } from "@/lib/auth/session";
@@ -38,6 +39,7 @@ export default async function AccountPage() {
 
   const rows = [
     { href: "/account/profile", label: "Edit profile", icon: UserRound },
+    { href: "/account/following", label: "Following", icon: Users },
     { href: "/cart", label: "Orders & cart", icon: ShoppingBag },
     { href: "/account/addresses", label: "Addresses", icon: MapPin },
     { href: "/seller", label: "Seller hub", icon: Store },

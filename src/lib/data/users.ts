@@ -11,7 +11,15 @@ const FILE = "users.json";
 type Store = { users: HubsomUser[] };
 
 async function load(): Promise<Store> {
-  return readJsonFile<Store>(FILE, { users: [] });
+  const store = await readJsonFile<Store>(FILE, { users: [] });
+  // Backfill follow list for older accounts.
+  store.users = store.users.map((u) => ({
+    ...u,
+    followingSellerIds: Array.isArray(u.followingSellerIds)
+      ? u.followingSellerIds
+      : [],
+  }));
+  return store;
 }
 
 async function save(store: Store) {
@@ -63,6 +71,7 @@ export async function createEmailUser(input: {
     passwordHash: await bcrypt.hash(input.password, 10),
     image: "/brand/hubsom-logo.png",
     role: "buyer",
+    followingSellerIds: [],
     addresses: [],
     providers: ["credentials"],
     oauthIds: {},
@@ -126,6 +135,7 @@ export async function upsertOAuthUser(input: {
     name: input.name?.trim() || email.split("@")[0],
     image: input.image || "/brand/hubsom-logo.png",
     role: "buyer",
+    followingSellerIds: [],
     addresses: [],
     providers: [input.provider],
     oauthIds: { [input.provider]: input.providerAccountId },
@@ -152,6 +162,7 @@ export async function updateUserProfile(
       | "role"
       | "sellerId"
       | "addresses"
+      | "followingSellerIds"
     >
   >,
 ): Promise<HubsomUser | undefined> {

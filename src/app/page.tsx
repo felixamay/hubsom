@@ -3,7 +3,10 @@ import { CategoryRail } from "@/components/home/CategoryRail";
 import { HomeSearchHero } from "@/components/home/HomeSearchHero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { FollowButton } from "@/components/sellers/FollowButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { auth } from "@/auth";
+import { isFollowingSeller } from "@/lib/data/follows";
 import { getFlashSaleProducts, listProducts } from "@/lib/data/products";
 import { listSellers } from "@/lib/data/sellers";
 import { listAllStreams } from "@/lib/data/stream-registry";
@@ -11,14 +14,35 @@ import { listAllStreams } from "@/lib/data/stream-registry";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [streams, products, flash, sellers] = await Promise.all([
+  const [streams, products, flash, sellers, session] = await Promise.all([
     listAllStreams(),
     listProducts(),
     getFlashSaleProducts(),
     listSellers(),
+    auth(),
   ]);
   const live = streams.filter((s) => s.status === "live");
   const featured = products.slice(0, 6);
+  const userId = session?.user?.id;
+
+  const followState = userId
+    ? await Promise.all(
+        sellers.map(async (seller) => ({
+          id: seller.id,
+          following: await isFollowingSeller(userId, seller.id),
+          isOwnStore:
+            seller.ownerUserId === userId ||
+            session?.user?.sellerId === seller.id,
+        })),
+      )
+    : sellers.map((seller) => ({
+        id: seller.id,
+        following: false,
+        isOwnStore: false,
+      }));
+  const followMap = Object.fromEntries(
+    followState.map((f) => [f.id, f]),
+  );
 
   return (
     <>
@@ -92,23 +116,38 @@ export default async function HomePage() {
               actionLabel="Open seller hub"
             />
           )}
-          {sellers.map((seller) => (
-            <Link
-              key={seller.id}
-              href={`/stores/${seller.slug}`}
-              className="block rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4"
-            >
-              <p className="font-display text-lg font-bold text-hubsom-forest">
-                {seller.name}
-              </p>
-              <p className="mt-0.5 text-xs text-hubsom-ink/55">
-                {seller.city}, {seller.region}
-              </p>
-              <p className="mt-2 line-clamp-2 text-sm text-hubsom-ink/70">
-                {seller.bio}
-              </p>
-            </Link>
-          ))}
+          {sellers.map((seller) => {
+            const state = followMap[seller.id];
+            return (
+              <div
+                key={seller.id}
+                className="rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Link href={`/stores/${seller.slug}`} className="min-w-0 flex-1">
+                    <p className="font-display text-lg font-bold text-hubsom-forest">
+                      {seller.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-hubsom-ink/55">
+                      {seller.city}, {seller.region} ·{" "}
+                      {seller.followers.toLocaleString()} followers
+                    </p>
+                    <p className="mt-2 line-clamp-2 text-sm text-hubsom-ink/70">
+                      {seller.bio}
+                    </p>
+                  </Link>
+                  <FollowButton
+                    sellerId={seller.id}
+                    initialFollowing={state?.following}
+                    initialFollowers={seller.followers}
+                    isOwnStore={state?.isOwnStore}
+                    size="sm"
+                    className="shrink-0"
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
     </>

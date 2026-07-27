@@ -32,6 +32,7 @@ import { LiveChat } from "@/components/live/LiveChat";
 import { ModeratorPanel } from "@/components/live/ModeratorPanel";
 import { PinnedProduct } from "@/components/live/PinnedProduct";
 import { ProductCarousel } from "@/components/live/ProductCarousel";
+import { FollowButton } from "@/components/sellers/FollowButton";
 import { getEffectivePrice } from "@/lib/pricing";
 import { useCartStore } from "@/lib/stores/cart";
 import { useLiveStore } from "@/lib/stores/live";
@@ -47,12 +48,16 @@ export function LiveRoom({
   products,
   initialChat,
   hostMode = false,
+  initialFollowing = false,
+  isOwnStore = false,
 }: {
   stream: LiveStream;
   seller?: Seller;
   products: Product[];
   initialChat: ChatMessage[];
   hostMode?: boolean;
+  initialFollowing?: boolean;
+  isOwnStore?: boolean;
 }) {
   const playerRef = useRef<AgoraPlayerHandle>(null);
   const [pinnedId, setPinnedId] = useState(stream.pinnedProductId);
@@ -202,7 +207,7 @@ export function LiveRoom({
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 py-1 pl-1 pr-3 backdrop-blur">
+          <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 py-1 pl-1 pr-2 backdrop-blur">
             {seller && (
               <Image
                 src={seller.avatar}
@@ -220,6 +225,16 @@ export function LiveRoom({
                 {stream.viewerCount.toLocaleString()} watching
               </p>
             </div>
+            {seller ? (
+              <FollowButton
+                sellerId={seller.id}
+                initialFollowing={initialFollowing}
+                initialFollowers={seller.followers}
+                isOwnStore={isOwnStore || hostMode}
+                size="sm"
+                className="pointer-events-auto shrink-0"
+              />
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-1.5">

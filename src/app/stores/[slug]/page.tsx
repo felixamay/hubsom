@@ -2,8 +2,11 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FollowButton } from "@/components/sellers/FollowButton";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { auth } from "@/auth";
+import { isFollowingSeller } from "@/lib/data/follows";
 import { getProductsBySeller } from "@/lib/data/products";
 import { getSellerBySlug } from "@/lib/data/sellers";
 import { getStreamsBySeller } from "@/lib/data/streams";
@@ -29,6 +32,16 @@ export default async function StorePage({
   const seller = await getSellerBySlug(slug);
   if (!seller) notFound();
 
+  const session = await auth();
+  const userId = session?.user?.id;
+  const isOwnStore = Boolean(
+    userId &&
+      (seller.ownerUserId === userId || session?.user?.sellerId === seller.id),
+  );
+  const following = userId
+    ? await isFollowingSeller(userId, seller.id)
+    : false;
+
   const products = await getProductsBySeller(seller.id);
   const streams = await getStreamsBySeller(seller.id);
 
@@ -52,7 +65,7 @@ export default async function StorePage({
             height={72}
             className="rounded-2xl border-2 border-white bg-white object-contain p-1"
           />
-          <div className="text-white">
+          <div className="min-w-0 flex-1 text-white">
             <h1 className="font-display text-3xl font-extrabold sm:text-4xl">
               {seller.name}
             </h1>
@@ -61,6 +74,13 @@ export default async function StorePage({
               followers
             </p>
           </div>
+          <FollowButton
+            sellerId={seller.id}
+            initialFollowing={following}
+            initialFollowers={seller.followers}
+            isOwnStore={isOwnStore}
+            className="mb-1 shrink-0"
+          />
         </div>
       </section>
 

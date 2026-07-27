@@ -3,8 +3,11 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
+import { FollowButton } from "@/components/sellers/FollowButton";
+import { auth } from "@/auth";
 import { categoryName } from "@/lib/categories";
 import { formatGhs } from "@/lib/currency";
+import { isFollowingSeller } from "@/lib/data/follows";
 import { getProduct, getProductBySlug } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getEffectivePrice } from "@/lib/pricing";
@@ -31,6 +34,16 @@ export default async function ProductPage({
   if (!product) notFound();
   const seller = await getSeller(product.sellerId);
   const price = getEffectivePrice(product);
+
+  const session = await auth();
+  const userId = session?.user?.id;
+  const isOwnStore = Boolean(
+    userId &&
+      seller &&
+      (seller.ownerUserId === userId || session?.user?.sellerId === seller.id),
+  );
+  const following =
+    userId && seller ? await isFollowingSeller(userId, seller.id) : false;
 
   return (
     <div className="mx-auto grid max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-2">
@@ -76,12 +89,22 @@ export default async function ProductPage({
             Sold by
           </p>
           {seller && (
-            <Link
-              href={`/stores/${seller.slug}`}
-              className="mt-2 block font-display text-2xl font-semibold text-hubsom-forest hover:underline"
-            >
-              {seller.name}
-            </Link>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <Link
+                href={`/stores/${seller.slug}`}
+                className="min-w-0 font-display text-2xl font-semibold text-hubsom-forest hover:underline"
+              >
+                {seller.name}
+              </Link>
+              <FollowButton
+                sellerId={seller.id}
+                initialFollowing={following}
+                initialFollowers={seller.followers}
+                isOwnStore={isOwnStore}
+                size="sm"
+                className="shrink-0"
+              />
+            </div>
           )}
         </div>
       </div>
