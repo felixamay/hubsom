@@ -2,14 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { Radio, ShoppingBag, UserRound } from "lucide-react";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { useCartStore } from "@/lib/stores/cart";
 
 export function AppHeader() {
   const pathname = usePathname();
-  const { data: session } = useSession();
   const count = useCartStore((s) => s.items.reduce((n, i) => n + i.quantity, 0));
   const hide =
     (pathname?.startsWith("/live/") && pathname !== "/live") ||
@@ -35,9 +33,9 @@ export function AppHeader() {
             Live
           </Link>
           <Link
-            href={session?.user ? "/account" : "/auth/sign-in"}
+            href="/account"
             className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hubsom-forest/10 bg-hubsom-mist text-hubsom-forest"
-            aria-label={session?.user ? "Account" : "Sign in"}
+            aria-label="Account"
           >
             <UserRound className="h-4 w-4" />
           </Link>

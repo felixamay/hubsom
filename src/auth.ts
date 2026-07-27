@@ -3,6 +3,7 @@ import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
+import { authConfig } from "@/auth.config";
 import { getEnabledSocialProviders } from "@/lib/auth/providers";
 import {
   getUserById,
@@ -50,13 +51,7 @@ function socialProviders() {
 export { getEnabledSocialProviders };
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  trustHost: true,
-  secret: process.env.AUTH_SECRET,
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/auth/sign-in",
-    error: "/auth/sign-in",
-  },
+  ...authConfig,
   providers: [
     Credentials({
       name: "Email",
@@ -88,6 +83,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     ...socialProviders(),
   ],
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account }) {
       if (!account || account.provider === "credentials") return true;
       if (!user.email) return false;
@@ -151,11 +147,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = String(token.userId ?? token.sub ?? "");
-        session.user.name = typeof token.name === "string" ? token.name : session.user.name;
+        session.user.name =
+          typeof token.name === "string" ? token.name : session.user.name;
         session.user.email =
           typeof token.email === "string" ? token.email : session.user.email;
         session.user.image =
-          typeof token.picture === "string" ? token.picture : session.user.image;
+          typeof token.picture === "string"
+            ? token.picture
+            : session.user.image;
         session.user.role = token.role as
           | "buyer"
           | "seller"

@@ -23,8 +23,8 @@ export async function signInAction(
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   const password = String(formData.get("password") ?? "");
   const callbackUrl = safeCallback(
-    String(formData.get("callbackUrl") ?? "/account"),
-    "/account",
+    String(formData.get("callbackUrl") ?? "/"),
+    "/",
   );
 
   if (!email || !password) {
@@ -55,8 +55,8 @@ export async function signUpAction(
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   const password = String(formData.get("password") ?? "");
   const callbackUrl = safeCallback(
-    String(formData.get("callbackUrl") ?? "/account/profile"),
-    "/account/profile",
+    String(formData.get("callbackUrl") ?? "/"),
+    "/",
   );
 
   if (!name) return { error: "Please enter your full name." };

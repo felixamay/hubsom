@@ -31,13 +31,13 @@ const initial: AuthActionState = {};
 
 export default function SignUpClient() {
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/account/profile";
+  const callbackUrl = params.get("callbackUrl") || "/";
   const [state, action] = useActionState(signUpAction, initial);
 
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Join Hubsom with email or social — one profile for shopping, selling, and live shows."
+      subtitle="Join Hubsom to unlock live shopping, the marketplace, and selling tools."
       footer={
         <AuthFooterLink
           prompt="Already have an account?"
@@ -60,8 +60,7 @@ export default function SignUpClient() {
       </form>
       <AuthSocialBlock callbackUrl={callbackUrl} />
       <p className="mt-4 text-center text-[11px] leading-relaxed text-hubsom-ink/45">
-        After signup you’ll land in your profile to finish setup — phone, city,
-        and delivery address.
+        After signup you’ll be signed in and can finish your profile anytime.
       </p>
     </AuthShell>
   );

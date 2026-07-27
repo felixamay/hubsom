@@ -30,7 +30,7 @@ const initial: AuthActionState = {};
 
 export default function SignInClient() {
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/account";
+  const callbackUrl = params.get("callbackUrl") || "/";
   const [state, action] = useActionState(signInAction, initial);
   const queryError =
     params.get("error") === "CredentialsSignin"
@@ -40,7 +40,7 @@ export default function SignInClient() {
   return (
     <AuthShell
       title="Welcome back"
-      subtitle="Sign in to shop live, manage orders, and run your Hubsom storefront."
+      subtitle="Sign in to open Hubsom — live shopping, marketplace, and your store."
       footer={
         <AuthFooterLink
           prompt="New to Hubsom?"

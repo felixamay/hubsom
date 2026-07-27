@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
 import type { ChatMessage } from "@/types";
 
 export function LiveChat({
@@ -24,11 +23,7 @@ export function LiveChat({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
-    if (!session?.user) {
-      setError("Sign in to chat");
-      return;
-    }
+    if (!text.trim() || !session?.user) return;
     setError(null);
     const res = await fetch(`/api/streams/${streamId}/chat`, {
       method: "POST",
@@ -60,29 +55,20 @@ export function LiveChat({
       </div>
       <form onSubmit={onSubmit} className="border-t border-white/10 p-3">
         {error && <p className="mb-2 text-xs text-hubsom-live">{error}</p>}
-        {!session?.user ? (
-          <Link
-            href="/auth/sign-in"
-            className="block rounded-xl bg-hubsom-gold px-3 py-2 text-center text-sm font-bold text-hubsom-ink"
+        <div className="flex gap-2">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Say something…"
+            className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/40 focus:border-hubsom-gold"
+          />
+          <button
+            type="submit"
+            className="rounded-xl bg-hubsom-gold px-3 py-2 text-sm font-bold text-hubsom-ink"
           >
-            Sign in to chat
-          </Link>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Say something…"
-              className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/40 focus:border-hubsom-gold"
-            />
-            <button
-              type="submit"
-              className="rounded-xl bg-hubsom-gold px-3 py-2 text-sm font-bold text-hubsom-ink"
-            >
-              Send
-            </button>
-          </div>
-        )}
+            Send
+          </button>
+        </div>
       </form>
     </div>
   );

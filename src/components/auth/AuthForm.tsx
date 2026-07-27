@@ -22,7 +22,7 @@ export function AuthShell({
     <div className="relative mx-auto flex min-h-[100svh] max-w-lg flex-col px-4 pb-10 pt-6">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,rgba(0,174,239,0.18),transparent_60%)]" />
       <div className="relative">
-        <BrandLogo href="/" heightClassName="h-9" />
+        <BrandLogo href="/auth/sign-in" heightClassName="h-9" />
         <div className="mt-8">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-hubsom-cyan">
             Hubsom Account
