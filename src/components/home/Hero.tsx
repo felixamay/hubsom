@@ -8,70 +8,68 @@ import { BrandLogo } from "@/components/brand/BrandLogo";
 
 export function Hero() {
   return (
-    <section className="relative min-h-[100svh] overflow-hidden text-white">
+    <section className="relative min-h-[68svh] overflow-hidden text-white">
       <Image
-        src="https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=2000&q=80"
+        src="https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=1600&q=80"
         alt="Busy Ghana market aisle with fresh goods and shoppers"
         fill
         priority
         className="object-cover"
-        sizes="100vw"
+        sizes="(max-width:512px) 100vw, 512px"
       />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/92 via-[#0a3d5c]/75 to-black/40" />
-      <div className="absolute inset-0 hubsom-noise" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/25" />
 
-      <div className="relative mx-auto flex min-h-[100svh] max-w-7xl flex-col justify-end px-4 pb-16 pt-28 sm:px-6 sm:pb-24">
+      <div className="relative flex min-h-[68svh] flex-col justify-end px-4 pb-8 pt-10">
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.45 }}
         >
           <BrandLogo
-            href="/brand"
-            heightClassName="h-16 sm:h-24 md:h-28"
+            href="/"
+            heightClassName="h-12"
             priority
-            className="drop-shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+            className="drop-shadow-[0_10px_24px_rgba(0,0,0,0.45)]"
           />
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.12 }}
-          className="mt-5 max-w-2xl font-display text-2xl font-semibold leading-tight text-white/95 sm:text-4xl"
+          transition={{ duration: 0.45, delay: 0.08 }}
+          className="mt-4 max-w-sm font-display text-2xl font-bold leading-tight text-white"
         >
-          Live commerce from Ghana — shop every category in one stream.
+          Live commerce from Ghana — every category in one stream.
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.22 }}
-          className="mt-4 max-w-xl text-base leading-relaxed text-white/80 sm:text-lg"
+          transition={{ duration: 0.45, delay: 0.14 }}
+          className="mt-2 max-w-sm text-sm leading-relaxed text-white/78"
         >
-          Fresh produce, pantry staples, phones, sneakers, watches — Buy Now,
-          pin live, or bid. No grocery silo. Just Hubsom.
+          Buy Now, pin live, or bid — groceries to gadgets, same cart.
         </motion.p>
 
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.32 }}
-          className="mt-8 flex flex-wrap gap-3"
+          transition={{ duration: 0.45, delay: 0.2 }}
+          className="mt-5 flex flex-wrap gap-2"
         >
           <Link
             href="/live/stream-ama-mix"
-            className="inline-flex items-center gap-2 rounded-xl bg-hubsom-gold px-5 py-3 text-sm font-bold text-hubsom-ink transition hover:bg-hubsom-sun"
+            className="inline-flex items-center gap-2 rounded-xl bg-hubsom-gold px-4 py-2.5 text-sm font-bold text-hubsom-ink"
           >
             <Play className="h-4 w-4 fill-current" />
-            Enter live show
+            Watch live
           </Link>
           <Link
             href="/marketplace"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur"
           >
             <Store className="h-4 w-4" />
-            Browse marketplace
+            Shop
           </Link>
         </motion.div>
       </div>

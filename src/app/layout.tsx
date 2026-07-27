@@ -1,7 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Syne, Figtree } from "next/font/google";
-import { SiteFooter } from "@/components/layout/SiteFooter";
-import { SiteHeader } from "@/components/layout/SiteHeader";
+import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 const display = Syne({
@@ -22,7 +21,7 @@ export const metadata: Metadata = {
     template: "%s · Hubsom",
   },
   description:
-    "Hubsom is Ghana’s social-commerce platform for live shopping, live auctions, Buy Now marketplace, flash sales, and seller stores — every category, one experience.",
+    "Hubsom is Ghana’s social-commerce mobile app for live shopping, live auctions, Buy Now marketplace, flash sales, and seller stores — every category, one experience.",
   keywords: [
     "Hubsom",
     "Ghana marketplace",
@@ -35,6 +34,19 @@ export const metadata: Metadata = {
     icon: "/brand/hubsom-logo.png",
     apple: "/brand/hubsom-logo.png",
   },
+  appleWebApp: {
+    capable: true,
+    title: "Hubsom",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#eef7fc",
 };
 
 export default function RootLayout({
@@ -44,10 +56,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en-GH" className={`${display.variable} ${body.variable} h-full`}>
-      <body className="min-h-full flex flex-col antialiased">
-        <SiteHeader />
-        <main className="flex-1">{children}</main>
-        <SiteFooter />
+      <body className="flex min-h-full flex-col antialiased">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

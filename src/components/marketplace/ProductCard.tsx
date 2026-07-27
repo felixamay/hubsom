@@ -11,35 +11,35 @@ export function ProductCard({ product }: { product: Product }) {
   return (
     <Link
       href={`/products/${product.slug}`}
-      className="group block overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/70 transition hover:-translate-y-0.5 hover:border-hubsom-leaf/40 hover:shadow-[0_18px_40px_-28px_rgba(11,61,46,0.55)]"
+      className="group block overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/80 transition active:scale-[0.99]"
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-hubsom-mint">
+      <div className="relative aspect-square overflow-hidden bg-hubsom-mint">
         <Image
           src={product.images[0]}
           alt={product.name}
           fill
           className="object-cover transition duration-500 group-hover:scale-105"
-          sizes="(max-width:768px) 50vw, 25vw"
+          sizes="50vw"
         />
         {product.flashSale && (
-          <span className="absolute left-3 top-3 rounded-md bg-hubsom-live px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
-            Flash −{product.flashSale.discountPct}%
+          <span className="absolute left-2 top-2 rounded-md bg-hubsom-live px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            −{product.flashSale.discountPct}%
           </span>
         )}
       </div>
-      <div className="space-y-2 p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-hubsom-leaf">
+      <div className="space-y-1 p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-hubsom-leaf">
           {categoryName(product.category)}
         </p>
-        <h3 className="font-display text-lg font-semibold leading-snug text-hubsom-ink">
+        <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-hubsom-ink">
           {product.name}
         </h3>
-        <div className="flex items-baseline gap-2">
-          <span className="text-base font-bold text-hubsom-forest">
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <span className="text-sm font-bold text-hubsom-forest">
             {formatGhs(price)}
           </span>
           {product.compareAtGhs && (
-            <span className="text-sm text-hubsom-ink/45 line-through">
+            <span className="text-xs text-hubsom-ink/45 line-through">
               {formatGhs(product.compareAtGhs)}
             </span>
           )}
