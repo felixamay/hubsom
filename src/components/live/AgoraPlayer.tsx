@@ -283,7 +283,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
         {role === "publisher" && (
           <div
             ref={guestRef}
-            className="absolute bottom-24 right-3 z-[5] h-28 w-20 overflow-hidden rounded-xl border border-white/25 bg-black/40 sm:h-36 sm:w-28"
+            className="absolute bottom-[22%] left-3 z-[5] h-24 w-16 overflow-hidden rounded-lg border border-white/25 bg-black/40 sm:h-28 sm:w-20"
           />
         )}
 
@@ -291,34 +291,29 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
           <div className="absolute inset-0 z-[1]">
             <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(120deg,#000000_0%,#0a3d5c_32%,#0054a6_58%,#000000_100%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,rgba(0,174,239,0.28),transparent_45%),radial-gradient(circle_at_72%_30%,rgba(247,148,29,0.22),transparent_40%)]" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
-              <p className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]">
+            <div className="absolute inset-x-0 bottom-28 flex flex-col items-center px-6 text-center text-white">
+              <p className="rounded-full border border-white/20 bg-black/40 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]">
                 {state === "connecting"
-                  ? "Connecting Agora…"
+                  ? "Connecting…"
                   : state === "error"
                     ? "Stream error"
                     : "Demo mode"}
               </p>
-              <p className="mt-4 font-display text-2xl font-bold sm:text-3xl">
-                {state === "error"
-                  ? "Could not start camera"
-                  : "Ultra-low latency live commerce"}
-              </p>
-              <p className="mt-3 max-w-md text-sm text-white/75">
+              <p className="mt-2 max-w-sm text-xs text-white/75">
                 {state === "demo"
-                  ? "Add NEXT_PUBLIC_AGORA_APP_ID and AGORA_APP_CERTIFICATE to go live with real HD video, adaptive bitrate, and multi-host."
+                  ? "Add Agora credentials to show your live camera."
                   : state === "connecting"
-                    ? "Requesting camera/mic and joining the Agora channel…"
-                    : error || "Check permissions and Agora credentials."}
+                    ? "Joining channel…"
+                    : error || "Check camera permissions."}
               </p>
             </div>
           </div>
         )}
 
-        {state === "connected" && (
-          <div className="pointer-events-none absolute left-3 top-3 z-[6] rounded-md bg-black/45 px-2 py-1 text-[10px] font-semibold text-hubsom-mint">
-            Agora · {quality}
-            {remoteHosts > 0 ? ` · +${remoteHosts} host` : ""}
+        {state === "connected" && quality !== "—" && (
+          <div className="pointer-events-none absolute bottom-3 left-3 z-[6] rounded-md bg-black/40 px-2 py-0.5 text-[9px] font-semibold text-white/70">
+            {quality}
+            {remoteHosts > 0 ? ` · +${remoteHosts}` : ""}
           </div>
         )}
       </div>
