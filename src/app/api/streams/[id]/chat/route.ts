@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { appendChatMessage, listChatMessages } from "@/lib/data/chat";
+import { getUserById } from "@/lib/data/users";
 import { getStreamById } from "@/lib/data/stream-registry";
 
 export async function GET(
@@ -23,6 +25,7 @@ export async function POST(
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
 
+  const session = await auth();
   const body = (await request.json()) as {
     text?: string;
     displayName?: string;
@@ -42,11 +45,19 @@ export async function POST(
     );
   }
 
+  const dbUser = session?.user?.id
+    ? await getUserById(session.user.id)
+    : undefined;
+
   const message = await appendChatMessage({
     id: `m-${Date.now().toString(36)}`,
     streamId: id,
-    userId: body.userId ?? "guest",
-    displayName: body.displayName?.trim() || "Guest",
+    userId: dbUser?.id ?? body.userId ?? "guest",
+    displayName:
+      dbUser?.name ||
+      session?.user?.name ||
+      body.displayName?.trim() ||
+      "Guest",
     text,
     createdAt: new Date().toISOString(),
   });

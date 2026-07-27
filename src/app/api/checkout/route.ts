@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { createOrder } from "@/lib/data/orders";
 import { adjustProductStock, getProduct } from "@/lib/data/products";
 import { getEffectivePrice } from "@/lib/pricing";
 import type { ProductCategory } from "@/types";
 
 export async function POST(request: Request) {
+  const session = await auth();
   const body = (await request.json()) as {
     items?: Array<{ productId: string; quantity: number }>;
     streamId?: string;
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
       currency: "GHS",
       subtotalGhs,
       status: "pending_payment",
+      userId: session?.user?.id,
       streamId: body.streamId,
       oneTap: Boolean(body.oneTap),
       lines,

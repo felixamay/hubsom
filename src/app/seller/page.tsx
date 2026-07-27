@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BarChart3, PackagePlus, Radio, Store } from "lucide-react";
-import { ensureDefaultSeller } from "@/lib/data/sellers";
+import { auth } from "@/auth";
 import { getProductsBySeller } from "@/lib/data/products";
+import { ensureSellerForUser, getSeller } from "@/lib/data/sellers";
 import { getStreamsBySeller } from "@/lib/data/streams";
+import { getUserById, updateUserProfile } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +15,32 @@ export const metadata: Metadata = {
 };
 
 export default async function SellerHubPage() {
-  const seller = await ensureDefaultSeller();
+  const session = await auth();
+  const user = session?.user?.id ? await getUserById(session.user.id) : null;
+  const seller = user
+    ? await ensureSellerForUser({
+        userId: user.id,
+        name: user.name,
+        city: user.city,
+        region: user.region,
+        bio: user.bio,
+        avatar: user.image,
+      })
+    : null;
+
+  if (user && seller && user.sellerId !== seller.id) {
+    await updateUserProfile(user.id, {
+      sellerId: seller.id,
+      role: user.role === "buyer" ? "both" : user.role,
+    });
+  }
+
   const [products, streams] = await Promise.all([
-    getProductsBySeller(seller.id),
-    getStreamsBySeller(seller.id),
+    seller ? getProductsBySeller(seller.id) : Promise.resolve([]),
+    seller ? getStreamsBySeller(seller.id) : Promise.resolve([]),
   ]);
+
+  const store = seller ? await getSeller(seller.id) : null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
@@ -25,13 +48,17 @@ export default async function SellerHubPage() {
         Seller hub
       </h1>
       <p className="mt-3 max-w-2xl text-hubsom-ink/70">
-        Manage your catalog, go live, and track performance. Store:{" "}
-        <Link
-          href={`/stores/${seller.slug}`}
-          className="font-semibold text-hubsom-cyan"
-        >
-          {seller.name}
-        </Link>
+        Signed in as {user?.name}. Store:{" "}
+        {store ? (
+          <Link
+            href={`/stores/${store.slug}`}
+            className="font-semibold text-hubsom-cyan"
+          >
+            {store.name}
+          </Link>
+        ) : (
+          "—"
+        )}
       </p>
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -87,7 +114,7 @@ export default async function SellerHubPage() {
           </p>
         </Link>
         <Link
-          href={`/stores/${seller.slug}`}
+          href={store ? `/stores/${store.slug}` : "/account/profile"}
           className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf"
         >
           <Store className="h-6 w-6 text-hubsom-cyan" />

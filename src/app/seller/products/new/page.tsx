@@ -23,12 +23,6 @@ export default function NewProductPage() {
     setBusy(true);
     setError(null);
     try {
-      await fetch("/api/sellers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ensureDefault: true }),
-      });
-
       const res = await fetch("/api/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

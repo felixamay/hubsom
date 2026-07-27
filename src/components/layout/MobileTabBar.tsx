@@ -44,7 +44,8 @@ export function MobileTabBar() {
   const pathname = usePathname() || "/";
   const hide =
     (pathname.startsWith("/live/") && pathname !== "/live") ||
-    pathname.startsWith("/brand");
+    pathname.startsWith("/brand") ||
+    pathname.startsWith("/auth/");
 
   if (hide) return null;
 

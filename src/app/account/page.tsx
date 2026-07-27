@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   CreditCard,
   Heart,
+  LogOut,
   MapPin,
   Package,
   Settings,
   ShoppingBag,
   Store,
+  UserRound,
 } from "lucide-react";
-import { listOrders } from "@/lib/data/orders";
+import { auth, signOut } from "@/auth";
+import { listOrdersByUser } from "@/lib/data/orders";
+import { getUserById } from "@/lib/data/users";
 import { formatGhs } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
@@ -18,17 +24,30 @@ export const metadata: Metadata = {
   title: "Account",
 };
 
-const rows = [
-  { href: "/cart", label: "Orders & cart", icon: ShoppingBag },
-  { href: "/marketplace", label: "Browse stores", icon: Store },
-  { href: "/flash-sales", label: "Saved deals", icon: Heart },
-  { href: "/account", label: "Addresses", icon: MapPin },
-  { href: "/account", label: "Payments (MoMo / Card)", icon: CreditCard },
-  { href: "/account", label: "Settings", icon: Settings },
-];
-
 export default async function AccountPage() {
-  const orders = await listOrders();
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/auth/sign-in?callbackUrl=/account");
+  }
+
+  const user = await getUserById(session.user.id);
+  const orders = await listOrdersByUser(session.user.id);
+  const initials = (user?.name || session.user.name || "U")
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const rows = [
+    { href: "/account/profile", label: "Edit profile", icon: UserRound },
+    { href: "/cart", label: "Orders & cart", icon: ShoppingBag },
+    { href: "/account/addresses", label: "Addresses", icon: MapPin },
+    { href: "/seller", label: "Seller hub", icon: Store },
+    { href: "/flash-sales", label: "Saved deals", icon: Heart },
+    { href: "/account/profile", label: "Payments (MoMo / Card)", icon: CreditCard },
+    { href: "/account/profile", label: "Settings", icon: Settings },
+  ];
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
@@ -37,13 +56,30 @@ export default async function AccountPage() {
       </h1>
 
       <div className="mt-5 flex items-center gap-3 rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-hubsom-cyan to-hubsom-blue font-display text-xl font-bold text-white">
-          Y
-        </div>
-        <div>
-          <p className="font-display text-xl font-bold text-hubsom-ink">Guest</p>
-          <p className="text-sm text-hubsom-ink/60">
-            Sign-in coming soon · browsing as guest
+        {user?.image ? (
+          <Image
+            src={user.image}
+            alt={user.name}
+            width={56}
+            height={56}
+            className="h-14 w-14 rounded-2xl object-cover"
+          />
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-hubsom-cyan to-hubsom-blue font-display text-xl font-bold text-white">
+            {initials}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-xl font-bold text-hubsom-ink">
+            {user?.name ?? session.user.name}
+          </p>
+          <p className="truncate text-sm text-hubsom-ink/60">
+            {user?.email ?? session.user.email}
+          </p>
+          <p className="mt-1 text-xs text-hubsom-ink/50">
+            {[user?.city, user?.region].filter(Boolean).join(" · ") ||
+              "Complete your profile"}
+            {user?.role && user.role !== "buyer" ? ` · ${user.role}` : ""}
           </p>
         </div>
       </div>
@@ -65,6 +101,22 @@ export default async function AccountPage() {
           );
         })}
       </div>
+
+      <form
+        action={async () => {
+          "use server";
+          await signOut({ redirectTo: "/" });
+        }}
+        className="mt-4"
+      >
+        <button
+          type="submit"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-hubsom-forest/10 bg-white/80 px-4 py-3 text-sm font-semibold text-hubsom-live"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </form>
 
       <div className="mt-5">
         <div className="mb-3 flex items-center gap-2">

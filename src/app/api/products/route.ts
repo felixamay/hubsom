@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import {
   createProduct,
   getFlashSaleProducts,
   listProducts,
 } from "@/lib/data/products";
-import { ensureDefaultSeller } from "@/lib/data/sellers";
+import { ensureSellerForUser } from "@/lib/data/sellers";
+import { getUserById, updateUserProfile } from "@/lib/data/users";
 import type { ProductCategory } from "@/types";
 
 export async function GET(request: Request) {
@@ -12,8 +14,31 @@ export async function GET(request: Request) {
   const category = searchParams.get("category");
   const sellerId = searchParams.get("sellerId");
   const flash = searchParams.get("flash");
+  const mine = searchParams.get("mine");
 
   let items = await listProducts();
+
+  if (mine === "1") {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ products: [], total: 0 });
+    }
+    const user = await getUserById(session.user.id);
+    const seller = user
+      ? await ensureSellerForUser({
+          userId: user.id,
+          name: user.name,
+          city: user.city,
+          region: user.region,
+          bio: user.bio,
+          avatar: user.image,
+        })
+      : null;
+    items = seller
+      ? items.filter((p) => p.sellerId === seller.id)
+      : [];
+  }
+
   if (category) items = items.filter((p) => p.category === category);
   if (sellerId) items = items.filter((p) => p.sellerId === sellerId);
   if (flash === "1") items = await getFlashSaleProducts();
@@ -22,6 +47,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   const body = (await request.json()) as {
     name?: string;
     description?: string;
@@ -29,7 +59,6 @@ export async function POST(request: Request) {
     priceGhs?: number;
     compareAtGhs?: number;
     stock?: number;
-    sellerId?: string;
     images?: string[];
     tags?: string[];
     flashSale?: {
@@ -48,9 +77,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "priceGhs required" }, { status: 400 });
   }
 
-  const seller = body.sellerId
-    ? { id: body.sellerId }
-    : await ensureDefaultSeller();
+  const user = await getUserById(session.user.id);
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const seller = await ensureSellerForUser({
+    userId: user.id,
+    name: user.name,
+    city: user.city,
+    region: user.region,
+    bio: user.bio,
+    avatar: user.image,
+  });
+
+  if (!user.sellerId || user.role === "buyer") {
+    await updateUserProfile(user.id, {
+      sellerId: seller.id,
+      role: user.role === "seller" ? "seller" : "both",
+    });
+  }
 
   const product = await createProduct({
     name: body.name,

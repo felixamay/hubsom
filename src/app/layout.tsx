@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
@@ -52,7 +53,9 @@ export default function RootLayout({
   return (
     <html lang="en-GH" className={`${plusJakarta.variable} h-full`}>
       <body className={`${plusJakarta.className} flex min-h-full flex-col antialiased`}>
-        <AppShell>{children}</AppShell>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

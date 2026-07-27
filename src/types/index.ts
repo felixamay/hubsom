@@ -66,6 +66,7 @@ export interface Seller {
   followers: number;
   verified: boolean;
   categories: ProductCategory[];
+  ownerUserId?: string;
 }
 
 export interface Product {

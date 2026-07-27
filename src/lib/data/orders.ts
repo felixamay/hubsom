@@ -17,6 +17,7 @@ export interface Order {
   currency: "GHS";
   subtotalGhs: number;
   status: OrderStatus;
+  userId?: string;
   streamId?: string;
   oneTap?: boolean;
   lines: OrderLine[];
@@ -39,6 +40,11 @@ async function save(store: Store) {
 export async function listOrders(): Promise<Order[]> {
   const store = await load();
   return store.orders;
+}
+
+export async function listOrdersByUser(userId: string): Promise<Order[]> {
+  const store = await load();
+  return store.orders.filter((o) => o.userId === userId);
 }
 
 export async function createOrder(

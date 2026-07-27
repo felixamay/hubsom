@@ -29,19 +29,13 @@ export default function GoLivePage() {
       .then((data: AgoraStatusResponse) => setStatus(data))
       .catch(() => undefined);
 
-    void fetch("/api/products")
+    void fetch("/api/products?mine=1")
       .then((r) => r.json())
       .then((data: { products: Product[] }) => {
         setProducts(data.products ?? []);
         setLoadingProducts(false);
       })
       .catch(() => setLoadingProducts(false));
-
-    void fetch("/api/sellers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ensureDefault: true }),
-    }).catch(() => undefined);
   }, []);
 
   const selectedProducts = useMemo(

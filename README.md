@@ -20,7 +20,24 @@ There is **no dedicated grocery marketplace**. Groceries, fashion, electronics, 
 - Framer Motion for hero presence
 - Durable local persistence under `.data/` (products, sellers, streams, chat, orders)
 
-## Quick start
+## Authentication
+
+Hubsom uses **Auth.js** with:
+
+- Email + password sign up / sign in
+- Social providers when configured: Google, Facebook, Apple
+
+| Route | Purpose |
+| --- | --- |
+| `/auth/sign-up` | Create account |
+| `/auth/sign-in` | Sign in |
+| `/account` | Account home + orders |
+| `/account/profile` | Editable profile (phone, city, bio, seller toggle) |
+| `/account/addresses` | Delivery addresses |
+
+Protected: `/account/*`, `/sell`, `/seller/*`, `/dashboard/*`
+
+Set `AUTH_SECRET` (required). Add social client IDs/secrets from `.env.example` to enable social buttons.
 
 ```bash
 npm install

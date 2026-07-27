@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { createLiveStream, listAllStreams } from "@/lib/data/stream-registry";
 import { getProduct } from "@/lib/data/products";
-import { getSeller } from "@/lib/data/sellers";
+import { ensureSellerForUser, getSeller } from "@/lib/data/sellers";
+import { getUserById, updateUserProfile } from "@/lib/data/users";
 
 export async function GET() {
   const streams = await Promise.all(
@@ -14,10 +16,14 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   const body = (await request.json()) as {
     title?: string;
     description?: string;
-    sellerId?: string;
     productIds?: string[];
     pinnedProductId?: string;
     auctionProductId?: string | null;
@@ -26,14 +32,36 @@ export async function POST(request: Request) {
     startingBidGhs?: number;
   };
 
+  const user = await getUserById(session.user.id);
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const seller = await ensureSellerForUser({
+    userId: user.id,
+    name: user.name,
+    city: user.city,
+    region: user.region,
+    bio: user.bio,
+    avatar: user.image,
+  });
+
+  if (!user.sellerId) {
+    await updateUserProfile(user.id, {
+      sellerId: seller.id,
+      role: user.role === "buyer" ? "both" : user.role,
+    });
+  }
+
   const productIds: string[] = [];
   for (const id of body.productIds ?? []) {
-    if (await getProduct(id)) productIds.push(id);
+    const product = await getProduct(id);
+    if (product && product.sellerId === seller.id) productIds.push(id);
   }
 
   if (!productIds.length) {
     return NextResponse.json(
-      { error: "Select at least one product for the show" },
+      { error: "Select at least one of your products for the show" },
       { status: 400 },
     );
   }
@@ -41,7 +69,7 @@ export async function POST(request: Request) {
   const stream = await createLiveStream({
     title: body.title?.trim() || "Hubsom Live Show",
     description: body.description,
-    sellerId: body.sellerId,
+    sellerId: seller.id,
     productIds,
     pinnedProductId: body.pinnedProductId,
     auctionProductId: body.auctionProductId || undefined,

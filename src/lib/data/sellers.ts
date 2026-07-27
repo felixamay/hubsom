@@ -35,9 +35,10 @@ export interface CreateSellerInput {
   avatar?: string;
   cover?: string;
   categories?: ProductCategory[];
+  ownerUserId?: string;
 }
 
-/** Ensures a default seller exists for the current host session. */
+/** Ensures a default seller exists for local/dev host flows. */
 export async function ensureDefaultSeller(): Promise<Seller> {
   const store = await load();
   const existing = store.sellers.find((s) => s.id === "seller-you");
@@ -62,6 +63,41 @@ export async function ensureDefaultSeller(): Promise<Seller> {
   return seller;
 }
 
+/** Creates or returns the storefront owned by a Hubsom user. */
+export async function ensureSellerForUser(input: {
+  userId: string;
+  name: string;
+  city?: string;
+  region?: string;
+  bio?: string;
+  avatar?: string;
+}): Promise<Seller> {
+  const store = await load();
+  const existing = store.sellers.find((s) => s.ownerUserId === input.userId);
+  if (existing) {
+    const idx = store.sellers.findIndex((s) => s.id === existing.id);
+    store.sellers[idx] = {
+      ...existing,
+      name: input.name || existing.name,
+      city: input.city || existing.city,
+      region: input.region || existing.region,
+      bio: input.bio ?? existing.bio,
+      avatar: input.avatar || existing.avatar,
+    };
+    await save(store);
+    return store.sellers[idx];
+  }
+
+  return createSeller({
+    name: `${input.name}'s Store`,
+    city: input.city,
+    region: input.region,
+    bio: input.bio,
+    avatar: input.avatar,
+    ownerUserId: input.userId,
+  });
+}
+
 export async function createSeller(input: CreateSellerInput): Promise<Seller> {
   const store = await load();
   const baseSlug = slugify(input.name) || "store";
@@ -84,6 +120,7 @@ export async function createSeller(input: CreateSellerInput): Promise<Seller> {
     followers: 0,
     verified: false,
     categories: input.categories ?? [],
+    ownerUserId: input.ownerUserId,
   };
 
   store.sellers.unshift(seller);

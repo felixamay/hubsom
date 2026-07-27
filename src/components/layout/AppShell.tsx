@@ -10,6 +10,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const immersive =
     (pathname.startsWith("/live/") && pathname !== "/live") ||
     pathname.startsWith("/brand");
+  const authScreen = pathname.startsWith("/auth/");
 
   return (
     <div
@@ -25,12 +26,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className={cn(
           "flex-1",
           !immersive &&
+            !authScreen &&
             "pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]",
         )}
       >
         {children}
       </main>
-      <MobileTabBar />
+      {!authScreen ? <MobileTabBar /> : null}
     </div>
   );
 }
