@@ -1,0 +1,188 @@
+export type ProductCategory =
+  | "groceries"
+  | "fresh-produce"
+  | "meat-seafood"
+  | "bakery"
+  | "dairy"
+  | "frozen-foods"
+  | "beverages"
+  | "snacks"
+  | "pantry-staples"
+  | "fashion"
+  | "shoes"
+  | "beauty"
+  | "health"
+  | "electronics"
+  | "computers"
+  | "gaming"
+  | "books"
+  | "jewelry"
+  | "luxury"
+  | "furniture"
+  | "home-decor"
+  | "kitchen"
+  | "automotive"
+  | "baby-products"
+  | "pet-supplies"
+  | "sports"
+  | "collectibles"
+  | "art"
+  | "vintage"
+  | "handmade"
+  | "office-supplies"
+  | "industrial-equipment"
+  | "services"
+  | "digital-products"
+  | "real-estate"
+  | "vehicles"
+  | "miscellaneous";
+
+export type FulfillmentMode =
+  | "buy-now"
+  | "live-selling"
+  | "live-auction"
+  | "flash-sale"
+  | "bundle"
+  | "store-listing"
+  | "promotion";
+
+export interface CategoryMeta {
+  slug: ProductCategory;
+  name: string;
+  description: string;
+}
+
+export interface Seller {
+  id: string;
+  slug: string;
+  name: string;
+  city: string;
+  region: string;
+  bio: string;
+  avatar: string;
+  cover: string;
+  rating: number;
+  followers: number;
+  verified: boolean;
+  categories: ProductCategory[];
+}
+
+export interface Product {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: ProductCategory;
+  priceGhs: number;
+  compareAtGhs?: number;
+  currency: "GHS";
+  images: string[];
+  sellerId: string;
+  stock: number;
+  rating: number;
+  reviewCount: number;
+  tags: string[];
+  bundleIds?: string[];
+  flashSale?: {
+    endsAt: string;
+    discountPct: number;
+  };
+  supports: FulfillmentMode[];
+}
+
+export interface ProductBundle {
+  id: string;
+  name: string;
+  productIds: string[];
+  priceGhs: number;
+  sellerId: string;
+}
+
+export type StreamStatus = "scheduled" | "live" | "ended" | "replay";
+
+export interface StreamHost {
+  id: string;
+  name: string;
+  role: "host" | "guest" | "moderator";
+  avatar: string;
+}
+
+export interface LiveAuction {
+  id: string;
+  productId: string;
+  startingBidGhs: number;
+  currentBidGhs: number;
+  minIncrementGhs: number;
+  endsAt: string;
+  bidderCount: number;
+  highestBidder?: string;
+  status: "upcoming" | "open" | "closing" | "sold" | "unsold";
+}
+
+export interface LiveStream {
+  id: string;
+  title: string;
+  description: string;
+  sellerId: string;
+  status: StreamStatus;
+  channelName: string;
+  cover: string;
+  viewerCount: number;
+  peakViewers: number;
+  startedAt?: string;
+  endedAt?: string;
+  recordingUrl?: string;
+  productIds: string[];
+  pinnedProductId?: string;
+  hosts: StreamHost[];
+  auction?: LiveAuction;
+  categories: ProductCategory[];
+  latencyMs: number;
+  isMultiHost: boolean;
+  replayAvailable: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  streamId: string;
+  userId: string;
+  displayName: string;
+  text: string;
+  createdAt: string;
+  moderated?: boolean;
+}
+
+export interface LiveReaction {
+  id: string;
+  streamId: string;
+  emoji: string;
+  x: number;
+  createdAt: number;
+}
+
+export interface CartItem {
+  productId: string;
+  quantity: number;
+  source: "buy-now" | "live" | "auction" | "flash-sale" | "bundle";
+  streamId?: string;
+}
+
+export interface ViewerAnalytics {
+  streamId: string;
+  concurrent: number;
+  avgWatchSeconds: number;
+  chatMessages: number;
+  reactions: number;
+  checkouts: number;
+  conversionRate: number;
+}
+
+export interface SellerAnalytics {
+  streamId: string;
+  revenueGhs: number;
+  unitsSold: number;
+  uniqueBuyers: number;
+  peakConcurrent: number;
+  avgLatencyMs: number;
+  inventorySyncEvents: number;
+}
