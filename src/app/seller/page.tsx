@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BarChart3, PackagePlus, Radio, Store } from "lucide-react";
+import { BarChart3, PackagePlus, Radio, Store, Users } from "lucide-react";
 import { auth } from "@/auth";
+import { getFollowCounts } from "@/lib/data/follows";
 import { getProductsBySeller } from "@/lib/data/products";
 import { ensureSellerForUser, getSeller } from "@/lib/data/sellers";
 import { getStreamsBySeller } from "@/lib/data/streams";
@@ -35,9 +36,12 @@ export default async function SellerHubPage() {
     });
   }
 
-  const [products, streams] = await Promise.all([
+  const [products, streams, counts] = await Promise.all([
     seller ? getProductsBySeller(seller.id) : Promise.resolve([]),
     seller ? getStreamsBySeller(seller.id) : Promise.resolve([]),
+    user
+      ? getFollowCounts(user.id)
+      : Promise.resolve({ followingCount: 0, followersCount: 0 }),
   ]);
 
   const store = seller ? await getSeller(seller.id) : null;
@@ -74,6 +78,28 @@ export default async function SellerHubPage() {
           </p>
           <p className="mt-1 font-display text-2xl font-bold">{streams.length}</p>
         </div>
+        <Link
+          href="/account/following?tab=followers"
+          className="rounded-2xl border border-hubsom-forest/10 bg-white/70 p-4 transition hover:border-hubsom-cyan"
+        >
+          <p className="text-[10px] font-bold uppercase text-hubsom-ink/45">
+            Followers
+          </p>
+          <p className="mt-1 font-display text-2xl font-bold">
+            {counts.followersCount}
+          </p>
+        </Link>
+        <Link
+          href="/account/following?tab=following"
+          className="rounded-2xl border border-hubsom-forest/10 bg-white/70 p-4 transition hover:border-hubsom-cyan"
+        >
+          <p className="text-[10px] font-bold uppercase text-hubsom-ink/45">
+            Following
+          </p>
+          <p className="mt-1 font-display text-2xl font-bold">
+            {counts.followingCount}
+          </p>
+        </Link>
       </div>
 
       <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -114,10 +140,22 @@ export default async function SellerHubPage() {
           </p>
         </Link>
         <Link
-          href={store ? `/stores/${store.slug}` : "/account/profile"}
+          href="/account/following?tab=followers"
           className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf"
         >
-          <Store className="h-6 w-6 text-hubsom-cyan" />
+          <Users className="h-6 w-6 text-hubsom-cyan" />
+          <h2 className="mt-4 font-display text-2xl font-bold text-hubsom-forest">
+            Connections
+          </h2>
+          <p className="mt-2 text-sm text-hubsom-ink/65">
+            See your followers and stores you follow.
+          </p>
+        </Link>
+        <Link
+          href={store ? `/stores/${store.slug}` : "/account/profile"}
+          className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf md:col-span-2 lg:col-span-4"
+        >
+          <Store className="h-6 w-6 text-hubsom-forest" />
           <h2 className="mt-4 font-display text-2xl font-bold text-hubsom-forest">
             Storefront
           </h2>

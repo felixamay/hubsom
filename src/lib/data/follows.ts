@@ -1,7 +1,12 @@
 import { getSeller, updateSeller } from "@/lib/data/sellers";
-import { getUserById, updateUserProfile } from "@/lib/data/users";
+import {
+  getUserById,
+  listUsers,
+  toPublicUser,
+  updateUserProfile,
+} from "@/lib/data/users";
 import type { Seller } from "@/types";
-import type { HubsomUser } from "@/types/auth";
+import type { HubsomUser, PublicUser } from "@/types/auth";
 
 export async function isFollowingSeller(
   userId: string,
@@ -18,6 +23,35 @@ export async function listFollowedSellers(userId: string): Promise<Seller[]> {
     user.followingSellerIds.map((id) => getSeller(id)),
   );
   return sellers.filter((s): s is Seller => Boolean(s));
+}
+
+/** Users who follow this seller’s store. */
+export async function listFollowersForSeller(
+  sellerId: string,
+): Promise<PublicUser[]> {
+  const users = await listUsers();
+  return users
+    .filter((u) => u.followingSellerIds?.includes(sellerId))
+    .map((u) => toPublicUser(u));
+}
+
+export async function getFollowCounts(userId: string): Promise<{
+  followingCount: number;
+  followersCount: number;
+  sellerId?: string;
+}> {
+  const user = await getUserById(userId);
+  if (!user) return { followingCount: 0, followersCount: 0 };
+
+  const followingCount = user.followingSellerIds?.length ?? 0;
+  let followersCount = 0;
+  const sellerId = user.sellerId;
+  if (sellerId) {
+    const followers = await listFollowersForSeller(sellerId);
+    followersCount = followers.length;
+  }
+
+  return { followingCount, followersCount, sellerId };
 }
 
 export async function followSeller(
