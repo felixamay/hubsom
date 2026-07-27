@@ -6,6 +6,7 @@ import { Star } from "lucide-react";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviewsSection } from "@/components/product/ProductReviewsSection";
 import { SaveProductButton } from "@/components/product/SaveProductButton";
+import { PromoSpace } from "@/components/promotions/PromoSpace";
 import { FollowButton } from "@/components/sellers/FollowButton";
 import { auth } from "@/auth";
 import { categoryName } from "@/lib/categories";
@@ -17,6 +18,7 @@ import {
   listReviewsForProduct,
 } from "@/lib/data/product-reviews";
 import { getProduct, getProductBySlug } from "@/lib/data/products";
+import { listPromotions } from "@/lib/data/promotions";
 import { isProductSaved } from "@/lib/data/saves";
 import { getSeller } from "@/lib/data/sellers";
 import { getEffectivePrice } from "@/lib/pricing";
@@ -61,6 +63,11 @@ export default async function ProductPage({
   const myReview = userId
     ? await getUserProductReview(product.id, userId)
     : null;
+  const promotions = await listPromotions({
+    placement: "product",
+    categorySlug: product.category,
+    limit: 3,
+  });
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
@@ -148,6 +155,15 @@ export default async function ProductPage({
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-10 max-w-3xl">
+        <PromoSpace
+          promotions={promotions}
+          title="Promotions"
+          subtitle="Related deals while you shop this product."
+          compact
+        />
       </div>
 
       <ProductReviewsSection

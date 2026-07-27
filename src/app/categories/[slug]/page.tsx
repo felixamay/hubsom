@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { PromoSpace } from "@/components/promotions/PromoSpace";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { auth } from "@/auth";
 import { CATEGORY_MAP } from "@/lib/categories";
 import { getProductsByCategory } from "@/lib/data/products";
+import { listPromotions } from "@/lib/data/promotions";
 import { getUserById } from "@/lib/data/users";
 import type { ProductCategory } from "@/types";
 
@@ -32,9 +34,14 @@ export default async function CategoryPage({
   const meta = CATEGORY_MAP[slug as ProductCategory];
   if (!meta) notFound();
 
-  const [products, session] = await Promise.all([
+  const [products, session, promotions] = await Promise.all([
     getProductsByCategory(slug),
     auth(),
+    listPromotions({
+      placement: "category",
+      categorySlug: slug,
+      limit: 4,
+    }),
   ]);
   const user = session?.user?.id
     ? await getUserById(session.user.id)
@@ -46,6 +53,16 @@ export default async function CategoryPage({
         {meta.name}
       </h1>
       <p className="mt-3 max-w-2xl text-hubsom-ink/70">{meta.description}</p>
+
+      <div className="mt-6 max-w-lg">
+        <PromoSpace
+          promotions={promotions}
+          title={`${meta.name} promotions`}
+          subtitle="Category deals and featured campaigns."
+          compact
+        />
+      </div>
+
       <div className="mt-8">
         {products.length ? (
           <ProductGrid

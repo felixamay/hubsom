@@ -3,11 +3,13 @@ import { CategoryRail } from "@/components/home/CategoryRail";
 import { HomeSearchHero } from "@/components/home/HomeSearchHero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { PromoSpace } from "@/components/promotions/PromoSpace";
 import { FollowButton } from "@/components/sellers/FollowButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { auth } from "@/auth";
 import { isFollowingSeller, isOwnSellerStore } from "@/lib/data/follows";
 import { getFlashSaleProducts, listProducts } from "@/lib/data/products";
+import { listPromotions } from "@/lib/data/promotions";
 import { listSellers } from "@/lib/data/sellers";
 import { listAllStreams } from "@/lib/data/stream-registry";
 import { getUserById } from "@/lib/data/users";
@@ -15,13 +17,15 @@ import { getUserById } from "@/lib/data/users";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [streams, products, flash, sellers, session] = await Promise.all([
-    listAllStreams(),
-    listProducts(),
-    getFlashSaleProducts(),
-    listSellers(),
-    auth(),
-  ]);
+  const [streams, products, flash, sellers, session, promotions] =
+    await Promise.all([
+      listAllStreams(),
+      listProducts(),
+      getFlashSaleProducts(),
+      listSellers(),
+      auth(),
+      listPromotions({ placement: "home", limit: 4 }),
+    ]);
   const live = streams.filter((s) => s.status === "live");
   const featured = products.slice(0, 6);
   const userId = session?.user?.id;
@@ -48,6 +52,13 @@ export default async function HomePage() {
     <>
       <HomeSearchHero />
       <CategoryRail />
+      <div className="px-4 pt-2">
+        <PromoSpace
+          promotions={promotions}
+          title="Promotions"
+          subtitle="Live drops, flash deals, and partner offers."
+        />
+      </div>
       <LiveStrip
         streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(
           0,

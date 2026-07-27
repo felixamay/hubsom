@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { PromoSpace } from "@/components/promotions/PromoSpace";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { auth } from "@/auth";
 import { CATEGORIES } from "@/lib/categories";
 import { listProducts } from "@/lib/data/products";
+import { listPromotions } from "@/lib/data/promotions";
 import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +22,11 @@ export default async function MarketplacePage({
 }) {
   const { q } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
-  const [products, session] = await Promise.all([listProducts(), auth()]);
+  const [products, session, promotions] = await Promise.all([
+    listProducts(),
+    auth(),
+    listPromotions({ placement: "marketplace", limit: 4 }),
+  ]);
   const user = session?.user?.id
     ? await getUserById(session.user.id)
     : undefined;
@@ -57,6 +63,15 @@ export default async function MarketplacePage({
         >
           Add product
         </Link>
+      </div>
+
+      <div className="mt-5">
+        <PromoSpace
+          promotions={promotions}
+          title="Promotions"
+          subtitle="Featured deals while you shop Buy Now."
+          compact
+        />
       </div>
 
       <div className="scrollbar-thin mt-4 flex gap-2 overflow-x-auto pb-1">
