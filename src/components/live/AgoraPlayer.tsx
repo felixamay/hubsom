@@ -128,6 +128,8 @@ export function AgoraPlayer({
         }
       })();
     };
+    // `muted` is applied when remote audio publishes; reconnect not required on toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelName, role, onLatencySample]);
 
   return (
