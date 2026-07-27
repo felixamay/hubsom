@@ -95,10 +95,18 @@ Without Agora credentials, go-live still creates the show room, but video report
 - Inventory sync API
 - Analytics derived from orders + live streams
 
+## Huber delivery integration
+
+Hubsom dispatches consolidated shipments to the **Huber** rider app.
+
+- Contract for the Huber-side AI: [`docs/HUBERS_INTEGRATION.md`](docs/HUBERS_INTEGRATION.md)
+- Repo to share: https://github.com/felixamay/hubsom (`cursor/hubsom-live-commerce-8a7a`)
+- Env: `HUBERS_API_BASE_URL`, `HUBERS_API_KEY`, `HUBERS_WEBHOOK_SECRET`
+
 ## Data
 
 Runtime data is written to `.data/` (gitignored):
 
-- `products.json` · `sellers.json` · `live-streams.json` · `chat.json` · `orders.json`
+- `products.json` · `sellers.json` · `live-streams.json` · `chat.json` · `orders.json` · `shipments.json` · `hubers.json`
 
 Swap these JSON stores for a managed database before multi-instance production deploy.

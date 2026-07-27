@@ -21,6 +21,9 @@ export const authConfig = {
       // Auth.js routes + our signup/providers helpers must stay public.
       if (pathname.startsWith("/api/auth")) return true;
 
+      // Huber delivery webhooks (signed when HUBERS_WEBHOOK_SECRET is set).
+      if (pathname.startsWith("/api/integrations/hubers")) return true;
+
       const isAuthPage =
         pathname.startsWith("/auth/sign-in") ||
         pathname.startsWith("/auth/sign-up");
