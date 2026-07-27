@@ -3,10 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Flame } from "lucide-react";
-import { CATEGORIES } from "@/lib/categories";
+import { Flame, Radio } from "lucide-react";
+import { CATEGORIES, categoryName } from "@/lib/categories";
 import { categoryImage } from "@/lib/category-images";
 import { categoryTone } from "@/lib/category-tones";
+
+export type LiveNowPreview = {
+  id: string;
+  title: string;
+  cover: string;
+  viewerCount: number;
+  sellerName: string;
+  categories: string[];
+};
 
 const TRENDING = [
   "fashion",
@@ -82,7 +91,11 @@ function PrimaryCategoryBox({
   );
 }
 
-export function CategoriesBrowse() {
+export function CategoriesBrowse({
+  liveNow = [],
+}: {
+  liveNow?: LiveNowPreview[];
+}) {
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
       <motion.div
@@ -140,6 +153,105 @@ export function CategoriesBrowse() {
             </motion.div>
           ))}
         </div>
+      </section>
+
+      <section className="mt-7">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-hubsom-live text-white">
+              <Radio className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="font-display text-lg font-bold text-hubsom-forest">
+                Live now
+              </h2>
+              <p className="text-[11px] text-hubsom-ink/55">
+                Shows by category — watch and shop
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/live"
+            className="shrink-0 pt-1 text-xs font-bold text-hubsom-cyan"
+          >
+            See all
+          </Link>
+        </div>
+
+        {liveNow.length ? (
+          <div className="scrollbar-thin -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-1">
+            {liveNow.map((stream, index) => {
+              const cat = stream.categories[0];
+              const cover =
+                stream.cover?.startsWith("http") || stream.cover?.startsWith("/")
+                  ? stream.cover
+                  : cat
+                    ? categoryImage(cat)
+                    : "/brand/hubsom-logo.png";
+
+              return (
+                <motion.div
+                  key={stream.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, delay: index * 0.04 }}
+                  className="w-[7.25rem] shrink-0"
+                >
+                  <Link
+                    href={`/live/${stream.id}`}
+                    className="group block outline-none transition active:scale-[0.98]"
+                  >
+                    <div className="relative aspect-[3/4] overflow-hidden rounded-[1.1rem] bg-hubsom-night ring-1 ring-black/10 shadow-[0_14px_28px_-18px_rgba(6,18,31,0.55)]">
+                      <Image
+                        src={cover}
+                        alt=""
+                        fill
+                        sizes="116px"
+                        quality={90}
+                        priority={index < 3}
+                        className="object-cover transition duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/10" />
+                      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-hubsom-live px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+                        Live
+                      </span>
+                      {cat ? (
+                        <span className="absolute right-2 top-2 max-w-[55%] truncate rounded-md bg-black/45 px-1.5 py-0.5 text-[9px] font-semibold text-white backdrop-blur-sm">
+                          {categoryName(cat)}
+                        </span>
+                      ) : null}
+                      <div className="absolute inset-x-0 bottom-0 p-2.5 text-white">
+                        <p className="line-clamp-2 font-display text-[12px] font-bold leading-snug">
+                          {stream.title}
+                        </p>
+                        <p className="mt-0.5 truncate text-[10px] text-white/75">
+                          {stream.sellerName} ·{" "}
+                          {stream.viewerCount.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[1.15rem] border border-dashed border-hubsom-forest/20 bg-white/60 px-4 py-6 text-center">
+            <p className="text-sm font-semibold text-hubsom-forest">
+              No live shows right now
+            </p>
+            <p className="mt-1 text-xs text-hubsom-ink/55">
+              When sellers go live, they’ll appear here by category.
+            </p>
+            <Link
+              href="/seller/go-live"
+              className="mt-3 inline-flex rounded-xl bg-hubsom-live px-3 py-2 text-xs font-bold text-white"
+            >
+              Go live
+            </Link>
+          </div>
+        )}
       </section>
 
       <section className="mt-8">
