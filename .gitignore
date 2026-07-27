@@ -40,6 +40,8 @@ yarn-error.log*
 # user-uploaded product images (keep folder)
 /public/uploads/products/*
 !/public/uploads/products/.gitkeep
+/public/uploads/avatars/*
+!/public/uploads/avatars/.gitkeep
 
 # vercel
 .vercel

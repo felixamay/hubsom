@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import {
   CreditCard,
@@ -15,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { signOut } from "@/auth";
+import { AccountAvatarCard } from "@/components/account/AccountAvatarCard";
 import { requireUser } from "@/lib/auth/session";
 import { listOrdersByUser } from "@/lib/data/orders";
 import { getUserById } from "@/lib/data/users";
@@ -31,12 +31,6 @@ export default async function AccountPage() {
 
   const user = await getUserById(session.user.id);
   const orders = await listOrdersByUser(session.user.id);
-  const initials = (user?.name || session.user.name || "U")
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   const rows = [
     { href: "/messages", label: "Messages", icon: MessageCircle },
@@ -56,34 +50,18 @@ export default async function AccountPage() {
         Account
       </h1>
 
-      <div className="mt-5 flex items-center gap-3 rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4">
-        {user?.image ? (
-          <Image
-            src={user.image}
-            alt={user.name}
-            width={56}
-            height={56}
-            className="h-14 w-14 rounded-2xl object-cover"
-          />
-        ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-hubsom-cyan to-hubsom-blue font-display text-xl font-bold text-white">
-            {initials}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-xl font-bold text-hubsom-ink">
-            {user?.name ?? session.user.name}
-          </p>
-          <p className="truncate text-sm text-hubsom-ink/60">
-            {user?.email ?? session.user.email}
-          </p>
-          <p className="mt-1 text-xs text-hubsom-ink/50">
-            {[user?.city, user?.region].filter(Boolean).join(" · ") ||
-              "Complete your profile"}
-            {user?.role && user.role !== "buyer" ? ` · ${user.role}` : ""}
-          </p>
-        </div>
-      </div>
+      <AccountAvatarCard
+        name={user?.name ?? session.user.name ?? "Hubsom user"}
+        email={user?.email ?? session.user.email ?? ""}
+        image={user?.image}
+        meta={[
+          [user?.city, user?.region].filter(Boolean).join(" · ") ||
+            "Complete your profile",
+          user?.role && user.role !== "buyer" ? user.role : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      />
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/80">
         {rows.map((row, i) => {

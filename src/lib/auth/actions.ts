@@ -75,11 +75,16 @@ export async function signUpAction(
     };
   }
 
+  const afterSignup =
+    callbackUrl === "/"
+      ? "/account/profile?welcome=1"
+      : `/account/profile?welcome=1&next=${encodeURIComponent(callbackUrl)}`;
+
   try {
     await signIn("credentials", {
       email,
       password,
-      redirectTo: callbackUrl,
+      redirectTo: afterSignup,
     });
     return {};
   } catch (error) {

@@ -60,7 +60,7 @@ export default function SignUpClient() {
       </form>
       <AuthSocialBlock callbackUrl={callbackUrl} />
       <p className="mt-4 text-center text-[11px] leading-relaxed text-hubsom-ink/45">
-        After signup you’ll be signed in and can finish your profile anytime.
+        After signup you’ll add a profile photo and finish your Hubsom profile.
       </p>
     </AuthShell>
   );
