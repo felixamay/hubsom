@@ -77,7 +77,7 @@ export default function NewProductPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="mt-2 w-full rounded-xl border border-hubsom-forest/15 px-3 py-2.5 outline-none focus:border-hubsom-leaf"
-            placeholder="Garden Fresh Tomatoes — 5kg"
+            placeholder="Product name"
           />
         </label>
 
