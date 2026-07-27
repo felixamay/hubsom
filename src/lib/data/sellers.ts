@@ -76,13 +76,12 @@ export async function ensureSellerForUser(input: {
   const existing = store.sellers.find((s) => s.ownerUserId === input.userId);
   if (existing) {
     const idx = store.sellers.findIndex((s) => s.id === existing.id);
+    // Keep customized storefront branding — only fill missing location/bio defaults.
     store.sellers[idx] = {
       ...existing,
-      name: input.name || existing.name,
-      city: input.city || existing.city,
-      region: input.region || existing.region,
-      bio: input.bio ?? existing.bio,
-      avatar: input.avatar || existing.avatar,
+      city: existing.city || input.city || "Accra",
+      region: existing.region || input.region || "Greater Accra",
+      bio: existing.bio || input.bio || existing.bio,
     };
     await save(store);
     return store.sellers[idx];
@@ -96,6 +95,13 @@ export async function ensureSellerForUser(input: {
     avatar: input.avatar,
     ownerUserId: input.userId,
   });
+}
+
+export async function getSellerByOwnerUserId(
+  userId: string,
+): Promise<Seller | undefined> {
+  const store = await load();
+  return store.sellers.find((s) => s.ownerUserId === userId);
 }
 
 export async function createSeller(input: CreateSellerInput): Promise<Seller> {
@@ -130,12 +136,53 @@ export async function createSeller(input: CreateSellerInput): Promise<Seller> {
 
 export async function updateSeller(
   id: string,
-  patch: Partial<Seller>,
+  patch: Partial<
+    Pick<
+      Seller,
+      | "name"
+      | "slug"
+      | "city"
+      | "region"
+      | "bio"
+      | "avatar"
+      | "cover"
+      | "categories"
+      | "followers"
+      | "rating"
+      | "verified"
+      | "ownerUserId"
+    >
+  >,
 ): Promise<Seller | undefined> {
   const store = await load();
   const idx = store.sellers.findIndex((s) => s.id === id);
   if (idx < 0) return undefined;
-  store.sellers[idx] = { ...store.sellers[idx], ...patch, id };
+
+  const current = store.sellers[idx];
+  let slug = current.slug;
+  if (patch.name && patch.name.trim() && patch.name.trim() !== current.name) {
+    const baseSlug = slugify(patch.name) || current.slug;
+    slug = baseSlug;
+    let n = 1;
+    while (
+      store.sellers.some((s, i) => i !== idx && s.slug === slug)
+    ) {
+      slug = `${baseSlug}-${n++}`;
+    }
+  }
+
+  store.sellers[idx] = {
+    ...current,
+    ...patch,
+    id,
+    slug: patch.slug ?? slug,
+    name: patch.name?.trim() || current.name,
+    city: patch.city?.trim() || current.city,
+    region: patch.region?.trim() || current.region,
+    bio: patch.bio !== undefined ? patch.bio.trim() : current.bio,
+    avatar: patch.avatar || current.avatar,
+    cover: patch.cover || current.cover,
+  };
   await save(store);
   return store.sellers[idx];
 }

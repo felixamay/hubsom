@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BarChart3, Package, PackagePlus, Radio, Store, Users } from "lucide-react";
+import { BarChart3, Package, PackagePlus, Pencil, Radio, Store, Users } from "lucide-react";
 import { auth } from "@/auth";
 import { getFollowCounts } from "@/lib/data/follows";
 import { getProductsBySeller } from "@/lib/data/products";
@@ -104,6 +104,18 @@ export default async function SellerHubPage() {
 
       <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Link
+          href="/seller/store"
+          className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf"
+        >
+          <Pencil className="h-6 w-6 text-hubsom-forest" />
+          <h2 className="mt-4 font-display text-2xl font-bold text-hubsom-forest">
+            Edit storefront
+          </h2>
+          <p className="mt-2 text-sm text-hubsom-ink/65">
+            Change store name, profile photo, and cover image.
+          </p>
+        </Link>
+        <Link
           href="/seller/orders"
           className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf"
         >
@@ -164,12 +176,12 @@ export default async function SellerHubPage() {
           </p>
         </Link>
         <Link
-          href={store ? `/stores/${store.slug}` : "/account/profile"}
-          className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf md:col-span-2 lg:col-span-4"
+          href={store ? `/stores/${store.slug}` : "/seller/store"}
+          className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-6 transition hover:border-hubsom-leaf md:col-span-2 lg:col-span-3"
         >
           <Store className="h-6 w-6 text-hubsom-forest" />
           <h2 className="mt-4 font-display text-2xl font-bold text-hubsom-forest">
-            Storefront
+            View storefront
           </h2>
           <p className="mt-2 text-sm text-hubsom-ink/65">
             Preview your public store with live + Buy Now inventory.

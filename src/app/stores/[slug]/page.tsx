@@ -52,18 +52,18 @@ export default async function StorePage({
           src={seller.cover}
           alt=""
           fill
-          className="object-contain p-10 opacity-40"
+          className="object-cover"
           sizes="100vw"
           priority
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-hubsom-night via-hubsom-night/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-hubsom-night via-hubsom-night/50 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 mx-auto flex max-w-7xl items-end gap-4 px-4 pb-6 sm:px-6">
           <Image
             src={seller.avatar}
             alt={seller.name}
             width={72}
             height={72}
-            className="rounded-2xl border-2 border-white bg-white object-contain p-1"
+            className="rounded-2xl border-2 border-white bg-white object-cover"
           />
           <div className="min-w-0 flex-1 text-white">
             <h1 className="font-display text-3xl font-extrabold sm:text-4xl">
@@ -74,13 +74,22 @@ export default async function StorePage({
               followers
             </p>
           </div>
-          <FollowButton
-            sellerId={seller.id}
-            initialFollowing={following}
-            initialFollowers={seller.followers}
-            isOwnStore={isOwnStore}
-            className="mb-1 shrink-0"
-          />
+          {isOwnStore ? (
+            <Link
+              href="/seller/store"
+              className="mb-1 shrink-0 rounded-xl bg-hubsom-gold px-3 py-2 text-xs font-bold text-hubsom-ink"
+            >
+              Edit store
+            </Link>
+          ) : (
+            <FollowButton
+              sellerId={seller.id}
+              initialFollowing={following}
+              initialFollowers={seller.followers}
+              isOwnStore={isOwnStore}
+              className="mb-1 shrink-0"
+            />
+          )}
         </div>
       </section>
 
