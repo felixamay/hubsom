@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { signInAction, type AuthActionState } from "@/lib/auth/actions";
@@ -32,13 +32,10 @@ export default function SignInClient() {
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/account";
   const [state, action] = useActionState(signInAction, initial);
-
-  useEffect(() => {
-    const err = params.get("error");
-    if (err === "CredentialsSignin") {
-      /* shown via form state on submit */
-    }
-  }, [params]);
+  const queryError =
+    params.get("error") === "CredentialsSignin"
+      ? "Invalid email or password."
+      : undefined;
 
   return (
     <AuthShell
@@ -56,14 +53,7 @@ export default function SignInClient() {
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <AuthEmailInput />
         <PasswordField autoComplete="current-password" />
-        <AuthError
-          message={
-            state.error ||
-            (params.get("error") === "CredentialsSignin"
-              ? "Invalid email or password."
-              : undefined)
-          }
-        />
+        <AuthError message={state.error || queryError} />
         <SubmitButton />
       </form>
       <AuthSocialBlock callbackUrl={callbackUrl} />
