@@ -22,15 +22,31 @@ export default async function LiveIndexPage() {
     return rank(a) - rank(b);
   });
 
-  const byCategory = new Map<ProductCategory, LiveStream[]>();
-  for (const stream of liveFirst) {
+  const withSellers = await Promise.all(
+    liveFirst.map(async (stream) => ({
+      stream,
+      seller: await getSeller(stream.sellerId),
+    })),
+  );
+
+  const byCategory = new Map<
+    ProductCategory,
+    { stream: LiveStream; sellerName: string }[]
+  >();
+
+  for (const row of withSellers) {
     const cats =
-      stream.categories.length > 0
-        ? stream.categories
+      row.stream.categories.length > 0
+        ? row.stream.categories
         : (["miscellaneous"] as ProductCategory[]);
     for (const cat of cats) {
       const list = byCategory.get(cat) ?? [];
-      if (!list.some((s) => s.id === stream.id)) list.push(stream);
+      if (!list.some((s) => s.stream.id === row.stream.id)) {
+        list.push({
+          stream: row.stream,
+          sellerName: row.seller?.name ?? "Seller",
+        });
+      }
       byCategory.set(cat, list);
     }
   }
@@ -42,7 +58,7 @@ export default async function LiveIndexPage() {
     }),
   );
 
-  const uncategorized = liveFirst.filter((s) => !s.categories.length);
+  const uncategorized = withSellers.filter((r) => !r.stream.categories.length);
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
@@ -93,8 +109,11 @@ export default async function LiveIndexPage() {
                     {meta.name}
                   </h2>
                   <p className="text-[11px] text-hubsom-ink/55">
-                    {catStreams.filter((s) => s.status === "live").length} live
-                    · {catStreams.length} total
+                    {
+                      catStreams.filter((s) => s.stream.status === "live")
+                        .length
+                    }{" "}
+                    live · {catStreams.length} total
                   </p>
                 </div>
               </div>
@@ -107,53 +126,49 @@ export default async function LiveIndexPage() {
             </div>
 
             <div className="scrollbar-thin -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-1">
-              {await Promise.all(
-                catStreams.map(async (stream) => {
-                  const seller = await getSeller(stream.sellerId);
-                  const cover =
-                    stream.cover?.startsWith("http") ||
-                    stream.cover?.startsWith("/")
-                      ? stream.cover
-                      : categoryImage(meta.slug);
+              {catStreams.map(({ stream, sellerName }) => {
+                const cover =
+                  stream.cover?.startsWith("http") ||
+                  stream.cover?.startsWith("/")
+                    ? stream.cover
+                    : categoryImage(meta.slug);
 
-                  return (
-                    <Link
-                      key={`${meta.slug}-${stream.id}`}
-                      href={`/live/${stream.id}`}
-                      className="w-[7.25rem] shrink-0"
-                    >
-                      <div className="relative aspect-[3/4] overflow-hidden rounded-[1.1rem] bg-hubsom-night ring-1 ring-black/10">
-                        <Image
-                          src={cover}
-                          alt=""
-                          fill
-                          sizes="116px"
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
-                        <span
-                          className={`absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase text-white ${
-                            stream.status === "live"
-                              ? "bg-hubsom-live"
-                              : "bg-black/55"
-                          }`}
-                        >
-                          {stream.status}
-                        </span>
-                        <div className="absolute inset-x-0 bottom-0 p-2.5 text-white">
-                          <p className="line-clamp-2 font-display text-[12px] font-bold leading-snug">
-                            {stream.title}
-                          </p>
-                          <p className="mt-0.5 truncate text-[10px] text-white/75">
-                            {seller?.name ?? "Seller"} ·{" "}
-                            {stream.viewerCount.toLocaleString()}
-                          </p>
-                        </div>
+                return (
+                  <Link
+                    key={`${meta.slug}-${stream.id}`}
+                    href={`/live/${stream.id}`}
+                    className="w-[7.25rem] shrink-0"
+                  >
+                    <div className="relative aspect-[3/4] overflow-hidden rounded-[1.1rem] bg-hubsom-night ring-1 ring-black/10">
+                      <Image
+                        src={cover}
+                        alt=""
+                        fill
+                        sizes="116px"
+                        className="object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+                      <span
+                        className={`absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase text-white ${
+                          stream.status === "live"
+                            ? "bg-hubsom-live"
+                            : "bg-black/55"
+                        }`}
+                      >
+                        {stream.status}
+                      </span>
+                      <div className="absolute inset-x-0 bottom-0 p-2.5 text-white">
+                        <p className="line-clamp-2 font-display text-[12px] font-bold leading-snug">
+                          {stream.title}
+                        </p>
+                        <p className="mt-0.5 truncate text-[10px] text-white/75">
+                          {sellerName} · {stream.viewerCount.toLocaleString()}
+                        </p>
                       </div>
-                    </Link>
-                  );
-                }),
-              )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </section>
         ))}
@@ -164,31 +179,26 @@ export default async function LiveIndexPage() {
               Other shows
             </h2>
             <div className="space-y-2">
-              {await Promise.all(
-                uncategorized.map(async (stream) => {
-                  const seller = await getSeller(stream.sellerId);
-                  return (
-                    <Link
-                      key={stream.id}
-                      href={`/live/${stream.id}`}
-                      className="block rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-display text-base font-bold text-hubsom-ink">
-                          {stream.title}
-                        </p>
-                        <span className="rounded-md bg-hubsom-live px-2 py-1 text-[10px] font-bold uppercase text-white">
-                          {stream.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-hubsom-ink/55">
-                        {seller?.name ?? "Seller"} ·{" "}
-                        {stream.viewerCount.toLocaleString()} viewers
-                      </p>
-                    </Link>
-                  );
-                }),
-              )}
+              {uncategorized.map(({ stream, seller }) => (
+                <Link
+                  key={stream.id}
+                  href={`/live/${stream.id}`}
+                  className="block rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-display text-base font-bold text-hubsom-ink">
+                      {stream.title}
+                    </p>
+                    <span className="rounded-md bg-hubsom-live px-2 py-1 text-[10px] font-bold uppercase text-white">
+                      {stream.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-hubsom-ink/55">
+                    {seller?.name ?? "Seller"} ·{" "}
+                    {stream.viewerCount.toLocaleString()} viewers
+                  </p>
+                </Link>
+              ))}
             </div>
           </section>
         ) : null}
