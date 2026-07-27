@@ -6,10 +6,11 @@ import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { FollowButton } from "@/components/sellers/FollowButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { auth } from "@/auth";
-import { isFollowingSeller } from "@/lib/data/follows";
+import { isFollowingSeller, isOwnSellerStore } from "@/lib/data/follows";
 import { getFlashSaleProducts, listProducts } from "@/lib/data/products";
 import { listSellers } from "@/lib/data/sellers";
 import { listAllStreams } from "@/lib/data/stream-registry";
+import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -24,15 +25,14 @@ export default async function HomePage() {
   const live = streams.filter((s) => s.status === "live");
   const featured = products.slice(0, 6);
   const userId = session?.user?.id;
+  const user = userId ? await getUserById(userId) : null;
 
   const followState = userId
     ? await Promise.all(
         sellers.map(async (seller) => ({
           id: seller.id,
           following: await isFollowingSeller(userId, seller.id),
-          isOwnStore:
-            seller.ownerUserId === userId ||
-            session?.user?.sellerId === seller.id,
+          isOwnStore: isOwnSellerStore(user, seller),
         })),
       )
     : sellers.map((seller) => ({

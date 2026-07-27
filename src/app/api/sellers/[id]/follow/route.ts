@@ -3,9 +3,11 @@ import { auth } from "@/auth";
 import {
   followSeller,
   isFollowingSeller,
+  isOwnSellerStore,
   unfollowSeller,
 } from "@/lib/data/follows";
 import { getSeller } from "@/lib/data/sellers";
+import { getUserById } from "@/lib/data/users";
 
 export async function GET(
   _request: Request,
@@ -17,7 +19,10 @@ export async function GET(
   }
 
   const { id } = await context.params;
-  const seller = await getSeller(id);
+  const [seller, user] = await Promise.all([
+    getSeller(id),
+    getUserById(session.user.id),
+  ]);
   if (!seller) {
     return NextResponse.json({ error: "Seller not found" }, { status: 404 });
   }
@@ -26,9 +31,7 @@ export async function GET(
   return NextResponse.json({
     following,
     followers: seller.followers,
-    isOwnStore:
-      seller.ownerUserId === session.user.id ||
-      session.user.sellerId === seller.id,
+    isOwnStore: isOwnSellerStore(user, seller),
   });
 }
 
@@ -42,6 +45,20 @@ export async function POST(
   }
 
   const { id } = await context.params;
+  const [seller, user] = await Promise.all([
+    getSeller(id),
+    getUserById(session.user.id),
+  ]);
+  if (!seller) {
+    return NextResponse.json({ error: "Seller not found" }, { status: 404 });
+  }
+  if (isOwnSellerStore(user, seller)) {
+    return NextResponse.json(
+      { error: "You can’t follow yourself" },
+      { status: 400 },
+    );
+  }
+
   try {
     const result = await followSeller(session.user.id, id);
     return NextResponse.json({

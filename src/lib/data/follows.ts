@@ -8,6 +8,16 @@ import {
 import type { Seller } from "@/types";
 import type { HubsomUser, PublicUser } from "@/types/auth";
 
+export function isOwnSellerStore(
+  user: Pick<HubsomUser, "id" | "sellerId"> | null | undefined,
+  seller: Pick<Seller, "id" | "ownerUserId"> | null | undefined,
+): boolean {
+  if (!user || !seller) return false;
+  if (user.sellerId && user.sellerId === seller.id) return true;
+  if (seller.ownerUserId && seller.ownerUserId === user.id) return true;
+  return false;
+}
+
 export async function isFollowingSeller(
   userId: string,
   sellerId: string,
@@ -22,16 +32,20 @@ export async function listFollowedSellers(userId: string): Promise<Seller[]> {
   const sellers = await Promise.all(
     user.followingSellerIds.map((id) => getSeller(id)),
   );
-  return sellers.filter((s): s is Seller => Boolean(s));
+  return sellers.filter(
+    (s): s is Seller => Boolean(s) && !isOwnSellerStore(user, s),
+  );
 }
 
 /** Users who follow this seller’s store. */
 export async function listFollowersForSeller(
   sellerId: string,
 ): Promise<PublicUser[]> {
+  const seller = await getSeller(sellerId);
   const users = await listUsers();
   return users
     .filter((u) => u.followingSellerIds?.includes(sellerId))
+    .filter((u) => !isOwnSellerStore(u, seller))
     .map((u) => toPublicUser(u));
 }
 
@@ -43,12 +57,12 @@ export async function getFollowCounts(userId: string): Promise<{
   const user = await getUserById(userId);
   if (!user) return { followingCount: 0, followersCount: 0 };
 
-  const followingCount = user.followingSellerIds?.length ?? 0;
+  const followingCount = (await listFollowedSellers(userId)).length;
   let followersCount = 0;
   const sellerId = user.sellerId;
   if (sellerId) {
     const followers = await listFollowersForSeller(sellerId);
-    followersCount = followers.length;
+    followersCount = followers.filter((f) => f.id !== userId).length;
   }
 
   return { followingCount, followersCount, sellerId };
@@ -64,11 +78,8 @@ export async function followSeller(
   ]);
   if (!user) throw new Error("User not found");
   if (!seller) throw new Error("Seller not found");
-  if (seller.ownerUserId && seller.ownerUserId === userId) {
-    throw new Error("You can’t follow your own store");
-  }
-  if (user.sellerId && user.sellerId === sellerId) {
-    throw new Error("You can’t follow your own store");
+  if (isOwnSellerStore(user, seller)) {
+    throw new Error("You can’t follow yourself");
   }
 
   const followingSellerIds = Array.from(

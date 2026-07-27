@@ -32,13 +32,22 @@ export function FollowButton({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  if (isOwnStore) return null;
+  const ownStore =
+    isOwnStore ||
+    Boolean(session?.user?.sellerId && session.user.sellerId === sellerId);
+
+  if (ownStore) return null;
 
   function toggle() {
     if (status === "unauthenticated" || !session?.user) {
       router.push(
         `/auth/sign-in?callbackUrl=${encodeURIComponent(window.location.pathname)}`,
       );
+      return;
+    }
+
+    if (session.user.sellerId && session.user.sellerId === sellerId) {
+      setError("You can’t follow yourself");
       return;
     }
 

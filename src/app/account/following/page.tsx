@@ -130,6 +130,10 @@ export default async function ConnectionsPage({
                     sellerId={seller.id}
                     initialFollowing
                     initialFollowers={seller.followers}
+                    isOwnStore={
+                      Boolean(user?.sellerId && user.sellerId === seller.id) ||
+                      seller.ownerUserId === session.user.id
+                    }
                     size="sm"
                     className="shrink-0"
                   />
