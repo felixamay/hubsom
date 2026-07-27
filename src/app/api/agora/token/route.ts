@@ -4,15 +4,22 @@ import type { AgoraTokenRequest, AgoraTokenResponse } from "@/lib/streaming/agor
 
 export const runtime = "nodejs";
 
+function numericUid(uid: string | number | undefined): number {
+  if (typeof uid === "number" && Number.isFinite(uid)) return Math.abs(Math.floor(uid));
+  if (typeof uid === "string" && /^\d+$/.test(uid)) return Number(uid);
+  // Agora allows 0 for auto-assign on some clients; we prefer explicit random uid
+  return Math.floor(Math.random() * 100_000_000) + 1;
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as AgoraTokenRequest;
-  const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID ?? "";
-  const certificate = process.env.AGORA_APP_CERTIFICATE ?? "";
+  const appId = (process.env.NEXT_PUBLIC_AGORA_APP_ID ?? "").trim();
+  const certificate = (process.env.AGORA_APP_CERTIFICATE ?? "").trim();
   const channelName = body.channelName?.trim();
-  const uid = body.uid ?? 0;
   const expireSeconds = body.expireSeconds ?? 3600;
   const role =
     body.role === "publisher" ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
+  const uid = numericUid(body.uid);
 
   if (!channelName) {
     return NextResponse.json({ error: "channelName required" }, { status: 400 });
@@ -20,24 +27,40 @@ export async function POST(request: Request) {
 
   const expiresAt = Math.floor(Date.now() / 1000) + expireSeconds;
 
-  if (!appId || !certificate) {
+  if (!appId) {
     const demo: AgoraTokenResponse = {
-      appId: appId || "DEMO_APP_ID",
+      appId: "DEMO_APP_ID",
       channelName,
       token: null,
       uid,
       role: body.role,
       demoMode: true,
+      certificateRequired: false,
       expiresAt,
     };
     return NextResponse.json(demo);
+  }
+
+  // Project without App Certificate: null token is valid.
+  if (!certificate) {
+    const open: AgoraTokenResponse = {
+      appId,
+      channelName,
+      token: null,
+      uid,
+      role: body.role,
+      demoMode: false,
+      certificateRequired: false,
+      expiresAt,
+    };
+    return NextResponse.json(open);
   }
 
   const token = RtcTokenBuilder.buildTokenWithUid(
     appId,
     certificate,
     channelName,
-    typeof uid === "string" ? 0 : uid,
+    uid,
     role,
     expireSeconds,
     expireSeconds,
@@ -50,6 +73,7 @@ export async function POST(request: Request) {
     uid,
     role: body.role,
     demoMode: false,
+    certificateRequired: true,
     expiresAt,
   };
 

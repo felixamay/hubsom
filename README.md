@@ -31,11 +31,22 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Agora (production live video)
 
-1. Create a project in the [Agora Console](https://console.agora.io).
-2. Set `NEXT_PUBLIC_AGORA_APP_ID` and `AGORA_APP_CERTIFICATE` in `.env.local`.
-3. Restart the dev server.
+Provide these so hosts can go live with real camera/mic:
 
-Without credentials, the live room uses Hubsom’s demo engine UI while the rest of the commerce stack (chat, reactions, pinning, auctions, cart, inventory sync) remains fully interactive.
+| Variable | Required | Where to get it |
+| --- | --- | --- |
+| `NEXT_PUBLIC_AGORA_APP_ID` | **Yes** | [Agora Console](https://console.agora.io) → Project → **App ID** |
+| `AGORA_APP_CERTIFICATE` | **Yes (recommended)** | Project → **App Certificate** → enable & copy primary |
+
+```bash
+cp .env.example .env.local
+# paste App ID + Certificate, then:
+npm run dev
+```
+
+Then open **Sell → Go live → Start show as host** and allow camera/mic.
+
+Without credentials, commerce features still work (chat, pin, auction, cart); video stays in demo mode. Check `/api/agora/status` for current config.
 
 ## Key routes
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { SEED_CHAT, getStream } from "@/lib/data/streams";
+import { SEED_CHAT } from "@/lib/data/streams";
+import { getStreamById } from "@/lib/data/stream-registry";
 
 const runtimeChat = new Map<string, Array<(typeof SEED_CHAT)[number]>>();
 
@@ -8,7 +9,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  if (!getStream(id)) {
+  if (!getStreamById(id)) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
   const seeded = SEED_CHAT.filter((m) => m.streamId === id);
@@ -21,7 +22,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  if (!getStream(id)) {
+  if (!getStreamById(id)) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
 
@@ -36,7 +37,6 @@ export async function POST(
     return NextResponse.json({ error: "text required" }, { status: 400 });
   }
 
-  // Lightweight AI moderation heuristic for demo (toxicity / spam patterns)
   const blocked =
     /\b(scam|hate|kill|xxx)\b/i.test(text) || text.length > 280;
   if (blocked) {

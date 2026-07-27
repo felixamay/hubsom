@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getStream } from "@/lib/data/streams";
+import { getStreamById } from "@/lib/data/stream-registry";
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  if (!getStream(id)) {
+  if (!getStreamById(id)) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
 

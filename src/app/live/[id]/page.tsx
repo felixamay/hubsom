@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { LiveRoom } from "@/components/live/LiveRoom";
 import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
-import { getStream, SEED_CHAT } from "@/lib/data/streams";
+import { getStreamById } from "@/lib/data/stream-registry";
+import { SEED_CHAT } from "@/lib/data/streams";
 
 export async function generateMetadata({
   params,
@@ -11,7 +12,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const stream = getStream(id);
+  const stream = getStreamById(id);
   return {
     title: stream?.title ?? "Live show",
     description: stream?.description,
@@ -27,7 +28,7 @@ export default async function LiveShowPage({
 }) {
   const { id } = await params;
   const { host } = await searchParams;
-  const stream = getStream(id);
+  const stream = getStreamById(id);
   if (!stream) notFound();
 
   const seller = getSeller(stream.sellerId);

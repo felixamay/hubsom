@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { formatCompactGhs, formatGhs } from "@/lib/currency";
-import { SELLER_ANALYTICS, VIEWER_ANALYTICS, getLiveStreams } from "@/lib/data/streams";
+import { SELLER_ANALYTICS, VIEWER_ANALYTICS } from "@/lib/data/streams";
+import { listAllStreams } from "@/lib/data/stream-registry";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function DashboardPage() {
   const seller = SELLER_ANALYTICS[0];
   const viewer = VIEWER_ANALYTICS[0];
-  const live = getLiveStreams();
+  const live = listAllStreams().filter((s) => s.status === "live");
 
   const cards = [
     { label: "Revenue", value: formatCompactGhs(seller.revenueGhs) },

@@ -4,11 +4,12 @@ import { Hero } from "@/components/home/Hero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { getFlashSaleProducts, PRODUCTS } from "@/lib/data/products";
-import { getLiveStreams, STREAMS } from "@/lib/data/streams";
+import { listAllStreams } from "@/lib/data/stream-registry";
 import { SELLERS } from "@/lib/data/sellers";
 
 export default function HomePage() {
-  const live = getLiveStreams();
+  const streams = listAllStreams();
+  const live = streams.filter((s) => s.status === "live");
   const featured = PRODUCTS.slice(0, 6);
   const flash = getFlashSaleProducts();
 
@@ -17,7 +18,7 @@ export default function HomePage() {
       <Hero />
       <CategoryRail />
       <LiveStrip
-        streams={[...live, ...STREAMS.filter((s) => s.status !== "live")].slice(0, 2)}
+        streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(0, 2)}
       />
 
       <section className="px-4 py-6">

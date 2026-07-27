@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import {
   SELLER_ANALYTICS,
   VIEWER_ANALYTICS,
-  getStream,
 } from "@/lib/data/streams";
+import { getStreamById } from "@/lib/data/stream-registry";
 
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const stream = getStream(id);
+  const stream = getStreamById(id);
   if (!stream) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
