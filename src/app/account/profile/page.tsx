@@ -91,9 +91,17 @@ export default function ProfileEditorPage() {
     }
   }
 
-  if (status === "loading" || !session) {
+  if (status === "loading") {
     return (
       <div className="px-4 py-10 text-sm text-hubsom-ink/60">Loading profile…</div>
+    );
+  }
+
+  if (status === "unauthenticated" || !session) {
+    return (
+      <div className="px-4 py-10 text-sm text-hubsom-ink/60">
+        Redirecting to sign in…
+      </div>
     );
   }
 

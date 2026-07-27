@@ -65,7 +65,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
-        const email = String(credentials?.email ?? "");
+        const email = String(credentials?.email ?? "")
+          .trim()
+          .toLowerCase();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
         const user = await verifyEmailPassword(email, password);
@@ -108,6 +110,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async jwt({ token, user, trigger, session }) {
       if (user?.id) {
+        token.sub = user.id;
         token.userId = user.id;
         token.role = user.role;
         token.phone = user.phone;

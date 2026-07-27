@@ -27,15 +27,15 @@ export function SocialAuthButtons({
 
   if (!social.length) {
     return (
-      <p className="rounded-xl border border-dashed border-hubsom-forest/20 bg-hubsom-mist/60 px-3 py-3 text-center text-xs text-hubsom-ink/60">
-        Social sign-in is ready — add Google, Facebook, or Apple credentials in
-        env to enable the buttons.
-      </p>
+      <div className="rounded-xl border border-hubsom-forest/10 bg-hubsom-mist/70 px-3.5 py-3 text-center text-xs leading-relaxed text-hubsom-ink/60">
+        Social sign-in is available once Google, Facebook, or Apple keys are
+        added to your environment.
+      </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {social.map((provider) => {
         if (provider === "credentials") return null;
         return (
@@ -47,7 +47,7 @@ export function SocialAuthButtons({
               setBusy(provider);
               void signIn(provider, { callbackUrl });
             }}
-            className="w-full rounded-xl border border-hubsom-forest/15 bg-white py-2.5 text-sm font-semibold text-hubsom-ink disabled:opacity-60"
+            className="w-full rounded-xl border border-hubsom-forest/12 bg-white py-3 text-sm font-semibold text-hubsom-ink transition hover:border-hubsom-cyan/40 hover:bg-hubsom-mist/80 disabled:opacity-60"
           >
             {busy === provider ? "Redirecting…" : LABELS[provider]}
           </button>
