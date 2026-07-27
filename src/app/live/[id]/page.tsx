@@ -6,13 +6,15 @@ import { getSeller } from "@/lib/data/sellers";
 import { getStreamById } from "@/lib/data/stream-registry";
 import { SEED_CHAT } from "@/lib/data/streams";
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const stream = getStreamById(id);
+  const stream = await getStreamById(id);
   return {
     title: stream?.title ?? "Live show",
     description: stream?.description,
@@ -28,7 +30,7 @@ export default async function LiveShowPage({
 }) {
   const { id } = await params;
   const { host } = await searchParams;
-  const stream = getStreamById(id);
+  const stream = await getStreamById(id);
   if (!stream) notFound();
 
   const seller = getSeller(stream.sellerId);

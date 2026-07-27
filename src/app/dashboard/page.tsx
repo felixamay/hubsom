@@ -8,10 +8,10 @@ export const metadata: Metadata = {
   title: "Dashboard",
 };
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
   const seller = SELLER_ANALYTICS[0];
   const viewer = VIEWER_ANALYTICS[0];
-  const live = listAllStreams().filter((s) => s.status === "live");
+  const live = (await listAllStreams()).filter((s) => s.status === "live");
 
   const cards = [
     { label: "Revenue", value: formatCompactGhs(seller.revenueGhs) },

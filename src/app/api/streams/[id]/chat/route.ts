@@ -9,7 +9,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  if (!getStreamById(id)) {
+  if (!(await getStreamById(id))) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
   const seeded = SEED_CHAT.filter((m) => m.streamId === id);
@@ -22,7 +22,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  if (!getStreamById(id)) {
+  if (!(await getStreamById(id))) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
 

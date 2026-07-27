@@ -7,8 +7,8 @@ import { getFlashSaleProducts, PRODUCTS } from "@/lib/data/products";
 import { listAllStreams } from "@/lib/data/stream-registry";
 import { SELLERS } from "@/lib/data/sellers";
 
-export default function HomePage() {
-  const streams = listAllStreams();
+export default async function HomePage() {
+  const streams = await listAllStreams();
   const live = streams.filter((s) => s.status === "live");
   const featured = PRODUCTS.slice(0, 6);
   const flash = getFlashSaleProducts();

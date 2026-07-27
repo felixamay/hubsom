@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
+import type { LiveStream } from "@/types";
 import { getStreamById, patchStream } from "@/lib/data/stream-registry";
 
 export async function GET(
@@ -8,7 +9,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const stream = getStreamById(id);
+  const stream = await getStreamById(id);
   if (!stream) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }
@@ -62,7 +63,7 @@ export async function PATCH(
     viewerCount?: number;
   };
 
-  const patch: Record<string, unknown> = {};
+  const patch: Partial<LiveStream> = {};
   if (body.pinnedProductId) patch.pinnedProductId = body.pinnedProductId;
   if (typeof body.viewerCount === "number") patch.viewerCount = body.viewerCount;
   if (body.recording) {
@@ -78,7 +79,7 @@ export async function PATCH(
     patch.replayAvailable = true;
   }
 
-  const stream = patchStream(id, patch);
+  const stream = await patchStream(id, patch);
   if (!stream) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }

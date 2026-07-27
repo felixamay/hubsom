@@ -10,7 +10,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const stream = getStreamById(id);
+  const stream = await getStreamById(id);
   if (!stream) {
     return NextResponse.json({ error: "Stream not found" }, { status: 404 });
   }

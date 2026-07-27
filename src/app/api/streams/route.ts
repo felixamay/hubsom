@@ -4,7 +4,7 @@ import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 
 export async function GET() {
-  const streams = listAllStreams().map((stream) => ({
+  const streams = (await listAllStreams()).map((stream) => ({
     ...stream,
     seller: getSeller(stream.sellerId) ?? null,
   }));
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const stream = createLiveStream({
+  const stream = await createLiveStream({
     title: body.title?.trim() || "Hubsom Live Show",
     description: body.description,
     sellerId: body.sellerId,

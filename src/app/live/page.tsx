@@ -9,8 +9,8 @@ export const metadata: Metadata = {
   description: "Watch Hubsom live commerce shows with mixed product categories.",
 };
 
-export default function LiveIndexPage() {
-  const streams = listAllStreams();
+export default async function LiveIndexPage() {
+  const streams = await listAllStreams();
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
