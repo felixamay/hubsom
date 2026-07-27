@@ -4,10 +4,12 @@ import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 
 export async function GET() {
-  const streams = (await listAllStreams()).map((stream) => ({
-    ...stream,
-    seller: getSeller(stream.sellerId) ?? null,
-  }));
+  const streams = await Promise.all(
+    (await listAllStreams()).map(async (stream) => ({
+      ...stream,
+      seller: (await getSeller(stream.sellerId)) ?? null,
+    })),
+  );
   return NextResponse.json({ streams });
 }
 
@@ -24,7 +26,11 @@ export async function POST(request: Request) {
     startingBidGhs?: number;
   };
 
-  const productIds = (body.productIds ?? []).filter((id) => Boolean(getProduct(id)));
+  const productIds: string[] = [];
+  for (const id of body.productIds ?? []) {
+    if (await getProduct(id)) productIds.push(id);
+  }
+
   if (!productIds.length) {
     return NextResponse.json(
       { error: "Select at least one product for the show" },

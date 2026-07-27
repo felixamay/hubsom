@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProduct } from "@/lib/data/products";
-
-const stockOverrides = new Map<string, number>();
+import { adjustProductStock, getProduct } from "@/lib/data/products";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -14,19 +12,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "productId required" }, { status: 400 });
   }
 
-  const product = getProduct(body.productId);
+  const product = await adjustProductStock(
+    body.productId,
+    body.delta ?? -1,
+  );
   if (!product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
-  const base = stockOverrides.get(body.productId) ?? product.stock;
-  const next = Math.max(0, base + (body.delta ?? -1));
-  stockOverrides.set(body.productId, next);
-
   return NextResponse.json({
     productId: body.productId,
     streamId: body.streamId,
-    stock: next,
+    stock: product.stock,
     syncedAt: new Date().toISOString(),
     realtime: true,
   });
@@ -37,12 +34,12 @@ export async function GET(request: Request) {
   if (!productId) {
     return NextResponse.json({ error: "productId required" }, { status: 400 });
   }
-  const product = getProduct(productId);
+  const product = await getProduct(productId);
   if (!product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
   return NextResponse.json({
     productId,
-    stock: stockOverrides.get(productId) ?? product.stock,
+    stock: product.stock,
   });
 }

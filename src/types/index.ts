@@ -166,6 +166,11 @@ export interface CartItem {
   quantity: number;
   source: "buy-now" | "live" | "auction" | "flash-sale" | "bundle";
   streamId?: string;
+  /** Snapshot at add-time so the cart works without catalog hydration */
+  name: string;
+  priceGhs: number;
+  image?: string;
+  category?: ProductCategory;
 }
 
 export interface ViewerAnalytics {

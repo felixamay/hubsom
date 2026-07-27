@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { formatCompactGhs, formatGhs } from "@/lib/currency";
-import { SELLER_ANALYTICS, VIEWER_ANALYTICS } from "@/lib/data/streams";
+import { getPlatformAnalytics } from "@/lib/data/analytics";
 import { listAllStreams } from "@/lib/data/stream-registry";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
 
 export default async function DashboardPage() {
-  const seller = SELLER_ANALYTICS[0];
-  const viewer = VIEWER_ANALYTICS[0];
-  const live = (await listAllStreams()).filter((s) => s.status === "live");
+  const [{ seller, viewer }, streams] = await Promise.all([
+    getPlatformAnalytics(),
+    listAllStreams(),
+  ]);
+  const live = streams.filter((s) => s.status === "live");
 
   const cards = [
     { label: "Revenue", value: formatCompactGhs(seller.revenueGhs) },
@@ -33,7 +38,7 @@ export default async function DashboardPage() {
             Dashboard
           </h1>
           <p className="mt-2 text-sm text-hubsom-ink/65">
-            Live commerce performance across every category.
+            Live commerce performance from real orders and shows.
           </p>
         </div>
         <Link
@@ -68,14 +73,22 @@ export default async function DashboardPage() {
           {formatGhs(seller.revenueGhs)}
         </p>
         <p className="mt-2 text-sm text-white/65">
-          Makola Mix Live · inventory sync {seller.inventorySyncEvents.toLocaleString()}{" "}
-          events
+          From confirmed checkout volume · inventory sync{" "}
+          {seller.inventorySyncEvents.toLocaleString()} events
         </p>
       </div>
 
       <div className="mt-5">
         <h2 className="font-display text-xl font-bold text-hubsom-ink">Live now</h2>
         <div className="mt-3 space-y-2">
+          {!live.length && (
+            <EmptyState
+              title="Nothing live"
+              body="Start a show to see live metrics here."
+              actionHref="/seller/go-live"
+              actionLabel="Go live"
+            />
+          )}
           {live.map((stream) => (
             <Link
               key={stream.id}

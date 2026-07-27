@@ -3,19 +3,27 @@ import { CategoryRail } from "@/components/home/CategoryRail";
 import { Hero } from "@/components/home/Hero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
-import { getFlashSaleProducts, PRODUCTS } from "@/lib/data/products";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { getFlashSaleProducts, listProducts } from "@/lib/data/products";
+import { listSellers } from "@/lib/data/sellers";
 import { listAllStreams } from "@/lib/data/stream-registry";
-import { SELLERS } from "@/lib/data/sellers";
+
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const streams = await listAllStreams();
+  const [streams, products, flash, sellers] = await Promise.all([
+    listAllStreams(),
+    listProducts(),
+    getFlashSaleProducts(),
+    listSellers(),
+  ]);
   const live = streams.filter((s) => s.status === "live");
-  const featured = PRODUCTS.slice(0, 6);
-  const flash = getFlashSaleProducts();
+  const featured = products.slice(0, 6);
+  const liveHref = live[0] ? `/live/${live[0].id}` : "/live";
 
   return (
     <>
-      <Hero />
+      <Hero liveHref={liveHref} hasLive={live.length > 0} />
       <CategoryRail />
       <LiveStrip
         streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(0, 2)}
@@ -33,7 +41,16 @@ export default async function HomePage() {
             Marketplace
           </Link>
         </div>
-        <ProductGrid products={featured} />
+        {featured.length ? (
+          <ProductGrid products={featured} />
+        ) : (
+          <EmptyState
+            title="No listings yet"
+            body="Add your first product to start selling on Hubsom."
+            actionHref="/seller/products/new"
+            actionLabel="Add product"
+          />
+        )}
       </section>
 
       <section className="px-4 py-6">
@@ -48,13 +65,30 @@ export default async function HomePage() {
             All
           </Link>
         </div>
-        <ProductGrid products={flash} />
+        {flash.length ? (
+          <ProductGrid products={flash} />
+        ) : (
+          <EmptyState
+            title="No flash sales live"
+            body="Create a product with a flash sale window from the seller tools."
+            actionHref="/seller/products/new"
+            actionLabel="Create listing"
+          />
+        )}
       </section>
 
       <section className="px-4 py-6">
         <h2 className="font-display text-xl font-bold text-hubsom-forest">Stores</h2>
         <div className="mt-3 space-y-3">
-          {SELLERS.map((seller) => (
+          {!sellers.length && (
+            <EmptyState
+              title="No stores yet"
+              body="Set up your seller storefront and go live."
+              actionHref="/seller"
+              actionLabel="Open seller hub"
+            />
+          )}
+          {sellers.map((seller) => (
             <Link
               key={seller.id}
               href={`/stores/${seller.slug}`}

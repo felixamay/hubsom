@@ -32,6 +32,7 @@ import { LiveChat } from "@/components/live/LiveChat";
 import { ModeratorPanel } from "@/components/live/ModeratorPanel";
 import { PinnedProduct } from "@/components/live/PinnedProduct";
 import { ProductCarousel } from "@/components/live/ProductCarousel";
+import { getEffectivePrice } from "@/lib/pricing";
 import { useCartStore } from "@/lib/stores/cart";
 import { useLiveStore } from "@/lib/stores/live";
 import type { ChatMessage, LiveStream, Product, Seller } from "@/types";
@@ -104,6 +105,10 @@ export function LiveRoom({
       quantity: 1,
       source: "live",
       streamId: stream.id,
+      name: product.name,
+      priceGhs: getEffectivePrice(product),
+      image: product.images[0],
+      category: product.category,
     });
     setCartOpen(true);
     setShopOpen(false);

@@ -1,45 +1,63 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PRODUCTS } from "@/lib/data/products";
 import { categoryName } from "@/lib/categories";
 import type { AgoraStatusResponse } from "@/lib/streaming/agora";
+import type { Product } from "@/types";
 
 export default function GoLivePage() {
   const router = useRouter();
-  const [title, setTitle] = useState("Makola Mix Live — Groceries to Gadgets");
-  const [description, setDescription] = useState(
-    "One show, every category: groceries, phones, sneakers, watches — pin, bid, checkout.",
-  );
-  const [selected, setSelected] = useState<string[]>([
-    "prod-tomatoes",
-    "prod-rice",
-    "prod-oil",
-    "prod-phone",
-    "prod-sneakers",
-    "prod-watch",
-  ]);
-  const [multiHost, setMultiHost] = useState(true);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [multiHost, setMultiHost] = useState(false);
   const [enableRecording, setEnableRecording] = useState(true);
-  const [enableAuction, setEnableAuction] = useState(true);
-  const [auctionProduct, setAuctionProduct] = useState("prod-phone");
-  const [startingBid, setStartingBid] = useState(2400);
+  const [enableAuction, setEnableAuction] = useState(false);
+  const [auctionProduct, setAuctionProduct] = useState("");
+  const [startingBid, setStartingBid] = useState(50);
   const [status, setStatus] = useState<AgoraStatusResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingProducts, setLoadingProducts] = useState(true);
 
   useEffect(() => {
     void fetch("/api/agora/status")
       .then((r) => r.json())
       .then((data: AgoraStatusResponse) => setStatus(data))
       .catch(() => undefined);
+
+    void fetch("/api/products")
+      .then((r) => r.json())
+      .then((data: { products: Product[] }) => {
+        setProducts(data.products ?? []);
+        setLoadingProducts(false);
+      })
+      .catch(() => setLoadingProducts(false));
+
+    void fetch("/api/sellers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ensureDefault: true }),
+    }).catch(() => undefined);
   }, []);
 
   const selectedProducts = useMemo(
-    () => PRODUCTS.filter((p) => selected.includes(p.id)),
-    [selected],
+    () => products.filter((p) => selected.includes(p.id)),
+    [products, selected],
   );
+
+  useEffect(() => {
+    if (
+      enableAuction &&
+      selectedProducts.length &&
+      !selectedProducts.some((p) => p.id === auctionProduct)
+    ) {
+      setAuctionProduct(selectedProducts[0].id);
+    }
+  }, [enableAuction, selectedProducts, auctionProduct]);
 
   function toggle(id: string) {
     setSelected((prev) =>
@@ -55,7 +73,7 @@ export default function GoLivePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
+          title: title.trim() || "Hubsom Live Show",
           description,
           productIds: selected,
           pinnedProductId: selected[0],
@@ -84,8 +102,8 @@ export default function GoLivePage() {
         Go live
       </h1>
       <p className="mt-2 text-sm text-hubsom-ink/65">
-        Launch a full Hubsom live commerce show — camera, chat, pins, auctions,
-        cart, and analytics.
+        Launch a live commerce show with your catalog — camera, chat, pins,
+        auctions, and checkout.
       </p>
 
       <div
@@ -104,11 +122,10 @@ export default function GoLivePage() {
         {!status?.configured && (
           <ul className="mt-3 space-y-1 text-xs text-hubsom-ink/65">
             <li>
-              Provide <code className="text-hubsom-blue">NEXT_PUBLIC_AGORA_APP_ID</code>
+              Set <code className="text-hubsom-blue">NEXT_PUBLIC_AGORA_APP_ID</code>
             </li>
             <li>
-              Provide <code className="text-hubsom-blue">AGORA_APP_CERTIFICATE</code>{" "}
-              (if certificate is enabled)
+              Set <code className="text-hubsom-blue">AGORA_APP_CERTIFICATE</code>
             </li>
           </ul>
         )}
@@ -120,6 +137,7 @@ export default function GoLivePage() {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            placeholder="Evening market live"
             className="mt-2 w-full rounded-xl border border-hubsom-forest/15 bg-white px-3 py-2.5 outline-none focus:border-hubsom-leaf"
           />
         </label>
@@ -130,16 +148,37 @@ export default function GoLivePage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
+            placeholder="What are you selling tonight?"
             className="mt-2 w-full rounded-xl border border-hubsom-forest/15 bg-white px-3 py-2.5 outline-none focus:border-hubsom-leaf"
           />
         </label>
 
         <div>
-          <p className="text-sm font-semibold text-hubsom-forest">
-            Products for this show
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-hubsom-forest">
+              Products for this show
+            </p>
+            <Link
+              href="/seller/products/new"
+              className="text-xs font-bold text-hubsom-cyan"
+            >
+              Add product
+            </Link>
+          </div>
           <div className="mt-2 max-h-56 space-y-2 overflow-y-auto">
-            {PRODUCTS.map((product) => (
+            {loadingProducts && (
+              <p className="text-sm text-hubsom-ink/55">Loading catalog…</p>
+            )}
+            {!loadingProducts && !products.length && (
+              <p className="rounded-xl border border-dashed border-hubsom-forest/20 px-3 py-6 text-center text-sm text-hubsom-ink/60">
+                No products yet.{" "}
+                <Link href="/seller/products/new" className="font-bold text-hubsom-cyan">
+                  Create one
+                </Link>{" "}
+                before going live.
+              </p>
+            )}
+            {products.map((product) => (
               <label
                 key={product.id}
                 className="flex cursor-pointer items-start gap-3 rounded-xl border border-hubsom-forest/10 px-3 py-2.5"
@@ -155,7 +194,7 @@ export default function GoLivePage() {
                     {product.name}
                   </span>
                   <span className="text-[11px] text-hubsom-ink/55">
-                    {categoryName(product.category)}
+                    {categoryName(product.category)} · stock {product.stock}
                   </span>
                 </span>
               </label>
@@ -222,22 +261,6 @@ export default function GoLivePage() {
             </label>
           </div>
         )}
-
-        <div className="rounded-2xl bg-hubsom-mist p-3 text-xs text-hubsom-ink/75">
-          <p className="font-semibold text-hubsom-forest">Included on go-live</p>
-          <ul className="mt-2 list-disc space-y-1 pl-4">
-            <li>Agora ultra-low latency video (HD / FHD, adaptive bitrate)</li>
-            <li>Realtime chat + AI moderation</li>
-            <li>Floating reactions · product pinning · live carousel</li>
-            <li>Live cart · one-tap checkout · inventory sync</li>
-            <li>Auctions + countdown · multi-host · moderator tools</li>
-            <li>PiP · recording/replay hooks · push notify · analytics</li>
-            <li>
-              {selectedProducts.length} products ·{" "}
-              {new Set(selectedProducts.map((p) => p.category)).size} categories
-            </li>
-          </ul>
-        </div>
 
         {error && <p className="text-sm text-hubsom-live">{error}</p>}
 

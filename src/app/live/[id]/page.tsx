@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LiveRoom } from "@/components/live/LiveRoom";
+import { listChatMessages } from "@/lib/data/chat";
 import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getStreamById } from "@/lib/data/stream-registry";
-import { SEED_CHAT } from "@/lib/data/streams";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +33,11 @@ export default async function LiveShowPage({
   const stream = await getStreamById(id);
   if (!stream) notFound();
 
-  const seller = getSeller(stream.sellerId);
-  const products = stream.productIds
-    .map((pid) => getProduct(pid))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p));
-  const chat = SEED_CHAT.filter((m) => m.streamId === stream.id);
+  const seller = await getSeller(stream.sellerId);
+  const products = (
+    await Promise.all(stream.productIds.map((pid) => getProduct(pid)))
+  ).filter((p): p is NonNullable<typeof p> => Boolean(p));
+  const chat = await listChatMessages(stream.id);
 
   return (
     <LiveRoom

@@ -6,18 +6,24 @@ import { motion } from "framer-motion";
 import { Play, Store } from "lucide-react";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 
-export function Hero() {
+export function Hero({
+  liveHref = "/live",
+  hasLive = false,
+}: {
+  liveHref?: string;
+  hasLive?: boolean;
+}) {
   return (
     <section className="relative min-h-[68svh] overflow-hidden text-white">
       <Image
-        src="https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=1600&q=80"
-        alt="Busy Ghana market aisle with fresh goods and shoppers"
+        src="/brand/hubsom-logo.png"
+        alt="Hubsom live commerce"
         fill
         priority
-        className="object-cover"
+        className="object-contain bg-hubsom-night p-16"
         sizes="(max-width:512px) 100vw, 512px"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/25" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/40" />
 
       <div className="relative flex min-h-[68svh] flex-col justify-end px-4 pb-8 pt-10">
         <motion.div
@@ -58,11 +64,11 @@ export function Hero() {
           className="mt-5 flex flex-wrap gap-2"
         >
           <Link
-            href="/live/stream-ama-mix"
+            href={liveHref}
             className="inline-flex items-center gap-2 rounded-xl bg-hubsom-gold px-4 py-2.5 text-sm font-bold text-hubsom-ink"
           >
             <Play className="h-4 w-4 fill-current" />
-            Watch live
+            {hasLive ? "Watch live" : "Browse live"}
           </Link>
           <Link
             href="/marketplace"

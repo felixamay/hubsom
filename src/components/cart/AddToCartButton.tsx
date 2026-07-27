@@ -1,22 +1,35 @@
 "use client";
 
 import { useState } from "react";
+import { getEffectivePrice } from "@/lib/pricing";
 import { useCartStore } from "@/lib/stores/cart";
+import type { Product } from "@/types";
 
-export function AddToCartButton({ productId }: { productId: string }) {
+export function AddToCartButton({ product }: { product: Product }) {
   const addItem = useCartStore((s) => s.addItem);
-  const [done, setDone] = useState(false);
+  const [added, setAdded] = useState(false);
+
+  function add() {
+    addItem({
+      productId: product.id,
+      quantity: 1,
+      source: "buy-now",
+      name: product.name,
+      priceGhs: getEffectivePrice(product),
+      image: product.images[0],
+      category: product.category,
+    });
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 1600);
+  }
 
   return (
     <button
       type="button"
-      onClick={() => {
-        addItem({ productId, quantity: 1, source: "buy-now" });
-        setDone(true);
-      }}
-      className="rounded-xl bg-hubsom-forest px-6 py-3 text-sm font-bold text-white transition hover:bg-hubsom-leaf"
+      onClick={add}
+      className="rounded-xl bg-hubsom-forest px-5 py-3 text-sm font-bold text-white"
     >
-      {done ? "Added to cart" : "Buy Now · Add to cart"}
+      {added ? "Added" : "Add to cart"}
     </button>
   );
 }

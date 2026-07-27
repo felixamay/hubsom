@@ -16,18 +16,18 @@ const actions = [
     tone: "bg-hubsom-live text-white",
   },
   {
-    href: "/seller",
-    title: "Seller hub",
-    body: "Manage shows, inventory sync, and guest host invites.",
-    icon: Store,
-    tone: "bg-hubsom-forest text-white",
-  },
-  {
-    href: "/marketplace",
+    href: "/seller/products/new",
     title: "Add listing",
     body: "List any category for Buy Now, flash, bundles, and store shelves.",
     icon: PackagePlus,
     tone: "bg-hubsom-gold text-hubsom-ink",
+  },
+  {
+    href: "/seller",
+    title: "Seller hub",
+    body: "Manage shows, inventory sync, and your storefront.",
+    icon: Store,
+    tone: "bg-hubsom-forest text-white",
   },
   {
     href: "/dashboard",

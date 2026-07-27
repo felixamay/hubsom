@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice, getProduct } from "@/lib/data/products";
 import { useCartStore } from "@/lib/stores/cart";
 
 export default function CartPage() {
@@ -14,16 +13,13 @@ export default function CartPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const lines = items
-    .map((item) => {
-      const product = getProduct(item.productId);
-      if (!product) return null;
-      const unit = getEffectivePrice(product);
-      return { item, product, unit, total: unit * item.quantity };
-    })
-    .filter(Boolean);
+  const lines = items.map((item) => ({
+    item,
+    unit: item.priceGhs,
+    total: item.priceGhs * item.quantity,
+  }));
 
-  const subtotal = lines.reduce((sum, l) => sum + (l?.total ?? 0), 0);
+  const subtotal = lines.reduce((sum, l) => sum + l.total, 0);
 
   async function checkout() {
     setLoading(true);
@@ -45,7 +41,9 @@ export default function CartPage() {
         return;
       }
       clear();
-      setStatus(`Order ${data.orderId} confirmed · ${formatGhs(data.subtotalGhs)}`);
+      setStatus(
+        `Order ${data.orderId} created · ${formatGhs(data.subtotalGhs)} · ${data.status}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -71,54 +69,46 @@ export default function CartPage() {
           </div>
         )}
 
-        {lines.map((line) =>
-          line ? (
-            <div
-              key={line.product.id}
-              className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-hubsom-forest/10 bg-white/70 p-4"
-            >
-              <div>
-                <p className="font-semibold text-hubsom-ink">{line.product.name}</p>
-                <p className="text-xs text-hubsom-ink/55">
-                  {line.item.source} · {formatGhs(line.unit)}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded-lg border border-hubsom-forest/15"
-                  onClick={() =>
-                    setQuantity(line.product.id, line.item.quantity - 1)
-                  }
-                >
-                  −
-                </button>
-                <span className="w-6 text-center font-semibold">
-                  {line.item.quantity}
-                </span>
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded-lg border border-hubsom-forest/15"
-                  onClick={() =>
-                    setQuantity(line.product.id, line.item.quantity + 1)
-                  }
-                >
-                  +
-                </button>
-                <p className="w-24 text-right font-bold text-hubsom-forest">
-                  {formatGhs(line.total)}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => removeItem(line.product.id)}
-                  className="text-xs text-hubsom-live"
-                >
-                  Remove
-                </button>
-              </div>
+        {lines.map(({ item, unit, total }) => (
+          <div
+            key={item.productId}
+            className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-hubsom-forest/10 bg-white/70 p-4"
+          >
+            <div>
+              <p className="font-semibold text-hubsom-ink">{item.name}</p>
+              <p className="text-xs text-hubsom-ink/55">
+                {item.source} · {formatGhs(unit)}
+              </p>
             </div>
-          ) : null,
-        )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="h-8 w-8 rounded-lg border border-hubsom-forest/15"
+                onClick={() => setQuantity(item.productId, item.quantity - 1)}
+              >
+                −
+              </button>
+              <span className="w-6 text-center font-semibold">{item.quantity}</span>
+              <button
+                type="button"
+                className="h-8 w-8 rounded-lg border border-hubsom-forest/15"
+                onClick={() => setQuantity(item.productId, item.quantity + 1)}
+              >
+                +
+              </button>
+              <p className="w-24 text-right font-bold text-hubsom-forest">
+                {formatGhs(total)}
+              </p>
+              <button
+                type="button"
+                onClick={() => removeItem(item.productId)}
+                className="text-xs text-hubsom-live"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
       {!!lines.length && (
@@ -132,10 +122,10 @@ export default function CartPage() {
           <button
             type="button"
             disabled={loading}
-            onClick={checkout}
+            onClick={() => void checkout()}
             className="mt-4 w-full rounded-xl bg-hubsom-forest py-3 text-sm font-bold text-white disabled:opacity-60"
           >
-            {loading ? "Processing…" : "Checkout with Hubsom Pay"}
+            {loading ? "Processing…" : "Checkout"}
           </button>
         </div>
       )}

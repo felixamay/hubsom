@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { getSeller } from "@/lib/data/sellers";
 import { listAllStreams } from "@/lib/data/stream-registry";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
-  title: "Live shopping",
-  description: "Watch Hubsom live commerce shows with mixed product categories.",
+  title: "Live shows",
 };
 
 export default async function LiveIndexPage() {
@@ -20,7 +21,7 @@ export default async function LiveIndexPage() {
             Live
           </h1>
           <p className="mt-2 text-sm text-hubsom-ink/65">
-            Ultra-low latency shopping with chat, pins, auctions, and checkout.
+            Watch sellers pin, auction, and checkout in real time.
           </p>
         </div>
         <Link
@@ -31,39 +32,43 @@ export default async function LiveIndexPage() {
         </Link>
       </div>
 
-      <div className="mt-5 space-y-4">
-        {streams.map((stream) => {
-          const seller = getSeller(stream.sellerId);
-          return (
-            <Link
-              key={stream.id}
-              href={`/live/${stream.id}`}
-              className="block overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/80"
-            >
-              <div className="relative aspect-[16/9]">
-                <Image
-                  src={stream.cover}
-                  alt={stream.title}
-                  fill
-                  className="object-cover"
-                  sizes="100vw"
-                />
-                <span className="absolute left-3 top-3 rounded-md bg-hubsom-live px-2 py-1 text-[10px] font-bold uppercase text-white">
-                  {stream.status}
-                </span>
-              </div>
-              <div className="space-y-1 p-4">
-                <h2 className="font-display text-lg font-semibold text-hubsom-ink">
-                  {stream.title}
-                </h2>
-                <p className="text-xs text-hubsom-ink/60">
-                  {seller?.name} · {stream.viewerCount.toLocaleString()} viewers ·{" "}
-                  {stream.categories.length} categories
+      <div className="mt-5 space-y-3">
+        {!streams.length && (
+          <EmptyState
+            title="No shows yet"
+            body="Start the first Hubsom live commerce show."
+            actionHref="/seller/go-live"
+            actionLabel="Start a show"
+          />
+        )}
+        {await Promise.all(
+          streams.map(async (stream) => {
+            const seller = await getSeller(stream.sellerId);
+            return (
+              <Link
+                key={stream.id}
+                href={`/live/${stream.id}`}
+                className="block rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-display text-lg font-bold text-hubsom-ink">
+                    {stream.title}
+                  </p>
+                  <span className="rounded-md bg-hubsom-live px-2 py-1 text-[10px] font-bold uppercase text-white">
+                    {stream.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-hubsom-ink/55">
+                  {seller?.name ?? "Seller"} · {stream.viewerCount.toLocaleString()}{" "}
+                  viewers
                 </p>
-              </div>
-            </Link>
-          );
-        })}
+                <p className="mt-2 line-clamp-2 text-sm text-hubsom-ink/70">
+                  {stream.description}
+                </p>
+              </Link>
+            );
+          }),
+        )}
       </div>
     </div>
   );

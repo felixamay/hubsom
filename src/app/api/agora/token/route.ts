@@ -28,17 +28,14 @@ export async function POST(request: Request) {
   const expiresAt = Math.floor(Date.now() / 1000) + expireSeconds;
 
   if (!appId) {
-    const demo: AgoraTokenResponse = {
-      appId: "DEMO_APP_ID",
-      channelName,
-      token: null,
-      uid,
-      role: body.role,
-      demoMode: true,
-      certificateRequired: false,
-      expiresAt,
-    };
-    return NextResponse.json(demo);
+    return NextResponse.json(
+      {
+        error: "Agora is not configured",
+        demoMode: true,
+        certificateRequired: Boolean(certificate),
+      },
+      { status: 503 },
+    );
   }
 
   // Project without App Certificate: null token is valid.

@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { CATEGORY_MAP } from "@/lib/categories";
 import { getProductsByCategory } from "@/lib/data/products";
 import type { ProductCategory } from "@/types";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -27,7 +30,7 @@ export default async function CategoryPage({
   const meta = CATEGORY_MAP[slug as ProductCategory];
   if (!meta) notFound();
 
-  const products = getProductsByCategory(slug);
+  const products = await getProductsByCategory(slug);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
@@ -35,11 +38,17 @@ export default async function CategoryPage({
         {meta.name}
       </h1>
       <p className="mt-3 max-w-2xl text-hubsom-ink/70">{meta.description}</p>
-      <p className="mt-2 text-sm font-medium text-hubsom-leaf">
-        Available via Buy Now · Live · Auctions · Flash · Bundles · Stores · Promos
-      </p>
       <div className="mt-8">
-        <ProductGrid products={products} />
+        {products.length ? (
+          <ProductGrid products={products} />
+        ) : (
+          <EmptyState
+            title={`No ${meta.name.toLowerCase()} yet`}
+            body="List a product in this category to appear here."
+            actionHref="/seller/products/new"
+            actionLabel="Add product"
+          />
+        )}
       </div>
     </div>
   );

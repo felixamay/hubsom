@@ -3,9 +3,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { getProductsBySeller } from "@/lib/data/products";
 import { getSellerBySlug } from "@/lib/data/sellers";
 import { getStreamsBySeller } from "@/lib/data/streams";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -13,7 +16,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const seller = getSellerBySlug(slug);
+  const seller = await getSellerBySlug(slug);
   return { title: seller?.name ?? "Store" };
 }
 
@@ -23,20 +26,20 @@ export default async function StorePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const seller = getSellerBySlug(slug);
+  const seller = await getSellerBySlug(slug);
   if (!seller) notFound();
 
-  const products = getProductsBySeller(seller.id);
-  const streams = getStreamsBySeller(seller.id);
+  const products = await getProductsBySeller(seller.id);
+  const streams = await getStreamsBySeller(seller.id);
 
   return (
     <div>
-      <section className="relative h-64 overflow-hidden sm:h-80">
+      <section className="relative h-64 overflow-hidden bg-hubsom-night sm:h-80">
         <Image
           src={seller.cover}
           alt=""
           fill
-          className="object-cover"
+          className="object-contain p-10 opacity-40"
           sizes="100vw"
           priority
         />
@@ -47,7 +50,7 @@ export default async function StorePage({
             alt={seller.name}
             width={72}
             height={72}
-            className="rounded-2xl border-2 border-white object-cover"
+            className="rounded-2xl border-2 border-white bg-white object-contain p-1"
           />
           <div className="text-white">
             <h1 className="font-display text-3xl font-extrabold sm:text-4xl">
@@ -55,7 +58,7 @@ export default async function StorePage({
             </h1>
             <p className="text-sm text-white/75">
               {seller.city}, {seller.region} · {seller.followers.toLocaleString()}{" "}
-              followers · {seller.rating}★
+              followers
             </p>
           </div>
         </div>
@@ -87,7 +90,16 @@ export default async function StorePage({
           <h2 className="mb-5 font-display text-2xl font-bold text-hubsom-forest">
             Store listings
           </h2>
-          <ProductGrid products={products} />
+          {products.length ? (
+            <ProductGrid products={products} />
+          ) : (
+            <EmptyState
+              title="No listings yet"
+              body="Add products to this store to sell Buy Now and live."
+              actionHref="/seller/products/new"
+              actionLabel="Add product"
+            />
+          )}
         </div>
       </div>
     </div>

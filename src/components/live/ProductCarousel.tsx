@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { X } from "lucide-react";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice } from "@/lib/data/products";
+import { getEffectivePrice } from "@/lib/pricing";
 import { categoryName } from "@/lib/categories";
 import type { Product } from "@/types";
 

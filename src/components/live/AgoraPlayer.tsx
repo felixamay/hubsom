@@ -112,8 +112,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
         setError(null);
 
         if (!isAgoraConfigured()) {
-          updateState("demo", "Missing NEXT_PUBLIC_AGORA_APP_ID");
-          onLatencySample?.(980);
+          updateState("error", "Agora App ID missing — set NEXT_PUBLIC_AGORA_APP_ID");
           return;
         }
 
@@ -124,9 +123,11 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             body: JSON.stringify({ channelName, role }),
           });
           const tokenData = await tokenRes.json();
-          if (tokenData.demoMode) {
-            updateState("demo", "Agora credentials not configured");
-            onLatencySample?.(980);
+          if (!tokenRes.ok || tokenData.demoMode || !tokenData.appId) {
+            updateState(
+              "error",
+              tokenData.error ?? "Agora is not configured for live streaming",
+            );
             return;
           }
 
@@ -272,10 +273,10 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
     }, [channelName, role]);
 
     const overlay =
-      state === "demo" ||
       state === "connecting" ||
       state === "idle" ||
-      state === "error";
+      state === "error" ||
+      state === "demo";
 
     return (
       <div className={`relative overflow-hidden bg-hubsom-night ${className ?? ""}`}>
@@ -289,22 +290,17 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
 
         {overlay && (
           <div className="absolute inset-0 z-[1]">
-            <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(120deg,#000000_0%,#0a3d5c_32%,#0054a6_58%,#000000_100%)]" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,rgba(0,174,239,0.28),transparent_45%),radial-gradient(circle_at_72%_30%,rgba(247,148,29,0.22),transparent_40%)]" />
+            <div className="absolute inset-0 bg-hubsom-night" />
             <div className="absolute inset-x-0 bottom-28 flex flex-col items-center px-6 text-center text-white">
               <p className="rounded-full border border-white/20 bg-black/40 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]">
-                {state === "connecting"
+                {state === "connecting" || state === "idle"
                   ? "Connecting…"
-                  : state === "error"
-                    ? "Stream error"
-                    : "Demo mode"}
+                  : "Camera offline"}
               </p>
               <p className="mt-2 max-w-sm text-xs text-white/75">
-                {state === "demo"
-                  ? "Add Agora credentials to show your live camera."
-                  : state === "connecting"
-                    ? "Joining channel…"
-                    : error || "Check camera permissions."}
+                {state === "connecting" || state === "idle"
+                  ? "Joining channel…"
+                  : error || "Check Agora credentials and camera permissions."}
               </p>
             </div>
           </div>

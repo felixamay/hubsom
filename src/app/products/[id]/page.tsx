@@ -5,12 +5,11 @@ import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { categoryName } from "@/lib/categories";
 import { formatGhs } from "@/lib/currency";
-import {
-  getEffectivePrice,
-  getProduct,
-  getProductBySlug,
-} from "@/lib/data/products";
+import { getProduct, getProductBySlug } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
+import { getEffectivePrice } from "@/lib/pricing";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -18,7 +17,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const product = getProductBySlug(id) ?? getProduct(id);
+  const product = (await getProductBySlug(id)) ?? (await getProduct(id));
   return { title: product?.name ?? "Product" };
 }
 
@@ -28,9 +27,9 @@ export default async function ProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const product = getProductBySlug(id) ?? getProduct(id);
+  const product = (await getProductBySlug(id)) ?? (await getProduct(id));
   if (!product) notFound();
-  const seller = getSeller(product.sellerId);
+  const seller = await getSeller(product.sellerId);
   const price = getEffectivePrice(product);
 
   return (
@@ -67,10 +66,10 @@ export default async function ProductPage({
           )}
         </div>
         <p className="mt-2 text-sm text-hubsom-ink/60">
-          {product.stock} in stock · realtime sync with live shows
+          {product.stock} in stock · synced with live shows
         </p>
         <div className="mt-6">
-          <AddToCartButton productId={product.id} />
+          <AddToCartButton product={product} />
         </div>
         <div className="mt-8 rounded-2xl border border-hubsom-forest/10 bg-white/70 p-5">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-hubsom-leaf">
@@ -84,10 +83,6 @@ export default async function ProductPage({
               {seller.name}
             </Link>
           )}
-          <p className="mt-1 text-sm text-hubsom-ink/65">
-            Supports Buy Now, live selling, auctions, flash sales, bundles, and store
-            listings.
-          </p>
         </div>
       </div>
     </div>

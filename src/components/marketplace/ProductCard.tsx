@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { categoryName } from "@/lib/categories";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice } from "@/lib/data/products";
+import { getEffectivePrice } from "@/lib/pricing";
 import type { Product } from "@/types";
 
 export function ProductCard({ product }: { product: Product }) {

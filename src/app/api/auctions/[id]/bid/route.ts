@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
-import { STREAMS } from "@/lib/data/streams";
-
-const auctionState = new Map<
-  string,
-  { currentBidGhs: number; bidderCount: number; highestBidder: string }
->();
+import {
+  findStreamByAuctionId,
+  patchStream,
+} from "@/lib/data/stream-registry";
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const stream = STREAMS.find((s) => s.auction?.id === id);
+  const stream = await findStreamByAuctionId(id);
   if (!stream?.auction) {
     return NextResponse.json({ error: "Auction not found" }, { status: 404 });
   }
@@ -21,36 +19,34 @@ export async function POST(
     bidder?: string;
   };
 
-  const current =
-    auctionState.get(id) ??
-    {
-      currentBidGhs: stream.auction.currentBidGhs,
-      bidderCount: stream.auction.bidderCount,
-      highestBidder: stream.auction.highestBidder ?? "—",
-    };
-
-  const amount = body.amountGhs ?? current.currentBidGhs + stream.auction.minIncrementGhs;
-  if (amount < current.currentBidGhs + stream.auction.minIncrementGhs) {
+  const auction = stream.auction;
+  const amount =
+    body.amountGhs ?? auction.currentBidGhs + auction.minIncrementGhs;
+  if (amount < auction.currentBidGhs + auction.minIncrementGhs) {
     return NextResponse.json(
       {
-        error: `Bid must be at least GHS ${current.currentBidGhs + stream.auction.minIncrementGhs}`,
+        error: `Bid must be at least GHS ${auction.currentBidGhs + auction.minIncrementGhs}`,
       },
       { status: 400 },
     );
   }
 
-  const next = {
+  const nextAuction = {
+    ...auction,
     currentBidGhs: amount,
-    bidderCount: current.bidderCount + 1,
+    bidderCount: auction.bidderCount + 1,
     highestBidder: body.bidder?.trim() || "You",
   };
-  auctionState.set(id, next);
+
+  await patchStream(stream.id, { auction: nextAuction });
 
   return NextResponse.json({
     auctionId: id,
-    ...next,
-    endsAt: stream.auction.endsAt,
-    minIncrementGhs: stream.auction.minIncrementGhs,
-    status: "open",
+    currentBidGhs: nextAuction.currentBidGhs,
+    bidderCount: nextAuction.bidderCount,
+    highestBidder: nextAuction.highestBidder,
+    endsAt: nextAuction.endsAt,
+    minIncrementGhs: nextAuction.minIncrementGhs,
+    status: nextAuction.status,
   });
 }

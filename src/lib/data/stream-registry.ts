@@ -1,8 +1,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { LiveStream, ProductCategory, StreamHost } from "@/types";
-import { STREAMS } from "@/lib/data/streams";
 import { getProduct } from "@/lib/data/products";
+import { ensureDefaultSeller } from "@/lib/data/sellers";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_FILE = path.join(DATA_DIR, "live-streams.json");
@@ -28,13 +28,12 @@ async function writeStore(store: StoreShape) {
 
 export async function listAllStreams(): Promise<LiveStream[]> {
   const store = await ensureStore();
-  const byId = new Map<string, LiveStream>();
-  for (const s of STREAMS) byId.set(s.id, s);
-  for (const s of Object.values(store)) byId.set(s.id, s);
-  return Array.from(byId.values()).sort((a, b) => {
+  return Object.values(store).sort((a, b) => {
     const rank = (s: LiveStream) =>
       s.status === "live" ? 0 : s.status === "scheduled" ? 1 : 2;
-    return rank(a) - rank(b);
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    return (b.startedAt ?? "").localeCompare(a.startedAt ?? "");
   });
 }
 
@@ -42,8 +41,7 @@ export async function getStreamById(
   id: string,
 ): Promise<LiveStream | undefined> {
   const store = await ensureStore();
-  if (store[id]) return store[id];
-  return STREAMS.find((s) => s.id === id);
+  return store[id];
 }
 
 export async function upsertStream(stream: LiveStream): Promise<LiveStream> {
@@ -78,14 +76,25 @@ export interface CreateStreamInput {
 export async function createLiveStream(
   input: CreateStreamInput,
 ): Promise<LiveStream> {
+  const seller = input.sellerId
+    ? { id: input.sellerId }
+    : await ensureDefaultSeller();
+
   const id = `stream-${Date.now().toString(36)}`;
   const channelName = `hubsom_${id.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`;
-  const productIds = input.productIds.filter((pid) => Boolean(getProduct(pid)));
+
+  const productIds: string[] = [];
+  for (const pid of input.productIds) {
+    if (await getProduct(pid)) productIds.push(pid);
+  }
+
   const categories = Array.from(
     new Set(
-      productIds
-        .map((pid) => getProduct(pid)?.category)
-        .filter(Boolean) as ProductCategory[],
+      (
+        await Promise.all(
+          productIds.map(async (pid) => (await getProduct(pid))?.category),
+        )
+      ).filter(Boolean) as ProductCategory[],
     ),
   );
 
@@ -94,8 +103,7 @@ export async function createLiveStream(
       id: "host-you",
       name: "You",
       role: "host",
-      avatar:
-        "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=200&q=80",
+      avatar: "/brand/hubsom-logo.png",
     },
   ];
 
@@ -105,15 +113,13 @@ export async function createLiveStream(
         id: "guest-slot",
         name: "Guest slot open",
         role: "guest",
-        avatar:
-          "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80",
+        avatar: "/brand/hubsom-logo.png",
       },
       {
         id: "mod-slot",
         name: "Moderator",
         role: "moderator",
-        avatar:
-          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80",
+        avatar: "/brand/hubsom-logo.png",
       },
     );
   }
@@ -133,18 +139,20 @@ export async function createLiveStream(
         }
       : undefined;
 
+  const firstProduct = productIds[0]
+    ? await getProduct(productIds[0])
+    : undefined;
+
   const stream: LiveStream = {
     id,
     title: input.title.trim() || "Hubsom Live Show",
     description:
       input.description?.trim() ||
       "Live commerce on Hubsom — pin, bid, and one-tap checkout.",
-    sellerId: input.sellerId ?? "seller-ama-market",
+    sellerId: seller.id,
     status: "live",
     channelName,
-    cover:
-      getProduct(productIds[0])?.images[0] ??
-      "https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=1600&q=80",
+    cover: firstProduct?.images[0] ?? "/brand/hubsom-logo.png",
     viewerCount: 1,
     peakViewers: 1,
     startedAt: new Date().toISOString(),
@@ -159,4 +167,9 @@ export async function createLiveStream(
   };
 
   return upsertStream(stream);
+}
+
+export async function findStreamByAuctionId(auctionId: string) {
+  const streams = await listAllStreams();
+  return streams.find((s) => s.auction?.id === auctionId);
 }

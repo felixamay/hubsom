@@ -61,8 +61,8 @@ export function SiteFooter() {
               </Link>
             </li>
             <li>
-              <Link href="/stores/ama-market-live" className="hover:text-white">
-                Example store
+              <Link href="/seller" className="hover:text-white">
+                Seller hub
               </Link>
             </li>
             <li>

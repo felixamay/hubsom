@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { ShoppingBag } from "lucide-react";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice } from "@/lib/data/products";
+import { getEffectivePrice } from "@/lib/pricing";
 import type { Product } from "@/types";
 
 /** Compact TikTok-Shop-style product bag — sits at the bottom edge, never covers the face. */

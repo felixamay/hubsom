@@ -1,73 +1,72 @@
 import type { Metadata } from "next";
-import { formatCompactGhs, formatGhs } from "@/lib/currency";
-import { SELLER_ANALYTICS, VIEWER_ANALYTICS } from "@/lib/data/streams";
+import Link from "next/link";
+import { formatGhs } from "@/lib/currency";
+import { getPlatformAnalytics } from "@/lib/data/analytics";
+import { EmptyState } from "@/components/ui/EmptyState";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Seller analytics",
 };
 
-export default function SellerAnalyticsPage() {
-  const seller = SELLER_ANALYTICS[0];
-  const viewer = VIEWER_ANALYTICS[0];
-
-  const cards = [
-    { label: "Revenue", value: formatCompactGhs(seller.revenueGhs) },
-    { label: "Units sold", value: seller.unitsSold.toLocaleString() },
-    { label: "Unique buyers", value: seller.uniqueBuyers.toLocaleString() },
-    { label: "Peak concurrent", value: seller.peakConcurrent.toLocaleString() },
-    { label: "Avg latency", value: `${seller.avgLatencyMs} ms` },
-    {
-      label: "Inventory sync events",
-      value: seller.inventorySyncEvents.toLocaleString(),
-    },
-    { label: "Chat messages", value: viewer.chatMessages.toLocaleString() },
-    { label: "Reactions", value: viewer.reactions.toLocaleString() },
-    {
-      label: "Conversion rate",
-      value: `${(viewer.conversionRate * 100).toFixed(1)}%`,
-    },
-    {
-      label: "Avg watch time",
-      value: `${Math.round(viewer.avgWatchSeconds / 60)} min`,
-    },
-  ];
+export default async function SellerAnalyticsPage() {
+  const { seller, viewer } = await getPlatformAnalytics();
+  const empty = seller.revenueGhs === 0 && seller.unitsSold === 0;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <h1 className="font-display text-4xl font-extrabold text-hubsom-forest">
-        Seller analytics
+    <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
+      <h1 className="font-display text-3xl font-extrabold text-hubsom-forest">
+        Analytics
       </h1>
-      <p className="mt-3 max-w-2xl text-hubsom-ink/70">
-        Performance for Makola Mix Live — mixed categories, one funnel. Push
-        notification hooks and auto-scale metrics included.
+      <p className="mt-2 text-sm text-hubsom-ink/65">
+        Revenue, conversion, and viewer metrics from real Hubsom activity.
       </p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {cards.map((card) => (
-          <div
-            key={card.label}
-            className="rounded-3xl border border-hubsom-forest/10 bg-white/70 p-5"
-          >
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-hubsom-leaf">
-              {card.label}
+      {empty ? (
+        <div className="mt-5">
+          <EmptyState
+            title="No sales data yet"
+            body="Go live and complete checkouts to populate analytics."
+            actionHref="/seller/go-live"
+            actionLabel="Go live"
+          />
+        </div>
+      ) : (
+        <div className="mt-5 space-y-3">
+          <div className="rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-hubsom-ink/45">
+              Revenue
             </p>
-            <p className="mt-3 font-display text-3xl font-bold text-hubsom-forest">
-              {card.value}
+            <p className="mt-2 font-display text-3xl font-bold text-hubsom-forest">
+              {formatGhs(seller.revenueGhs)}
             </p>
           </div>
-        ))}
-      </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4">
+              <p className="text-[10px] font-bold uppercase text-hubsom-ink/45">
+                Units
+              </p>
+              <p className="mt-2 text-xl font-bold">{seller.unitsSold}</p>
+            </div>
+            <div className="rounded-2xl border border-hubsom-forest/10 bg-white/80 p-4">
+              <p className="text-[10px] font-bold uppercase text-hubsom-ink/45">
+                Conversion
+              </p>
+              <p className="mt-2 text-xl font-bold">
+                {(viewer.conversionRate * 100).toFixed(1)}%
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <div className="mt-8 rounded-3xl border border-hubsom-forest/10 bg-hubsom-forest p-6 text-hubsom-mint">
-        <p className="font-display text-2xl font-bold text-white">
-          Scale posture
-        </p>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-hubsom-mint/85">
-          Hubsom&apos;s Agora live layer targets sub-2s latency with adaptive bitrate
-          and horizontal fan-out for 10,000+ concurrent viewers. Gross merchandise for
-          this show: {formatGhs(seller.revenueGhs)}.
-        </p>
-      </div>
+      <Link
+        href="/dashboard"
+        className="mt-6 inline-block text-sm font-bold text-hubsom-cyan"
+      >
+        Back to dashboard
+      </Link>
     </div>
   );
 }

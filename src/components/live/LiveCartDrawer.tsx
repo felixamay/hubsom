@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice, getProduct } from "@/lib/data/products";
 import { useCartStore } from "@/lib/stores/cart";
 
 export function LiveCartDrawer({
@@ -22,16 +21,11 @@ export function LiveCartDrawer({
 
   if (!open) return null;
 
-  const lines = items
-    .map((item) => {
-      const product = getProduct(item.productId);
-      if (!product) return null;
-      const unit = getEffectivePrice(product);
-      return { item, product, unit, total: unit * item.quantity };
-    })
-    .filter(Boolean);
-
-  const subtotal = lines.reduce((sum, l) => sum + (l?.total ?? 0), 0);
+  const lines = items.map((item) => ({
+    item,
+    total: item.priceGhs * item.quantity,
+  }));
+  const subtotal = lines.reduce((sum, l) => sum + l.total, 0);
 
   async function oneTapCheckout() {
     setLoading(true);
@@ -54,19 +48,10 @@ export function LiveCartDrawer({
         setStatus(data.error ?? "Checkout failed");
         return;
       }
-      for (const item of items) {
-        await fetch("/api/inventory/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productId: item.productId,
-            delta: -item.quantity,
-            streamId,
-          }),
-        });
-      }
       clear();
-      setStatus(`Order ${data.orderId} confirmed · ${formatGhs(data.subtotalGhs)}`);
+      setStatus(
+        `Order ${data.orderId} · ${formatGhs(data.subtotalGhs)} · ${data.status}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -84,25 +69,23 @@ export function LiveCartDrawer({
         <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {!lines.length && (
             <p className="text-sm text-white/60">
-              Pin products while watching, then one-tap checkout.
+              Tap Buy on the bag pill, then one-tap checkout.
             </p>
           )}
-          {lines.map((line) =>
-            line ? (
-              <div
-                key={line.product.id}
-                className="flex items-start justify-between gap-3 rounded-xl bg-white/5 px-3 py-3"
-              >
-                <div>
-                  <p className="font-semibold">{line.product.name}</p>
-                  <p className="text-xs text-white/55">
-                    Qty {line.item.quantity} · {line.item.source}
-                  </p>
-                </div>
-                <p className="font-bold text-hubsom-sun">{formatGhs(line.total)}</p>
+          {lines.map(({ item, total }) => (
+            <div
+              key={item.productId}
+              className="flex items-start justify-between gap-3 rounded-xl bg-white/5 px-3 py-3"
+            >
+              <div>
+                <p className="font-semibold">{item.name}</p>
+                <p className="text-xs text-white/55">
+                  Qty {item.quantity} · {item.source}
+                </p>
               </div>
-            ) : null,
-          )}
+              <p className="font-bold text-hubsom-sun">{formatGhs(total)}</p>
+            </div>
+          ))}
         </div>
         <div className="border-t border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between text-sm">
@@ -112,12 +95,14 @@ export function LiveCartDrawer({
           <button
             type="button"
             disabled={!items.length || loading}
-            onClick={oneTapCheckout}
+            onClick={() => void oneTapCheckout()}
             className="w-full rounded-xl bg-hubsom-gold py-3 text-sm font-bold text-hubsom-ink disabled:opacity-50"
           >
             {loading ? "Processing…" : "One-tap checkout"}
           </button>
-          {status && <p className="mt-2 text-center text-xs text-hubsom-mint">{status}</p>}
+          {status && (
+            <p className="mt-2 text-center text-xs text-hubsom-mint">{status}</p>
+          )}
         </div>
       </div>
     </div>

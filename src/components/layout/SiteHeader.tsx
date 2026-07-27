@@ -48,7 +48,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/live/stream-ama-mix"
+            href="/live"
             className="hidden items-center gap-2 rounded-lg bg-hubsom-live px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:inline-flex"
           >
             <Radio className="h-4 w-4" />

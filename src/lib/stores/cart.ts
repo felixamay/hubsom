@@ -23,7 +23,11 @@ export const useCartStore = create<CartState>()(
             return {
               items: state.items.map((i) =>
                 i.productId === item.productId
-                  ? { ...i, quantity: i.quantity + item.quantity, source: item.source }
+                  ? {
+                      ...i,
+                      ...item,
+                      quantity: i.quantity + item.quantity,
+                    }
                   : i,
               ),
             };
