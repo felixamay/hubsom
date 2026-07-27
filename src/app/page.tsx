@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CategoryRail } from "@/components/home/CategoryRail";
+import { HomeSearchHero } from "@/components/home/HomeSearchHero";
 import { LiveStrip } from "@/components/home/LiveStrip";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -21,6 +22,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <HomeSearchHero />
       <CategoryRail />
       <LiveStrip
         streams={[...live, ...streams.filter((s) => s.status !== "live")].slice(
