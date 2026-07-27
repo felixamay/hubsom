@@ -24,7 +24,7 @@ export default async function HomePage() {
       getFlashSaleProducts(),
       listSellers(),
       auth(),
-      listPromotions({ placement: "home", limit: 4 }),
+      listPromotions({ placement: "landing", limit: 4 }),
     ]);
   const live = streams.filter((s) => s.status === "live");
   const featured = products.slice(0, 6);

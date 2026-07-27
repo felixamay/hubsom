@@ -65,6 +65,7 @@ export default async function ProductPage({
     : null;
   const promotions = await listPromotions({
     placement: "product",
+    productId: product.id,
     categorySlug: product.category,
     limit: 3,
   });

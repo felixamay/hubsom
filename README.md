@@ -103,10 +103,19 @@ Hubsom dispatches consolidated shipments to the **Huber** rider app.
 - Repo to share: https://github.com/felixamay/hubsom (`cursor/hubsom-live-commerce-8a7a`)
 - Env: `HUBERS_API_BASE_URL`, `HUBERS_API_KEY`, `HUBERS_WEBHOOK_SECRET`
 
+## HubsomAdmin promotions
+
+Promotions listed in **[hubsomadmin](https://github.com/felixamay/hubsomadmin)** appear on landing, marketplace, category, and product pages based on admin-selected placements.
+
+- Contract: [`docs/ADMIN_PROMOTIONS.md`](docs/ADMIN_PROMOTIONS.md)
+- Env: `HUBSOM_ADMIN_API_KEY`
+- Admin APIs: `/api/admin/promotions`, `/api/admin/catalog`
+- Public feed: `/api/promotions?placement=landing|marketplace|category|product`
+
 ## Data
 
 Runtime data is written to `.data/` (gitignored):
 
-- `products.json` · `sellers.json` · `live-streams.json` · `chat.json` · `orders.json` · `shipments.json` · `hubers.json`
+- `products.json` · `sellers.json` · `live-streams.json` · `chat.json` · `orders.json` · `shipments.json` · `hubers.json` · `promotions.json`
 
 Swap these JSON stores for a managed database before multi-instance production deploy.

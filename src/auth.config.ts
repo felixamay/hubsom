@@ -24,6 +24,14 @@ export const authConfig = {
       // Huber delivery webhooks (signed when HUBERS_WEBHOOK_SECRET is set).
       if (pathname.startsWith("/api/integrations/hubers")) return true;
 
+      // Public promotions feed for storefront / admin preview.
+      if (pathname === "/api/promotions" || pathname.startsWith("/api/promotions/")) {
+        return true;
+      }
+
+      // HubsomAdmin integration (API key checked in route handlers).
+      if (pathname.startsWith("/api/admin")) return true;
+
       const isAuthPage =
         pathname.startsWith("/auth/sign-in") ||
         pathname.startsWith("/auth/sign-up");

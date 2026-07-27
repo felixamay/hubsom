@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Promotion } from "@/types/promotions";
@@ -49,10 +50,7 @@ export function PromoSpace({
   return (
     <section
       aria-label="Promotions"
-      className={cn(
-        compact ? "space-y-2.5" : "space-y-3",
-        className,
-      )}
+      className={cn(compact ? "space-y-2.5" : "space-y-3", className)}
     >
       <div className="flex items-end justify-between gap-3">
         <div>
@@ -78,7 +76,7 @@ export function PromoSpace({
             Promotion space
           </p>
           <p className="mt-1 text-xs text-hubsom-ink/50">
-            Campaigns and partner offers will appear here.
+            Campaigns listed in HubsomAdmin will appear here.
           </p>
         </div>
       ) : (
@@ -90,32 +88,46 @@ export function PromoSpace({
                 key={promo.id}
                 href={promo.href}
                 className={cn(
-                  "relative min-w-[78%] shrink-0 overflow-hidden rounded-2xl border p-4 shadow-[0_16px_32px_-24px_rgba(6,18,31,0.45)] transition active:scale-[0.99] sm:min-w-[52%] lg:min-w-[320px]",
+                  "relative min-w-[78%] shrink-0 overflow-hidden rounded-2xl border shadow-[0_16px_32px_-24px_rgba(6,18,31,0.45)] transition active:scale-[0.99] sm:min-w-[52%] lg:min-w-[320px]",
                   tone.shell,
                 )}
               >
-                <p
-                  className={cn(
-                    "text-[10px] font-bold uppercase tracking-[0.14em]",
-                    tone.eyebrow,
-                  )}
-                >
-                  Promo
-                </p>
-                <h3 className="mt-2 font-display text-xl font-extrabold leading-tight">
-                  {promo.title}
-                </h3>
-                <p className="mt-1.5 line-clamp-2 text-sm opacity-90">
-                  {promo.subtitle}
-                </p>
-                <span
-                  className={cn(
-                    "mt-4 inline-flex rounded-xl px-3 py-2 text-[11px] font-bold",
-                    tone.cta,
-                  )}
-                >
-                  {promo.ctaLabel}
-                </span>
+                {promo.imageUrl ? (
+                  <div className="relative h-28 w-full">
+                    <Image
+                      src={promo.imageUrl}
+                      alt=""
+                      fill
+                      className="object-cover opacity-90"
+                      sizes="320px"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+                  </div>
+                ) : null}
+                <div className="p-4">
+                  <p
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-[0.14em]",
+                      tone.eyebrow,
+                    )}
+                  >
+                    Promo
+                  </p>
+                  <h3 className="mt-2 font-display text-xl font-extrabold leading-tight">
+                    {promo.title}
+                  </h3>
+                  <p className="mt-1.5 line-clamp-2 text-sm opacity-90">
+                    {promo.subtitle}
+                  </p>
+                  <span
+                    className={cn(
+                      "mt-4 inline-flex rounded-xl px-3 py-2 text-[11px] font-bold",
+                      tone.cta,
+                    )}
+                  >
+                    {promo.ctaLabel}
+                  </span>
+                </div>
               </Link>
             );
           })}
