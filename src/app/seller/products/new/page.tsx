@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ProductImageUploader } from "@/components/seller/ProductImageUploader";
 import { CATEGORIES } from "@/lib/categories";
 import type { ProductCategory } from "@/types";
 
@@ -13,7 +14,7 @@ export default function NewProductPage() {
   const [category, setCategory] = useState<ProductCategory>("groceries");
   const [priceGhs, setPriceGhs] = useState(50);
   const [stock, setStock] = useState(10);
-  const [imageUrl, setImageUrl] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const [flash, setFlash] = useState(false);
   const [discountPct, setDiscountPct] = useState(15);
   const [busy, setBusy] = useState(false);
@@ -32,7 +33,7 @@ export default function NewProductPage() {
           category,
           priceGhs,
           stock,
-          images: imageUrl.trim() ? [imageUrl.trim()] : undefined,
+          images: images.length ? images : undefined,
           flashSale: flash
             ? {
                 endsAt: new Date(Date.now() + 1000 * 60 * 60 * 6).toISOString(),
@@ -87,6 +88,10 @@ export default function NewProductPage() {
           />
         </label>
 
+        <div className="rounded-2xl border border-hubsom-forest/10 bg-hubsom-mist/30 p-3.5">
+          <ProductImageUploader images={images} onChange={setImages} />
+        </div>
+
         <label className="block">
           <span className="text-sm font-semibold text-hubsom-forest">Category</span>
           <select
@@ -126,18 +131,6 @@ export default function NewProductPage() {
             />
           </label>
         </div>
-
-        <label className="block">
-          <span className="text-sm font-semibold text-hubsom-forest">
-            Image URL (optional)
-          </span>
-          <input
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="https://…"
-            className="mt-2 w-full rounded-xl border border-hubsom-forest/15 px-3 py-2.5"
-          />
-        </label>
 
         <label className="flex items-center gap-3 text-sm font-medium">
           <input

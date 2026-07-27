@@ -37,6 +37,10 @@ yarn-error.log*
 # local runtime data (created live streams)
 .data/
 
+# user-uploaded product images (keep folder)
+/public/uploads/products/*
+!/public/uploads/products/.gitkeep
+
 # vercel
 .vercel
 
