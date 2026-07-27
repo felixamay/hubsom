@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Flame } from "lucide-react";
 import { CATEGORIES } from "@/lib/categories";
 import { categoryImage } from "@/lib/category-images";
+import { categoryTone } from "@/lib/category-tones";
 
 const TRENDING = [
   "fashion",
@@ -35,6 +36,8 @@ function PrimaryCategoryBox({
   priority?: boolean;
   compact?: boolean;
 }) {
+  const tone = categoryTone(slug);
+
   return (
     <Link
       href={href}
@@ -43,12 +46,11 @@ function PrimaryCategoryBox({
       <div
         className={
           compact
-            ? "relative flex h-[3.85rem] items-center justify-center overflow-hidden rounded-xl ring-1 ring-white/10 shadow-[0_10px_22px_-16px_rgba(0,0,0,0.65)]"
-            : "relative flex aspect-[5/3.4] items-center justify-center overflow-hidden rounded-[1.15rem] ring-1 ring-white/10 shadow-[0_12px_26px_-18px_rgba(0,0,0,0.7)]"
+            ? "relative flex h-[3.85rem] items-center justify-center overflow-hidden rounded-xl ring-1 ring-black/[0.04] shadow-[0_10px_22px_-18px_rgba(6,18,31,0.45)]"
+            : "relative flex aspect-[5/3.4] items-center justify-center overflow-hidden rounded-[1.15rem] ring-1 ring-black/[0.04] shadow-[0_12px_26px_-18px_rgba(6,18,31,0.45)]"
         }
         style={{
-          background:
-            "linear-gradient(155deg, #0a3d5c 0%, #06121f 52%, #000000 100%)",
+          background: `linear-gradient(165deg, ${tone.bgSoft} 0%, ${tone.bg} 78%)`,
         }}
       >
         <Image
@@ -61,17 +63,18 @@ function PrimaryCategoryBox({
           priority={priority}
           className={
             compact
-              ? "h-8 w-8 object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,0.35)] transition duration-300 group-hover:scale-110"
-              : "h-12 w-12 object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.4)] transition duration-300 group-hover:scale-110"
+              ? "h-8 w-8 object-contain drop-shadow-[0_6px_10px_rgba(6,18,31,0.18)] transition duration-300 group-hover:scale-110"
+              : "h-12 w-12 object-contain drop-shadow-[0_8px_14px_rgba(6,18,31,0.2)] transition duration-300 group-hover:scale-110"
           }
         />
       </div>
       <p
         className={
           compact
-            ? "mt-1.5 line-clamp-2 text-center text-[10px] font-bold leading-tight text-hubsom-forest"
-            : "mt-2 line-clamp-2 text-center text-xs font-bold leading-tight text-hubsom-forest"
+            ? "mt-1.5 line-clamp-2 text-center text-[10px] font-bold leading-tight"
+            : "mt-2 line-clamp-2 text-center text-xs font-bold leading-tight"
         }
+        style={{ color: tone.ink }}
       >
         {name}
       </p>
