@@ -16,12 +16,12 @@ export const SELLERS: Seller[] = [
     followers: 128400,
     verified: true,
     categories: [
-      "fresh-produce",
       "groceries",
-      "pantry-staples",
       "fashion",
-      "electronics",
+      "phones-accessories",
       "shoes",
+      "jewelry-watches",
+      "electronics",
     ],
   },
   {
@@ -38,7 +38,13 @@ export const SELLERS: Seller[] = [
     rating: 4.8,
     followers: 64200,
     verified: true,
-    categories: ["handmade", "jewelry", "home-decor", "art", "fashion"],
+    categories: [
+      "handmade-crafts",
+      "jewelry-watches",
+      "home-decor",
+      "art-collectibles",
+      "fashion",
+    ],
   },
   {
     id: "seller-tech-harbor",
@@ -54,7 +60,13 @@ export const SELLERS: Seller[] = [
     rating: 4.7,
     followers: 89100,
     verified: true,
-    categories: ["electronics", "computers", "gaming", "luxury"],
+    categories: [
+      "electronics",
+      "phones-accessories",
+      "computers-tablets",
+      "gaming",
+      "luxury-goods",
+    ],
   },
   {
     id: "seller-coastal-catch",
@@ -70,7 +82,7 @@ export const SELLERS: Seller[] = [
     rating: 4.6,
     followers: 31800,
     verified: true,
-    categories: ["meat-seafood", "frozen-foods", "kitchen", "groceries"],
+    categories: ["groceries", "appliances", "home-kitchen"],
   },
 ];
 

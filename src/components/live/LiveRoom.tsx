@@ -24,6 +24,7 @@ import { PinnedProduct } from "@/components/live/PinnedProduct";
 import { ProductCarousel } from "@/components/live/ProductCarousel";
 import { useCartStore } from "@/lib/stores/cart";
 import { useLiveStore } from "@/lib/stores/live";
+import { categoryName } from "@/lib/categories";
 import type { ChatMessage, LiveStream, Product, Seller } from "@/types";
 
 function reactionX() {
@@ -173,9 +174,9 @@ export function LiveRoom({
                 <Link
                   key={c}
                   href={`/categories/${c}`}
-                  className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs capitalize text-white/80 hover:bg-white/10"
+                  className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10"
                 >
-                  {c.replace(/-/g, " ")}
+                  {categoryName(c)}
                 </Link>
               ))}
             </div>
