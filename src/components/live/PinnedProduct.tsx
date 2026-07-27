@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { Gavel, ShoppingBag } from "lucide-react";
+import { SaveProductButton } from "@/components/product/SaveProductButton";
 import { formatGhs } from "@/lib/currency";
 import { getEffectivePrice } from "@/lib/pricing";
 import type { Product } from "@/types";
@@ -13,6 +14,7 @@ export function PinnedProduct({
   onOpenShop,
   auctionBidGhs,
   onBid,
+  initiallySaved = false,
 }: {
   product: Product;
   onBuy: () => void;
@@ -20,6 +22,7 @@ export function PinnedProduct({
   /** When this pin is the live auction item, show live bid instead of catalog price. */
   auctionBidGhs?: number;
   onBid?: () => void;
+  initiallySaved?: boolean;
 }) {
   const isAuction = typeof auctionBidGhs === "number";
   const price = isAuction ? auctionBidGhs : getEffectivePrice(product);
@@ -59,6 +62,13 @@ export function PinnedProduct({
           )}
         </p>
       </button>
+      <SaveProductButton
+        productId={product.id}
+        initialSaved={initiallySaved}
+        size="icon"
+        variant="live"
+        className="shrink-0"
+      />
       <button
         type="button"
         onClick={isAuction ? onBid ?? onBuy : onBuy}

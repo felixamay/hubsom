@@ -7,6 +7,7 @@ import { isFollowingSeller } from "@/lib/data/follows";
 import { getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getStreamById } from "@/lib/data/stream-registry";
+import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default async function LiveShowPage({
   const chat = await listChatMessages(stream.id);
 
   const userId = session?.user?.id;
+  const user = userId ? await getUserById(userId) : undefined;
   const isOwnStore = Boolean(
     userId &&
       seller &&
@@ -50,6 +52,7 @@ export default async function LiveShowPage({
   );
   const initialFollowing =
     userId && seller ? await isFollowingSeller(userId, seller.id) : false;
+  const savedProductIds = user?.savedProductIds ?? [];
 
   return (
     <LiveRoom
@@ -60,6 +63,7 @@ export default async function LiveShowPage({
       hostMode={host === "1"}
       initialFollowing={initialFollowing}
       isOwnStore={isOwnStore}
+      savedProductIds={savedProductIds}
     />
   );
 }

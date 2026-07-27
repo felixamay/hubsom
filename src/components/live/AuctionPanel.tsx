@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Gavel } from "lucide-react";
+import { SaveProductButton } from "@/components/product/SaveProductButton";
 import { Countdown } from "@/components/ui/Countdown";
 import { formatGhs } from "@/lib/currency";
 import type { LiveAuction, Product } from "@/types";
@@ -11,10 +12,12 @@ export function AuctionPanel({
   auction,
   product,
   onAuctionChange,
+  initiallySaved = false,
 }: {
   auction: LiveAuction;
   product?: Product;
   onAuctionChange?: (auction: LiveAuction) => void;
+  initiallySaved?: boolean;
 }) {
   const { data: session } = useSession();
   const [current, setCurrent] = useState(auction);
@@ -90,8 +93,18 @@ export function AuctionPanel({
           <Gavel className="h-4 w-4" />
           Live auction
         </div>
-        <div className="rounded-md bg-hubsom-live px-2 py-1 text-xs font-bold tabular-nums">
-          {ended ? "Ended" : <Countdown endsAt={current.endsAt} />}
+        <div className="flex items-center gap-2">
+          {product ? (
+            <SaveProductButton
+              productId={product.id}
+              initialSaved={initiallySaved}
+              size="icon"
+              variant="live"
+            />
+          ) : null}
+          <div className="rounded-md bg-hubsom-live px-2 py-1 text-xs font-bold tabular-nums">
+            {ended ? "Ended" : <Countdown endsAt={current.endsAt} />}
+          </div>
         </div>
       </div>
       <p className="mt-3 font-display text-xl font-semibold">

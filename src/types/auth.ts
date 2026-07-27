@@ -27,6 +27,8 @@ export interface HubsomUser {
   sellerId?: string;
   /** Sellers this user follows */
   followingSellerIds: string[];
+  /** Products this user saved / favourited */
+  savedProductIds: string[];
   addresses: UserAddress[];
   providers: AuthProviderId[];
   oauthIds: Partial<Record<"google" | "facebook" | "apple", string>>;

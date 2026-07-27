@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { auth } from "@/auth";
 import { getFlashSaleProducts } from "@/lib/data/products";
+import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +12,13 @@ export const metadata: Metadata = {
 };
 
 export default async function FlashSalesPage() {
-  const products = await getFlashSaleProducts();
+  const [products, session] = await Promise.all([
+    getFlashSaleProducts(),
+    auth(),
+  ]);
+  const user = session?.user?.id
+    ? await getUserById(session.user.id)
+    : undefined;
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
@@ -22,7 +30,10 @@ export default async function FlashSalesPage() {
       </p>
       <div className="mt-5">
         {products.length ? (
-          <ProductGrid products={products} />
+          <ProductGrid
+            products={products}
+            savedProductIds={user?.savedProductIds}
+          />
         ) : (
           <EmptyState
             title="No flash sales active"

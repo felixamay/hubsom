@@ -68,7 +68,10 @@ export default async function HomePage() {
           </Link>
         </div>
         {featured.length ? (
-          <ProductGrid products={featured} />
+          <ProductGrid
+            products={featured}
+            savedProductIds={user?.savedProductIds}
+          />
         ) : (
           <EmptyState
             title="No listings yet"
@@ -94,7 +97,10 @@ export default async function HomePage() {
           </Link>
         </div>
         {flash.length ? (
-          <ProductGrid products={flash} />
+          <ProductGrid
+            products={flash}
+            savedProductIds={user?.savedProductIds}
+          />
         ) : (
           <EmptyState
             title="No flash sales live"

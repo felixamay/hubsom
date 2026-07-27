@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { auth } from "@/auth";
 import { CATEGORY_MAP } from "@/lib/categories";
 import { getProductsByCategory } from "@/lib/data/products";
+import { getUserById } from "@/lib/data/users";
 import type { ProductCategory } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +32,13 @@ export default async function CategoryPage({
   const meta = CATEGORY_MAP[slug as ProductCategory];
   if (!meta) notFound();
 
-  const products = await getProductsByCategory(slug);
+  const [products, session] = await Promise.all([
+    getProductsByCategory(slug),
+    auth(),
+  ]);
+  const user = session?.user?.id
+    ? await getUserById(session.user.id)
+    : undefined;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
@@ -40,7 +48,10 @@ export default async function CategoryPage({
       <p className="mt-3 max-w-2xl text-hubsom-ink/70">{meta.description}</p>
       <div className="mt-8">
         {products.length ? (
-          <ProductGrid products={products} />
+          <ProductGrid
+            products={products}
+            savedProductIds={user?.savedProductIds}
+          />
         ) : (
           <EmptyState
             title={`No ${meta.name.toLowerCase()} yet`}

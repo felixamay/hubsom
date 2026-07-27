@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ProductGrid } from "@/components/marketplace/ProductGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { auth } from "@/auth";
 import { CATEGORIES } from "@/lib/categories";
 import { listProducts } from "@/lib/data/products";
+import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,10 @@ export default async function MarketplacePage({
 }) {
   const { q } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
-  const products = await listProducts();
+  const [products, session] = await Promise.all([listProducts(), auth()]);
+  const user = session?.user?.id
+    ? await getUserById(session.user.id)
+    : undefined;
   const filtered = query
     ? products.filter((p) => {
         const haystack = [
@@ -68,7 +73,10 @@ export default async function MarketplacePage({
 
       <div className="mt-5">
         {filtered.length ? (
-          <ProductGrid products={filtered} />
+          <ProductGrid
+            products={filtered}
+            savedProductIds={user?.savedProductIds}
+          />
         ) : (
           <EmptyState
             title={query ? "No matches" : "Marketplace is empty"}

@@ -125,3 +125,20 @@ export async function adjustProductStock(
   if (!product) return undefined;
   return updateProductStock(productId, product.stock + delta);
 }
+
+export async function updateProductRating(
+  productId: string,
+  rating: number,
+  reviewCount: number,
+): Promise<Product | undefined> {
+  const store = await load();
+  const idx = store.products.findIndex((p) => p.id === productId);
+  if (idx < 0) return undefined;
+  store.products[idx] = {
+    ...store.products[idx],
+    rating: Math.max(0, Math.min(5, rating)),
+    reviewCount: Math.max(0, Math.floor(reviewCount)),
+  };
+  await save(store);
+  return store.products[idx];
+}

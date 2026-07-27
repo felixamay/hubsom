@@ -9,6 +9,7 @@ import {
   Package,
   Settings,
   ShoppingBag,
+  Star,
   Store,
   UserRound,
   Users,
@@ -17,6 +18,7 @@ import { signOut } from "@/auth";
 import { AccountAvatarCard } from "@/components/account/AccountAvatarCard";
 import { requireUser } from "@/lib/auth/session";
 import { listOrdersByUser } from "@/lib/data/orders";
+import { getProduct } from "@/lib/data/products";
 import { getUserById } from "@/lib/data/users";
 import { formatGhs } from "@/lib/currency";
 
@@ -36,10 +38,11 @@ export default async function AccountPage() {
     { href: "/messages", label: "Messages", icon: MessageCircle },
     { href: "/account/profile", label: "Edit profile", icon: UserRound },
     { href: "/account/following", label: "Following & followers", icon: Users },
+    { href: "/account/saved", label: "Saved products", icon: Heart },
     { href: "/cart", label: "Orders & cart", icon: ShoppingBag },
     { href: "/account/addresses", label: "Addresses", icon: MapPin },
     { href: "/seller", label: "Seller hub", icon: Store },
-    { href: "/flash-sales", label: "Saved deals", icon: Heart },
+    { href: "/flash-sales", label: "Flash sales", icon: Star },
     { href: "/account/profile", label: "Payments (MoMo / Card)", icon: CreditCard },
     { href: "/account/profile", label: "Settings", icon: Settings },
   ];
@@ -110,30 +113,66 @@ export default async function AccountPage() {
           </p>
         ) : (
           <div className="space-y-2">
-            {orders.slice(0, 8).map((order) => (
-              <div
-                key={order.id}
-                className="rounded-2xl border border-hubsom-forest/10 bg-white/80 px-4 py-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-hubsom-ink">
-                    {order.id}
-                  </p>
-                  <p className="text-sm font-bold text-hubsom-forest">
-                    {formatGhs(order.subtotalGhs)}
-                  </p>
-                </div>
-                <p className="mt-1 text-xs text-hubsom-ink/55">
-                  {order.status.replace("_", " ")} · {order.lines.length} items
-                </p>
-                {order.shipping ? (
-                  <p className="mt-1 truncate text-xs text-hubsom-ink/50">
-                    Ship to {order.shipping.recipientName} ·{" "}
-                    {order.shipping.city}, {order.shipping.region}
-                  </p>
-                ) : null}
-              </div>
-            ))}
+            {await Promise.all(
+              orders.slice(0, 8).map(async (order) => {
+                const reviewable =
+                  order.status !== "cancelled"
+                    ? (
+                        await Promise.all(
+                          order.lines.map(async (line) => {
+                            const product = await getProduct(line.productId);
+                            return product
+                              ? { id: product.id, slug: product.slug, name: product.name }
+                              : null;
+                          }),
+                        )
+                      ).filter(
+                        (p): p is { id: string; slug: string; name: string } =>
+                          Boolean(p),
+                      )
+                    : [];
+
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded-2xl border border-hubsom-forest/10 bg-white/80 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-hubsom-ink">
+                        {order.id}
+                      </p>
+                      <p className="text-sm font-bold text-hubsom-forest">
+                        {formatGhs(order.subtotalGhs)}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-xs text-hubsom-ink/55">
+                      {order.status.replace("_", " ")} · {order.lines.length}{" "}
+                      items
+                    </p>
+                    {order.shipping ? (
+                      <p className="mt-1 truncate text-xs text-hubsom-ink/50">
+                        Ship to {order.shipping.recipientName} ·{" "}
+                        {order.shipping.city}, {order.shipping.region}
+                      </p>
+                    ) : null}
+                    {reviewable.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {reviewable.slice(0, 3).map((product) => (
+                          <Link
+                            key={`${order.id}-${product.id}`}
+                            href={`/products/${product.slug}`}
+                            className="inline-flex items-center gap-1 rounded-lg bg-hubsom-mist px-2 py-1 text-[11px] font-semibold text-hubsom-forest"
+                          >
+                            <Star className="h-3 w-3 text-hubsom-gold" />
+                            Review {product.name.split(" ").slice(0, 2).join(" ")}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }),
+            )}
           </div>
         )}
       </div>

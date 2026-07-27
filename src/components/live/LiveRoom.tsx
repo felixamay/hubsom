@@ -59,6 +59,7 @@ export function LiveRoom({
   hostMode = false,
   initialFollowing = false,
   isOwnStore = false,
+  savedProductIds = [],
 }: {
   stream: LiveStream;
   seller?: Seller;
@@ -67,6 +68,7 @@ export function LiveRoom({
   hostMode?: boolean;
   initialFollowing?: boolean;
   isOwnStore?: boolean;
+  savedProductIds?: string[];
 }) {
   const router = useRouter();
   const playerRef = useRef<AgoraPlayerHandle>(null);
@@ -508,6 +510,11 @@ export function LiveRoom({
               auction={auction}
               product={auctionProduct}
               onAuctionChange={setAuction}
+              initiallySaved={
+                auctionProduct
+                  ? savedProductIds.includes(auctionProduct.id)
+                  : false
+              }
             />
             <button
               type="button"
@@ -532,6 +539,7 @@ export function LiveRoom({
               setShopOpen(false);
               setNotice(null);
             }}
+            initiallySaved={savedProductIds.includes(pinned.id)}
           />
         )}
 
@@ -557,6 +565,7 @@ export function LiveRoom({
             onPin={(id) => void pinProduct(id)}
             onBuy={buy}
             onClose={() => setShopOpen(false)}
+            savedProductIds={savedProductIds}
           />
         </div>
       )}

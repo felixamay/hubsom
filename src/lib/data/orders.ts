@@ -154,3 +154,29 @@ export function formatShippingBlock(shipping: OrderShipping): string {
     .filter(Boolean)
     .join("\n");
 }
+
+/** True when the user has a non-cancelled order that includes this product. */
+export async function userHasPurchasedProduct(
+  userId: string,
+  productId: string,
+): Promise<boolean> {
+  const orders = await listOrdersByUser(userId);
+  return orders.some(
+    (order) =>
+      order.status !== "cancelled" &&
+      order.lines.some((line) => line.productId === productId),
+  );
+}
+
+/** Distinct purchased product ids for a user (for review CTAs). */
+export async function listPurchasedProductIds(
+  userId: string,
+): Promise<string[]> {
+  const orders = await listOrdersByUser(userId);
+  const ids = new Set<string>();
+  for (const order of orders) {
+    if (order.status === "cancelled") continue;
+    for (const line of order.lines) ids.add(line.productId);
+  }
+  return Array.from(ids);
+}

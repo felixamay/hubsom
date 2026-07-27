@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { X } from "lucide-react";
+import { SaveProductButton } from "@/components/product/SaveProductButton";
 import { formatGhs } from "@/lib/currency";
 import { getEffectivePrice } from "@/lib/pricing";
 import { categoryName } from "@/lib/categories";
@@ -14,13 +15,17 @@ export function ProductCarousel({
   onPin,
   onBuy,
   onClose,
+  savedProductIds = [],
 }: {
   products: Product[];
   pinnedProductId?: string;
   onPin: (productId: string) => void;
   onBuy: (product: Product) => void;
   onClose?: () => void;
+  savedProductIds?: string[];
 }) {
+  const savedSet = new Set(savedProductIds);
+
   return (
     <div className="max-h-[48svh] rounded-t-3xl border-t border-white/10 bg-hubsom-night/95 text-white backdrop-blur-xl">
       <div className="flex items-center justify-between px-4 pb-2 pt-3">
@@ -71,7 +76,13 @@ export function ProductCarousel({
                   {formatGhs(getEffectivePrice(product))}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-col gap-1">
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <SaveProductButton
+                  productId={product.id}
+                  initialSaved={savedSet.has(product.id)}
+                  size="icon"
+                  variant="live"
+                />
                 <button
                   type="button"
                   onClick={() => onPin(product.id)}

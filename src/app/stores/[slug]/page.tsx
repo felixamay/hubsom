@@ -10,6 +10,7 @@ import { isFollowingSeller } from "@/lib/data/follows";
 import { getProductsBySeller } from "@/lib/data/products";
 import { getSellerBySlug } from "@/lib/data/sellers";
 import { getStreamsBySeller } from "@/lib/data/streams";
+import { getUserById } from "@/lib/data/users";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function StorePage({
 
   const session = await auth();
   const userId = session?.user?.id;
+  const user = userId ? await getUserById(userId) : undefined;
   const isOwnStore = Boolean(
     userId &&
       (seller.ownerUserId === userId || session?.user?.sellerId === seller.id),
@@ -120,7 +122,10 @@ export default async function StorePage({
             Store listings
           </h2>
           {products.length ? (
-            <ProductGrid products={products} />
+            <ProductGrid
+              products={products}
+              savedProductIds={user?.savedProductIds}
+            />
           ) : (
             <EmptyState
               title="No listings yet"
