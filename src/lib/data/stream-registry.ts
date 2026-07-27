@@ -133,7 +133,7 @@ export async function createLiveStream(
           startingBidGhs: input.startingBidGhs ?? 50,
           currentBidGhs: input.startingBidGhs ?? 50,
           minIncrementGhs: 10,
-          endsAt: new Date(Date.now() + 1000 * 60 * 10).toISOString(),
+          endsAt: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
           bidderCount: 0,
           status: "open" as const,
         }
@@ -157,7 +157,10 @@ export async function createLiveStream(
     peakViewers: 1,
     startedAt: new Date().toISOString(),
     productIds,
-    pinnedProductId: input.pinnedProductId ?? productIds[0],
+    pinnedProductId:
+      input.pinnedProductId ??
+      auctionProductId ??
+      productIds[0],
     hosts,
     auction,
     categories,

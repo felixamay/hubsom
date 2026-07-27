@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -37,7 +37,13 @@ import { FollowButton } from "@/components/sellers/FollowButton";
 import { getEffectivePrice } from "@/lib/pricing";
 import { useCartStore } from "@/lib/stores/cart";
 import { useLiveStore } from "@/lib/stores/live";
-import type { ChatMessage, LiveStream, Product, Seller } from "@/types";
+import type {
+  ChatMessage,
+  LiveAuction,
+  LiveStream,
+  Product,
+  Seller,
+} from "@/types";
 
 function reactionX() {
   return 0.62 + ((Date.now() % 280) / 1000);
@@ -61,7 +67,9 @@ export function LiveRoom({
   isOwnStore?: boolean;
 }) {
   const playerRef = useRef<AgoraPlayerHandle>(null);
-  const [pinnedId, setPinnedId] = useState(stream.pinnedProductId);
+  const [pinnedId, setPinnedId] = useState(
+    stream.auction?.productId ?? stream.pinnedProductId,
+  );
   const [latencyMs, setLatencyMs] = useState(stream.latencyMs || 1000);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -71,7 +79,8 @@ export function LiveRoom({
   const [shopOpen, setShopOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [hostTrayOpen, setHostTrayOpen] = useState(false);
-  const [auctionOpen, setAuctionOpen] = useState(false);
+  const [auction, setAuction] = useState<LiveAuction | undefined>(stream.auction);
+  const [auctionOpen, setAuctionOpen] = useState(Boolean(stream.auction));
   const [profileOpen, setProfileOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState<string | null>(null);
 
@@ -93,9 +102,38 @@ export function LiveRoom({
     () => products.find((p) => p.id === pinnedId) ?? products[0],
     [products, pinnedId],
   );
-  const auctionProduct = products.find((p) => p.id === stream.auction?.productId);
+  const auctionProduct = products.find((p) => p.id === auction?.productId);
+  const pinnedIsAuction = Boolean(
+    auction && pinned && pinned.id === auction.productId,
+  );
 
   const onLatencySample = useCallback((ms: number) => setLatencyMs(ms), []);
+
+  useEffect(() => {
+    if (!auction) return;
+    let cancelled = false;
+
+    async function refreshAuction() {
+      try {
+        const res = await fetch(`/api/streams/${stream.id}`, {
+          credentials: "same-origin",
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { stream?: LiveStream };
+        if (!cancelled && data.stream?.auction) {
+          setAuction(data.stream.auction);
+        }
+      } catch {
+        /* ignore poll errors */
+      }
+    }
+
+    const id = window.setInterval(() => void refreshAuction(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [auction, stream.id]);
 
   async function react(emoji = "❤️") {
     const x = reactionX();
@@ -348,16 +386,21 @@ export function LiveRoom({
         </button>
       </div>
 
-      {/* Bottom: one compact bag pill only — face stays clear */}
+      {/* Bottom: bag pill + auction — stays above chat sheet when chat is open */}
       <div
-        className="absolute inset-x-0 bottom-0 z-20 pr-14 pl-3"
-        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        className="absolute inset-x-0 z-20 pr-14 pl-3"
+        style={{
+          bottom: chatOpen
+            ? "calc(42svh + 0.5rem)"
+            : "max(0.75rem, env(safe-area-inset-bottom))",
+        }}
       >
-        {stream.auction && auctionOpen && !shopOpen && !chatOpen && (
+        {auction && auctionOpen && !shopOpen && (
           <div className="mb-2 max-w-[min(100%,20rem)]">
             <AuctionPanel
-              auction={stream.auction}
+              auction={auction}
               product={auctionProduct}
+              onAuctionChange={setAuction}
             />
             <button
               type="button"
@@ -369,11 +412,19 @@ export function LiveRoom({
           </div>
         )}
 
-        {pinned && !shopOpen && !chatOpen && (
+        {pinned && !shopOpen && (
           <PinnedProduct
             product={pinned}
             onBuy={() => buy(pinned)}
             onOpenShop={() => setShopOpen(true)}
+            auctionBidGhs={
+              pinnedIsAuction && auction ? auction.currentBidGhs : undefined
+            }
+            onBid={() => {
+              setAuctionOpen(true);
+              setShopOpen(false);
+              setNotice(null);
+            }}
           />
         )}
 
@@ -518,7 +569,7 @@ export function LiveRoom({
               <Bell className="h-3.5 w-3.5" />
               Notify
             </button>
-            {stream.auction && (
+            {auction && (
               <button
                 type="button"
                 onClick={() => {
@@ -527,7 +578,7 @@ export function LiveRoom({
                 }}
                 className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold"
               >
-                Auction
+                Auction · {auction.currentBidGhs} GHS
               </button>
             )}
           </div>
