@@ -11,6 +11,13 @@ export interface UserAddress {
   region: string;
   phone?: string;
   isDefault?: boolean;
+  location?: {
+    latitude: number;
+    longitude: number;
+    accuracyM?: number;
+    source?: "gps" | "map-pin" | "manual" | "geocoded";
+    capturedAt?: string;
+  };
 }
 
 export interface HubsomUser {

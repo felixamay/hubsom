@@ -124,7 +124,7 @@ export default async function SellerHubPage() {
             Orders
           </h2>
           <p className="mt-2 text-sm text-hubsom-ink/65">
-            See purchases, product lines, and buyer shipping details.
+            Consolidate purchases, add buyer location, Locate or send to Hubers.
           </p>
         </Link>
         <Link

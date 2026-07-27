@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
   getOrder,
+  updateOrderShipping,
   updateOrderStatus,
+  type OrderShipping,
   type OrderStatus,
 } from "@/lib/data/orders";
 import { ensureSellerForUser } from "@/lib/data/sellers";
@@ -25,10 +27,11 @@ export async function PATCH(
   }
 
   const { orderId } = await context.params;
-  const body = (await request.json()) as { status?: OrderStatus };
-  if (!body.status || !ALLOWED.includes(body.status)) {
-    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  }
+  const body = (await request.json()) as {
+    status?: OrderStatus;
+    shipping?: Partial<OrderShipping>;
+    location?: OrderShipping["location"];
+  };
 
   const user = await getUserById(session.user.id);
   if (!user) {
@@ -51,6 +54,28 @@ export async function PATCH(
     return NextResponse.json({ error: "Not your order" }, { status: 403 });
   }
 
-  const order = await updateOrderStatus(orderId, body.status);
-  return NextResponse.json({ order });
+  try {
+    if (body.shipping || body.location) {
+      const order = await updateOrderShipping(orderId, {
+        ...body.shipping,
+        location: body.location ?? body.shipping?.location,
+      });
+      return NextResponse.json({ order });
+    }
+
+    if (!body.status || !ALLOWED.includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+
+    const order = await updateOrderStatus(orderId, body.status);
+    return NextResponse.json({ order });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Could not update order",
+      },
+      { status: 400 },
+    );
+  }
 }

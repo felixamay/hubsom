@@ -201,6 +201,7 @@ export async function upsertAddress(
     region: address.region.trim() || "Greater Accra",
     phone: address.phone?.trim(),
     isDefault: Boolean(address.isDefault),
+    location: address.location,
   };
 
   if (!next.line1) throw new Error("Address line is required");

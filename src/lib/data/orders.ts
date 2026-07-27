@@ -3,6 +3,14 @@ import type { ProductCategory } from "@/types";
 
 export type OrderStatus = "pending_payment" | "paid" | "fulfilled" | "cancelled";
 
+export interface GeoLocation {
+  latitude: number;
+  longitude: number;
+  accuracyM?: number;
+  source?: "gps" | "map-pin" | "manual" | "geocoded";
+  capturedAt?: string;
+}
+
 export interface OrderShipping {
   recipientName: string;
   phone: string;
@@ -12,6 +20,8 @@ export interface OrderShipping {
   region: string;
   notes?: string;
   label?: string;
+  /** Buyer drop-off pin for riders / Locate */
+  location?: GeoLocation;
 }
 
 export interface OrderLine {
@@ -64,6 +74,7 @@ export function normalizeShipping(
   const region = String(input?.region ?? "").trim() || "Greater Accra";
   const notes = String(input?.notes ?? "").trim() || undefined;
   const label = String(input?.label ?? "").trim() || undefined;
+  const location = normalizeGeoLocation(input?.location);
 
   if (!recipientName) throw new Error("Recipient name is required");
   if (!phone) throw new Error("Phone number is required for delivery");
@@ -78,7 +89,57 @@ export function normalizeShipping(
     region,
     notes,
     label,
+    location,
   };
+}
+
+export function normalizeGeoLocation(
+  input: Partial<GeoLocation> | undefined | null,
+): GeoLocation | undefined {
+  if (!input) return undefined;
+  const latitude = Number(input.latitude);
+  const longitude = Number(input.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined;
+  }
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    throw new Error("Invalid map coordinates");
+  }
+  const accuracyM =
+    typeof input.accuracyM === "number" && Number.isFinite(input.accuracyM)
+      ? Math.max(0, input.accuracyM)
+      : undefined;
+  const source = input.source;
+  return {
+    latitude,
+    longitude,
+    accuracyM,
+    source:
+      source === "gps" ||
+      source === "map-pin" ||
+      source === "manual" ||
+      source === "geocoded"
+        ? source
+        : "manual",
+    capturedAt: input.capturedAt || new Date().toISOString(),
+  };
+}
+
+export function mapsSearchUrl(shipping: OrderShipping): string {
+  if (shipping.location) {
+    const { latitude, longitude } = shipping.location;
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  }
+  const q = [
+    shipping.line1,
+    shipping.line2,
+    shipping.city,
+    shipping.region,
+    "Ghana",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
 export async function listOrders(): Promise<Order[]> {
@@ -130,6 +191,27 @@ export async function updateOrderStatus(
   return store.orders[idx];
 }
 
+export async function updateOrderShipping(
+  orderId: string,
+  shipping: Partial<OrderShipping>,
+): Promise<Order | undefined> {
+  const store = await load();
+  const idx = store.orders.findIndex((o) => o.id === orderId);
+  if (idx < 0) return undefined;
+  const current = store.orders[idx].shipping;
+  const merged = normalizeShipping({
+    ...current,
+    ...shipping,
+    location:
+      shipping.location !== undefined
+        ? shipping.location
+        : current?.location,
+  });
+  store.orders[idx] = { ...store.orders[idx], shipping: merged };
+  await save(store);
+  return store.orders[idx];
+}
+
 export async function getOrderStats() {
   const orders = await listOrders();
   const paidish = orders.filter((o) => o.status !== "cancelled");
@@ -149,6 +231,9 @@ export function formatShippingBlock(shipping: OrderShipping): string {
     shipping.line1,
     shipping.line2,
     `${shipping.city}, ${shipping.region}`,
+    shipping.location
+      ? `Pin: ${shipping.location.latitude.toFixed(5)}, ${shipping.location.longitude.toFixed(5)}`
+      : null,
     shipping.notes ? `Note: ${shipping.notes}` : null,
   ]
     .filter(Boolean)

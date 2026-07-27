@@ -52,6 +52,7 @@ export async function POST(request: Request) {
         region: saved.region,
         label: saved.label,
         notes: body.shipping?.notes,
+        location: body.shipping?.location ?? saved.location,
       };
     }
 
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
         region: shipping.region,
         phone: shipping.phone,
         isDefault: true,
+        location: shipping.location,
       });
     }
 

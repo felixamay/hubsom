@@ -62,6 +62,7 @@ export function CheckoutShippingFields({
             city: preferred.city,
             region: preferred.region,
             phone: preferred.phone ?? value.phone,
+            location: preferred.location,
             saveAddress: false,
           });
         }
@@ -108,8 +109,31 @@ export function CheckoutShippingFields({
       city: addr.city,
       region: addr.region,
       phone: addr.phone ?? value.phone,
+      location: addr.location,
       saveAddress: false,
     });
+  }
+
+  function pinMyLocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onChange({
+          ...value,
+          location: {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracyM: pos.coords.accuracy,
+            source: "gps",
+            capturedAt: new Date().toISOString(),
+          },
+        });
+      },
+      () => {
+        // silent — seller can still pin later
+      },
+      { enableHighAccuracy: true, timeout: 12000 },
+    );
   }
 
   const selectedId = useMemo(() => {
@@ -246,6 +270,41 @@ export function CheckoutShippingFields({
         </label>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={pinMyLocation}
+          className={cn(
+            "rounded-xl px-3 py-2 text-[11px] font-bold",
+            dark
+              ? "bg-white/10 text-white"
+              : "border border-hubsom-forest/15 bg-white text-hubsom-forest",
+          )}
+        >
+          Pin my location
+        </button>
+        {value.location ? (
+          <p
+            className={cn(
+              "text-[11px] font-medium",
+              dark ? "text-hubsom-mint" : "text-hubsom-leaf",
+            )}
+          >
+            Pin saved · {value.location.latitude.toFixed(4)},{" "}
+            {value.location.longitude.toFixed(4)}
+          </p>
+        ) : (
+          <p
+            className={cn(
+              "text-[11px]",
+              dark ? "text-white/45" : "text-hubsom-ink/50",
+            )}
+          >
+            Optional — helps sellers Locate and dispatch Hubers.
+          </p>
+        )}
+      </div>
+
       <label
         className={cn(
           "flex items-center gap-2 text-xs font-medium",
@@ -285,6 +344,7 @@ export function shippingPayload(value: ShippingFormValue) {
       region: value.region,
       notes: value.notes || undefined,
       label: value.label || undefined,
+      location: value.location,
     },
   };
 }
