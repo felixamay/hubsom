@@ -6,6 +6,7 @@ import {
   Heart,
   LogOut,
   MapPin,
+  MessageCircle,
   Package,
   Settings,
   ShoppingBag,
@@ -38,6 +39,7 @@ export default async function AccountPage() {
     .toUpperCase();
 
   const rows = [
+    { href: "/messages", label: "Messages", icon: MessageCircle },
     { href: "/account/profile", label: "Edit profile", icon: UserRound },
     { href: "/account/following", label: "Following & followers", icon: Users },
     { href: "/cart", label: "Orders & cart", icon: ShoppingBag },

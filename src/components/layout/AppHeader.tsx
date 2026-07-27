@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Radio, ShoppingBag, UserRound } from "lucide-react";
+import { MessageCircle, Radio, ShoppingBag, UserRound } from "lucide-react";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { useCartStore } from "@/lib/stores/cart";
 
@@ -31,6 +31,13 @@ export function AppHeader() {
           >
             <Radio className="h-3.5 w-3.5" />
             Live
+          </Link>
+          <Link
+            href="/messages"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-hubsom-forest/10 bg-hubsom-mist text-hubsom-forest"
+            aria-label="Messages"
+          >
+            <MessageCircle className="h-4 w-4" />
           </Link>
           <Link
             href="/account"

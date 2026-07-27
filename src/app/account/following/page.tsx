@@ -117,13 +117,23 @@ export default async function ConnectionsPage({
                     {seller.followers.toLocaleString()} followers
                   </p>
                 </Link>
-                <FollowButton
-                  sellerId={seller.id}
-                  initialFollowing
-                  initialFollowers={seller.followers}
-                  size="sm"
-                  className="shrink-0"
-                />
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {seller.ownerUserId ? (
+                    <Link
+                      href={`/messages/${seller.ownerUserId}`}
+                      className="rounded-lg bg-hubsom-gold px-2.5 py-1.5 text-[11px] font-bold text-hubsom-ink"
+                    >
+                      Message
+                    </Link>
+                  ) : null}
+                  <FollowButton
+                    sellerId={seller.id}
+                    initialFollowing
+                    initialFollowers={seller.followers}
+                    size="sm"
+                    className="shrink-0"
+                  />
+                </div>
               </div>
             ))}
           </>
@@ -179,9 +189,12 @@ export default async function ConnectionsPage({
                       "Hubsom member"}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-lg bg-hubsom-mist px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-hubsom-forest">
-                  {follower.role === "buyer" ? "Buyer" : "Seller"}
-                </span>
+                <Link
+                  href={`/messages/${follower.id}`}
+                  className="shrink-0 rounded-lg bg-hubsom-gold px-2.5 py-1.5 text-[11px] font-bold text-hubsom-ink"
+                >
+                  Message
+                </Link>
               </div>
             ))}
           </>

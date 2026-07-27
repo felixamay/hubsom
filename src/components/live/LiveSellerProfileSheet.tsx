@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Ban,
@@ -28,7 +29,7 @@ type Props = {
   onMention: (handle: string) => void;
 };
 
-type Panel = "menu" | "tip" | "report" | "review" | "message" | "done";
+type Panel = "menu" | "tip" | "report" | "review" | "done";
 
 export function LiveSellerProfileSheet({
   open,
@@ -42,6 +43,7 @@ export function LiveSellerProfileSheet({
   streamId,
   onMention,
 }: Props) {
+  const router = useRouter();
   const [panel, setPanel] = useState<Panel>("menu");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -50,7 +52,6 @@ export function LiveSellerProfileSheet({
   const [reportDetails, setReportDetails] = useState("");
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
-  const [messageText, setMessageText] = useState("");
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
@@ -159,18 +160,27 @@ export function LiveSellerProfileSheet({
   }
 
   async function handleMessage() {
-    if (!messageText.trim()) {
-      setStatus("Write a message first");
-      return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await fetch(
+        `/api/messages?sellerId=${encodeURIComponent(sellerId)}`,
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        peerUserId?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.peerUserId) {
+        setStatus(data.error ?? "Could not open chat");
+        return;
+      }
+      onClose();
+      router.push(`/messages/${data.peerUserId}`);
+    } catch {
+      setStatus("Network error. Try again.");
+    } finally {
+      setBusy(false);
     }
-    const ok = await postAction({
-      action: "message",
-      text: messageText.trim(),
-    });
-    if (!ok) return;
-    setStatus("Message sent to the seller.");
-    setMessageText("");
-    setPanel("done");
   }
 
   function mentionInChat() {
@@ -183,10 +193,7 @@ export function LiveSellerProfileSheet({
       id: "message",
       label: "Message",
       icon: MessageCircle,
-      onClick: () => {
-        setStatus(null);
-        setPanel("message");
-      },
+      onClick: () => void handleMessage(),
     },
     {
       id: "mention",
@@ -263,9 +270,7 @@ export function LiveSellerProfileSheet({
                       ? "Report seller"
                       : panel === "review"
                         ? "Leave a review"
-                        : panel === "message"
-                          ? "Message seller"
-                          : "Done"}
+                        : "Done"}
               </p>
               <button
                 type="button"
@@ -508,35 +513,6 @@ export function LiveSellerProfileSheet({
                       className="min-h-11 flex-1 rounded-full bg-hubsom-gold text-sm font-semibold text-hubsom-ink disabled:opacity-50"
                     >
                       {busy ? "Saving…" : "Submit review"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {panel === "message" ? (
-                <div className="space-y-3">
-                  <textarea
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    rows={4}
-                    placeholder={`Message ${sellerName}…`}
-                    className="w-full resize-none rounded-xl border border-hubsom-forest/12 bg-white px-3 py-2.5 text-sm outline-none focus:border-hubsom-gold"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPanel("menu")}
-                      className="min-h-11 flex-1 rounded-full border border-hubsom-forest/12 text-sm font-semibold"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void handleMessage()}
-                      className="min-h-11 flex-1 rounded-full bg-hubsom-gold text-sm font-semibold text-hubsom-ink disabled:opacity-50"
-                    >
-                      {busy ? "Sending…" : "Send message"}
                     </button>
                   </div>
                 </div>
