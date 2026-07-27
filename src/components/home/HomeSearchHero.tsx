@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Grid2x2, Search } from "lucide-react";
+import { Search, ShoppingBag } from "lucide-react";
 
 export function HomeSearchHero() {
   const router = useRouter();
@@ -25,14 +25,17 @@ export function HomeSearchHero() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2.5"
         >
           <Link
-            href="/categories"
-            className="inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-hubsom-forest/12 bg-white px-3.5 text-sm font-bold text-hubsom-forest shadow-[0_12px_28px_-20px_rgba(10,61,92,0.7)] transition active:scale-[0.98]"
+            href="/marketplace"
+            className="group inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl bg-hubsom-forest px-3.5 text-sm font-bold text-white shadow-[0_14px_28px_-16px_rgba(10,61,92,0.85)] transition hover:bg-[#0c4a6e] active:scale-[0.98]"
+            aria-label="Buy Now marketplace"
           >
-            <Grid2x2 className="h-[1.125rem] w-[1.125rem]" strokeWidth={2.25} />
-            Categories
+            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 transition group-hover:bg-white/20">
+              <ShoppingBag className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+            Buy Now
           </Link>
 
           <form onSubmit={onSearch} className="relative min-w-0 flex-1">
