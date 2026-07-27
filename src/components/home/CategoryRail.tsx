@@ -58,7 +58,8 @@ export function CategoryRail() {
                     src={categoryImage(category.slug)}
                     alt=""
                     fill
-                    sizes="88px"
+                    sizes="256px"
+                    quality={95}
                     className="object-cover"
                   />
                 </motion.div>
