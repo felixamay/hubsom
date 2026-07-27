@@ -1,7 +1,14 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { X } from "lucide-react";
+import {
+  CheckoutShippingFields,
+  emptyShippingForm,
+  shippingPayload,
+  type ShippingFormValue,
+} from "@/components/checkout/CheckoutShippingFields";
 import { formatGhs } from "@/lib/currency";
 import { useCartStore } from "@/lib/stores/cart";
 
@@ -14,10 +21,17 @@ export function LiveCartDrawer({
   open: boolean;
   onClose: () => void;
 }) {
+  const { data: session } = useSession();
   const items = useCartStore((s) => s.items);
   const clear = useCartStore((s) => s.clear);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shipping, setShipping] = useState<ShippingFormValue>(() =>
+    emptyShippingForm({
+      recipientName: session?.user?.name ?? "",
+      phone: session?.user?.phone ?? "",
+    }),
+  );
 
   if (!open) return null;
 
@@ -41,6 +55,7 @@ export function LiveCartDrawer({
             productId: i.productId,
             quantity: i.quantity,
           })),
+          ...shippingPayload(shipping),
         }),
       });
       const data = await res.json();
@@ -50,7 +65,7 @@ export function LiveCartDrawer({
       }
       clear();
       setStatus(
-        `Order ${data.orderId} · ${formatGhs(data.subtotalGhs)} · ${data.status}`,
+        `Order ${data.orderId} · ${formatGhs(data.subtotalGhs)} · seller notified`,
       );
     } finally {
       setLoading(false);
@@ -59,17 +74,17 @@ export function LiveCartDrawer({
 
   return (
     <div className="fixed inset-0 z-[70] flex justify-end bg-black/50 p-3 sm:p-6">
-      <div className="flex w-full max-w-md flex-col rounded-2xl border border-white/15 bg-hubsom-night text-white shadow-2xl">
+      <div className="flex max-h-[92svh] w-full max-w-md flex-col rounded-2xl border border-white/15 bg-hubsom-night text-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h3 className="font-display text-xl font-semibold">Live cart</h3>
           <button type="button" onClick={onClose} aria-label="Close cart">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {!lines.length && (
             <p className="text-sm text-white/60">
-              Tap Buy on the bag pill, then one-tap checkout.
+              Tap Buy on the bag pill, add shipping, then checkout.
             </p>
           )}
           {lines.map(({ item, total }) => (
@@ -86,6 +101,16 @@ export function LiveCartDrawer({
               <p className="font-bold text-hubsom-sun">{formatGhs(total)}</p>
             </div>
           ))}
+
+          {!!lines.length && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <CheckoutShippingFields
+                value={shipping}
+                onChange={setShipping}
+                variant="dark"
+              />
+            </div>
+          )}
         </div>
         <div className="border-t border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between text-sm">
@@ -98,7 +123,7 @@ export function LiveCartDrawer({
             onClick={() => void oneTapCheckout()}
             className="w-full rounded-xl bg-hubsom-gold py-3 text-sm font-bold text-hubsom-ink disabled:opacity-50"
           >
-            {loading ? "Processing…" : "One-tap checkout"}
+            {loading ? "Processing…" : "Checkout with shipping"}
           </button>
           {status && (
             <p className="mt-2 text-center text-xs text-hubsom-mint">{status}</p>

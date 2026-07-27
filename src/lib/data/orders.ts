@@ -3,9 +3,22 @@ import type { ProductCategory } from "@/types";
 
 export type OrderStatus = "pending_payment" | "paid" | "fulfilled" | "cancelled";
 
+export interface OrderShipping {
+  recipientName: string;
+  phone: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  region: string;
+  notes?: string;
+  label?: string;
+}
+
 export interface OrderLine {
   productId: string;
+  sellerId?: string;
   name: string;
+  image?: string;
   quantity: number;
   unitPriceGhs: number;
   lineTotalGhs: number;
@@ -18,9 +31,12 @@ export interface Order {
   subtotalGhs: number;
   status: OrderStatus;
   userId?: string;
+  buyerName?: string;
+  buyerEmail?: string;
   streamId?: string;
   oneTap?: boolean;
   lines: OrderLine[];
+  shipping?: OrderShipping;
   paymentMethods: string[];
   deliveryEstimate: string;
   createdAt: string;
@@ -37,6 +53,34 @@ async function save(store: Store) {
   await writeJsonFile(FILE, store);
 }
 
+export function normalizeShipping(
+  input: Partial<OrderShipping> | undefined,
+): OrderShipping {
+  const recipientName = String(input?.recipientName ?? "").trim();
+  const phone = String(input?.phone ?? "").trim();
+  const line1 = String(input?.line1 ?? "").trim();
+  const line2 = String(input?.line2 ?? "").trim() || undefined;
+  const city = String(input?.city ?? "").trim() || "Accra";
+  const region = String(input?.region ?? "").trim() || "Greater Accra";
+  const notes = String(input?.notes ?? "").trim() || undefined;
+  const label = String(input?.label ?? "").trim() || undefined;
+
+  if (!recipientName) throw new Error("Recipient name is required");
+  if (!phone) throw new Error("Phone number is required for delivery");
+  if (!line1) throw new Error("Shipping address is required");
+
+  return {
+    recipientName,
+    phone,
+    line1,
+    line2,
+    city,
+    region,
+    notes,
+    label,
+  };
+}
+
 export async function listOrders(): Promise<Order[]> {
   const store = await load();
   return store.orders;
@@ -47,18 +91,43 @@ export async function listOrdersByUser(userId: string): Promise<Order[]> {
   return store.orders.filter((o) => o.userId === userId);
 }
 
+export async function listOrdersBySeller(sellerId: string): Promise<Order[]> {
+  const store = await load();
+  return store.orders.filter((o) =>
+    o.lines.some((line) => line.sellerId === sellerId),
+  );
+}
+
+export async function getOrder(id: string): Promise<Order | undefined> {
+  const store = await load();
+  return store.orders.find((o) => o.id === id);
+}
+
 export async function createOrder(
   input: Omit<Order, "id" | "createdAt">,
 ): Promise<Order> {
   const store = await load();
   const order: Order = {
     ...input,
+    shipping: normalizeShipping(input.shipping),
     id: `ord_${Date.now().toString(36)}`,
     createdAt: new Date().toISOString(),
   };
   store.orders.unshift(order);
   await save(store);
   return order;
+}
+
+export async function updateOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+): Promise<Order | undefined> {
+  const store = await load();
+  const idx = store.orders.findIndex((o) => o.id === orderId);
+  if (idx < 0) return undefined;
+  store.orders[idx] = { ...store.orders[idx], status };
+  await save(store);
+  return store.orders[idx];
 }
 
 export async function getOrderStats() {
@@ -71,4 +140,17 @@ export async function getOrderStats() {
   );
   const buyers = paidish.length;
   return { revenueGhs, unitsSold, uniqueBuyers: buyers, orderCount: orders.length };
+}
+
+export function formatShippingBlock(shipping: OrderShipping): string {
+  return [
+    shipping.recipientName,
+    shipping.phone,
+    shipping.line1,
+    shipping.line2,
+    `${shipping.city}, ${shipping.region}`,
+    shipping.notes ? `Note: ${shipping.notes}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

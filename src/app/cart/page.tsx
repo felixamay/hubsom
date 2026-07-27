@@ -1,17 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useState } from "react";
+import {
+  CheckoutShippingFields,
+  emptyShippingForm,
+  shippingPayload,
+  type ShippingFormValue,
+} from "@/components/checkout/CheckoutShippingFields";
 import { formatGhs } from "@/lib/currency";
 import { useCartStore } from "@/lib/stores/cart";
 
 export default function CartPage() {
+  const { data: session } = useSession();
   const items = useCartStore((s) => s.items);
   const setQuantity = useCartStore((s) => s.setQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
   const clear = useCartStore((s) => s.clear);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shipping, setShipping] = useState<ShippingFormValue>(() =>
+    emptyShippingForm({
+      recipientName: session?.user?.name ?? "",
+      phone: session?.user?.phone ?? "",
+    }),
+  );
 
   const lines = items.map((item) => ({
     item,
@@ -33,6 +47,7 @@ export default function CartPage() {
             productId: i.productId,
             quantity: i.quantity,
           })),
+          ...shippingPayload(shipping),
         }),
       });
       const data = await res.json();
@@ -42,7 +57,7 @@ export default function CartPage() {
       }
       clear();
       setStatus(
-        `Order ${data.orderId} created · ${formatGhs(data.subtotalGhs)} · ${data.status}`,
+        `Order ${data.orderId} created · ${formatGhs(data.subtotalGhs)} · shipping sent to seller`,
       );
     } finally {
       setLoading(false);
@@ -51,7 +66,9 @@ export default function CartPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <h1 className="font-display text-4xl font-extrabold text-hubsom-forest">Cart</h1>
+      <h1 className="font-display text-4xl font-extrabold text-hubsom-forest">
+        Cart
+      </h1>
       <p className="mt-2 text-hubsom-ink/70">
         Unified cart for Buy Now, live pins, auctions, and flash sales.
       </p>
@@ -112,21 +129,31 @@ export default function CartPage() {
       </div>
 
       {!!lines.length && (
-        <div className="mt-8 rounded-2xl border border-hubsom-forest/10 bg-white/70 p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-hubsom-ink/65">Subtotal</span>
-            <span className="text-xl font-bold text-hubsom-forest">
-              {formatGhs(subtotal)}
-            </span>
+        <div className="mt-8 space-y-4">
+          <div className="rounded-2xl border border-hubsom-forest/10 bg-white/70 p-5">
+            <CheckoutShippingFields value={shipping} onChange={setShipping} />
           </div>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void checkout()}
-            className="mt-4 w-full rounded-xl bg-hubsom-forest py-3 text-sm font-bold text-white disabled:opacity-60"
-          >
-            {loading ? "Processing…" : "Checkout"}
-          </button>
+
+          <div className="rounded-2xl border border-hubsom-forest/10 bg-white/70 p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-hubsom-ink/65">Subtotal</span>
+              <span className="text-xl font-bold text-hubsom-forest">
+                {formatGhs(subtotal)}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-hubsom-ink/50">
+              Same-day Accra · 1–3 days nationwide. Seller receives your shipping
+              details with this order.
+            </p>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void checkout()}
+              className="mt-4 w-full rounded-xl bg-hubsom-forest py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {loading ? "Processing…" : "Place order"}
+            </button>
+          </div>
         </div>
       )}
 

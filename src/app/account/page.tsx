@@ -148,6 +148,12 @@ export default async function AccountPage() {
                 <p className="mt-1 text-xs text-hubsom-ink/55">
                   {order.status.replace("_", " ")} · {order.lines.length} items
                 </p>
+                {order.shipping ? (
+                  <p className="mt-1 truncate text-xs text-hubsom-ink/50">
+                    Ship to {order.shipping.recipientName} ·{" "}
+                    {order.shipping.city}, {order.shipping.region}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>
