@@ -29,7 +29,6 @@ export function Hero() {
           <BrandLogo
             href="/brand"
             heightClassName="h-16 sm:h-24 md:h-28"
-            plate={false}
             priority
             className="drop-shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
           />

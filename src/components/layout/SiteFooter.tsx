@@ -12,7 +12,7 @@ export function SiteFooter() {
     <footer className="mt-20 border-t border-white/10 bg-hubsom-night text-hubsom-mint">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
         <div>
-          <BrandLogo href="/" heightClassName="h-12" plate={false} />
+          <BrandLogo href="/" heightClassName="h-12" />
           <p className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
             Social commerce built in Ghana. Live shopping, auctions, Buy Now,
             flash sales, and seller stores — every product category, one platform.

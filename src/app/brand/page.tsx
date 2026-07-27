@@ -21,12 +21,21 @@ const colors = [
 
 export default function BrandPage() {
   return (
-    <div className="bg-black text-white">
+    <div className="bg-hubsom-mist text-hubsom-ink">
       <section className="mx-auto flex min-h-[70svh] max-w-5xl flex-col items-center justify-center px-4 py-16 sm:px-6">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-hubsom-gold">
-          Official mark
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-hubsom-orange">
+          Official mark · transparent PNG
         </p>
-        <div className="mt-8 w-full max-w-3xl">
+        <div
+          className="mt-8 w-full max-w-3xl rounded-3xl border border-hubsom-forest/10 p-8 sm:p-12"
+          style={{
+            backgroundImage:
+              "linear-gradient(45deg, #d7e3ec 25%, transparent 25%), linear-gradient(-45deg, #d7e3ec 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d7e3ec 75%), linear-gradient(-45deg, transparent 75%, #d7e3ec 75%)",
+            backgroundSize: "24px 24px",
+            backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0",
+            backgroundColor: "#ffffff",
+          }}
+        >
           <Image
             src={HUBSOM_LOGO.src}
             alt={HUBSOM_LOGO.alt}
@@ -37,21 +46,31 @@ export default function BrandPage() {
             sizes="(max-width:768px) 100vw, 768px"
           />
         </div>
-        <p className="mt-6 max-w-xl text-center text-sm text-white/65">
-          Displayed with intrinsic aspect ratio and <code>object-contain</code> —
-          never stretched. Direct asset:{" "}
+        <div className="mt-6 w-full max-w-3xl rounded-3xl bg-black p-8 sm:p-12">
+          <Image
+            src={HUBSOM_LOGO.src}
+            alt="Hubsom on dark"
+            width={HUBSOM_LOGO.width}
+            height={HUBSOM_LOGO.height}
+            className="h-auto w-full object-contain"
+            sizes="(max-width:768px) 100vw, 768px"
+          />
+        </div>
+        <p className="mt-6 max-w-xl text-center text-sm text-hubsom-ink/65">
+          Transparent background · intrinsic aspect ratio ·{" "}
+          <code className="text-hubsom-blue">object-contain</code> (never stretched).
+          Asset:{" "}
           <a className="text-hubsom-cyan underline" href="/brand/hubsom-logo.png">
             /brand/hubsom-logo.png
           </a>
         </p>
       </section>
 
-      <section className="border-t border-white/10 bg-[#06121f] px-4 py-14 sm:px-6">
+      <section className="border-t border-hubsom-forest/10 bg-hubsom-night px-4 py-14 text-white sm:px-6">
         <div className="mx-auto max-w-5xl">
           <h1 className="font-display text-3xl font-bold">Official colors</h1>
           <p className="mt-2 text-white/65">
-            Extracted from the Hubsom logo — teal/cyan, lime, and orange/gold on
-            black.
+            Extracted from the Hubsom logo — teal/cyan, lime, and orange/gold.
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
             {colors.map((c) => (
