@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Flame } from "lucide-react";
 import { CategoryTile } from "@/components/categories/CategoryTile";
 import { CATEGORIES } from "@/lib/categories";
+import { categoryImage } from "@/lib/category-images";
 
 const TRENDING = [
   "fashion",
@@ -38,36 +40,63 @@ export function CategoriesBrowse() {
       </motion.div>
 
       <section className="mt-6">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-hubsom-live/12 text-hubsom-live">
-            <Flame className="h-3.5 w-3.5" strokeWidth={2.4} />
-          </span>
-          <div>
-            <h2 className="font-display text-lg font-bold text-hubsom-forest">
-              Trending today
-            </h2>
-            <p className="text-[11px] text-hubsom-ink/55">
-              Popular picks across Hubsom
-            </p>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-hubsom-live/12 text-hubsom-live">
+              <Flame className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+            <div>
+              <h2 className="font-display text-lg font-bold text-hubsom-forest">
+                Trending today
+              </h2>
+              <p className="text-[11px] text-hubsom-ink/55">
+                Popular picks across Hubsom
+              </p>
+            </div>
           </div>
+          <Link
+            href="/marketplace"
+            className="shrink-0 pt-1 text-xs font-bold text-hubsom-cyan"
+          >
+            See all
+          </Link>
         </div>
 
-        <div className="scrollbar-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+        <div className="scrollbar-thin -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-1">
           {trendingItems.map((category, index) => (
             <motion.div
               key={category.slug}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.04 }}
+              transition={{ duration: 0.28, delay: index * 0.03 }}
+              className="w-[4.75rem] shrink-0"
             >
-              <CategoryTile
-                slug={category.slug}
-                name={category.name}
+              <Link
                 href={`/categories/${category.slug}`}
-                size="lg"
-                badge="Hot"
-                priority={index < 3}
-              />
+                className="group block outline-none transition active:scale-[0.98]"
+              >
+                <div
+                  className="relative flex h-[3.85rem] items-center justify-center overflow-hidden rounded-xl ring-1 ring-white/10 shadow-[0_10px_22px_-16px_rgba(0,0,0,0.65)]"
+                  style={{
+                    background:
+                      "linear-gradient(155deg, #0a3d5c 0%, #06121f 52%, #000000 100%)",
+                  }}
+                >
+                  <Image
+                    src={categoryImage(category.slug)}
+                    alt=""
+                    width={56}
+                    height={56}
+                    sizes="56px"
+                    quality={100}
+                    priority={index < 4}
+                    className="h-8 w-8 object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,0.35)] transition duration-300 group-hover:scale-110"
+                  />
+                </div>
+                <p className="mt-1.5 line-clamp-2 text-center text-[10px] font-bold leading-tight text-hubsom-forest">
+                  {category.name}
+                </p>
+              </Link>
             </motion.div>
           ))}
         </div>
