@@ -121,7 +121,7 @@ export default async function SellerHubPage() {
         >
           <Package className="h-6 w-6 text-hubsom-orange" />
           <h2 className="mt-4 font-display text-2xl font-bold text-hubsom-forest">
-            Orders
+            Orders & shipments
           </h2>
           <p className="mt-2 text-sm text-hubsom-ink/65">
             Consolidate purchases, add buyer location, Locate or send to Hubers.

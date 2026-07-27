@@ -12,12 +12,8 @@ import {
 } from "lucide-react";
 import { SellerOrderActions } from "@/components/seller/SellerOrderActions";
 import { formatGhs } from "@/lib/currency";
-import {
-  mapsSearchUrl,
-  type Order,
-  type OrderShipping,
-} from "@/lib/data/orders";
-import type { Shipment } from "@/lib/data/shipments";
+import { mapsSearchUrl } from "@/lib/shipping";
+import type { Order, OrderShipping, Shipment } from "@/types/orders";
 import { cn } from "@/lib/utils";
 
 type OrderView = {

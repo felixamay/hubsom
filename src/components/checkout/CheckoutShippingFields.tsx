@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { UserAddress } from "@/types/auth";
-import type { OrderShipping } from "@/lib/data/orders";
+import type { OrderShipping } from "@/types/orders";
 import { cn } from "@/lib/utils";
 
 export type ShippingFormValue = OrderShipping & {

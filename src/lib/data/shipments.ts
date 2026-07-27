@@ -1,67 +1,27 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
+import { getOrder } from "@/lib/data/orders";
 import {
-  getOrder,
   normalizeGeoLocation,
   normalizeShipping,
-  type GeoLocation,
-  type OrderShipping,
-} from "@/lib/data/orders";
+} from "@/lib/shipping";
+import type {
+  DeliveryOffer,
+  GeoLocation,
+  OrderShipping,
+  Shipment,
+  ShipmentItem,
+  ShipmentStatus,
+} from "@/types/orders";
+
+export type {
+  DeliveryOffer,
+  DeliveryOfferStatus,
+  Shipment,
+  ShipmentItem,
+  ShipmentStatus,
+} from "@/types/orders";
 
 const FILE = "shipments.json";
-
-export type ShipmentStatus =
-  | "draft"
-  | "ready"
-  | "offering"
-  | "assigned"
-  | "out_for_delivery"
-  | "delivered"
-  | "cancelled";
-
-export type DeliveryOfferStatus =
-  | "queued"
-  | "sent"
-  | "accepted"
-  | "declined"
-  | "expired";
-
-export interface ShipmentItem {
-  orderId: string;
-  productId: string;
-  name: string;
-  quantity: number;
-  image?: string;
-  lineTotalGhs: number;
-}
-
-export interface DeliveryOffer {
-  id: string;
-  shipmentId: string;
-  huberId: string;
-  huberName: string;
-  status: DeliveryOfferStatus;
-  offeredFeeGhs?: number;
-  providerReference?: string;
-  createdAt: string;
-  expiresAt: string;
-}
-
-export interface Shipment {
-  id: string;
-  sellerId: string;
-  createdByUserId: string;
-  orderIds: string[];
-  items: ShipmentItem[];
-  destination: OrderShipping;
-  status: ShipmentStatus;
-  assignedHuberId?: string;
-  assignedHuberName?: string;
-  offers: DeliveryOffer[];
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 type Store = { shipments: Shipment[] };
 
 async function load(): Promise<Store> {

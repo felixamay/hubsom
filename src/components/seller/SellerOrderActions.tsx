@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { OrderStatus } from "@/lib/data/orders";
+import type { OrderStatus } from "@/types/orders";
 
 export function SellerOrderActions({
   orderId,

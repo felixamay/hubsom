@@ -1,5 +1,5 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
-import type { GeoLocation } from "@/lib/data/orders";
+import type { GeoLocation } from "@/types/orders";
 import {
   attachOffersToShipment,
   getShipment,

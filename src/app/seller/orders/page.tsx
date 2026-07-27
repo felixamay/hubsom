@@ -14,7 +14,7 @@ import { SellerOrdersBoard } from "@/components/seller/SellerOrdersBoard";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Orders",
+  title: "Orders & shipments",
   description: "Consolidate purchases and dispatch with Hubers.",
 };
 
