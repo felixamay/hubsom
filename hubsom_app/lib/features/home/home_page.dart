@@ -231,7 +231,8 @@ class HomePage extends ConsumerWidget {
                 crossAxisCount: cross,
                 mainAxisSpacing: 14,
                 crossAxisSpacing: 12,
-                childAspectRatio: 0.68,
+                // Taller tiles so name + price stay visible under the image.
+                childAspectRatio: 0.74,
               ),
               delegate: SliverChildBuilderDelegate(
                 (_, i) => ProductCard(product: products[i]),

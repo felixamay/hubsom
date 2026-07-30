@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,22 +22,40 @@ class ProductCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(
-            aspectRatio: 1,
+          Expanded(
+            flex: 5,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (image != null && image.startsWith('http'))
-                    CachedNetworkImage(
-                      imageUrl: image,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(color: HubsomColors.mist),
-                      errorWidget: (_, __, ___) => _placeholder(),
-                    )
-                  else
-                    _placeholder(),
+                  _ProductImage(url: image, name: product.name),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(10, 28, 10, 10),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.72),
+                          ],
+                        ),
+                      ),
+                      child: Text(
+                        formatGhs(product.effectivePrice),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
                   if (product.flashSale != null)
                     Positioned(
                       left: 8,
@@ -76,36 +95,84 @@ class ProductCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             formatGhs(product.effectivePrice),
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: HubsomColors.forest,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w900,
                 ),
           ),
-          if (product.rating > 0)
-            Row(
-              children: [
-                const Icon(Icons.star, size: 14, color: HubsomColors.gold),
-                const SizedBox(width: 2),
-                Text(
-                  '${product.rating.toStringAsFixed(1)} (${product.reviewCount})',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
         ],
       ),
     );
   }
+}
 
-  Widget _placeholder() => Container(
-        color: HubsomColors.mist,
-        alignment: Alignment.center,
-        child: const Icon(Icons.image_outlined, color: HubsomColors.forest),
+class _ProductImage extends StatelessWidget {
+  const _ProductImage({required this.url, required this.name});
+
+  final String? url;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null || url!.isEmpty) return _fallback();
+
+    // cached_network_image can be flaky on some web builds; Image.network is reliable.
+    if (kIsWeb) {
+      return Image.network(
+        url!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallback(),
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            color: HubsomColors.mist,
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
       );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: url!,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => Container(color: HubsomColors.mist),
+      errorWidget: (_, __, ___) => _fallback(),
+    );
+  }
+
+  Widget _fallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [HubsomColors.mint, HubsomColors.forest],
+        ),
+      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(12),
+      child: Text(
+        name,
+        textAlign: TextAlign.center,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
 }
