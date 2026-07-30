@@ -187,7 +187,9 @@ class HomePage extends ConsumerWidget {
             error: (e, _) => SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Could not load catalog. Is the Hubsom API running at the configured base URL?\n$e'),
+                child: Text(
+                  'Catalog is temporarily unavailable. Pull to refresh.\n$e',
+                ),
               ),
             ),
           ),

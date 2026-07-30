@@ -11,9 +11,10 @@ class ApiClient {
                 baseUrl: AppConfig.apiBaseUrl,
                 connectTimeout: const Duration(seconds: 20),
                 receiveTimeout: const Duration(seconds: 30),
+                // Do not set Content-Type globally — it forces CORS preflight
+                // on every GET and breaks when Hosting has no /api backend yet.
                 headers: {
                   'Accept': 'application/json',
-                  'Content-Type': 'application/json',
                 },
               ),
             ) {
@@ -44,18 +45,28 @@ class ApiClient {
   }) =>
       _dio.get<T>(path, queryParameters: queryParameters);
 
+  Options get _jsonBody => Options(
+        contentType: Headers.jsonContentType,
+        headers: {'Content-Type': 'application/json'},
+      );
+
   Future<Response<T>> post<T>(
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
   }) =>
-      _dio.post<T>(path, data: data, queryParameters: queryParameters);
+      _dio.post<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: data == null ? null : _jsonBody,
+      );
 
   Future<Response<T>> put<T>(String path, {Object? data}) =>
-      _dio.put<T>(path, data: data);
+      _dio.put<T>(path, data: data, options: data == null ? null : _jsonBody);
 
   Future<Response<T>> patch<T>(String path, {Object? data}) =>
-      _dio.patch<T>(path, data: data);
+      _dio.patch<T>(path, data: data, options: data == null ? null : _jsonBody);
 
   Future<Response<T>> delete<T>(String path, {Object? data}) =>
       _dio.delete<T>(path, data: data);

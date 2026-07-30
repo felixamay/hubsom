@@ -1,4 +1,5 @@
 import '../../models/stream.dart';
+import '../data/demo_catalog.dart';
 import '../services/api_client.dart';
 
 class LiveRepository {
@@ -6,26 +7,46 @@ class LiveRepository {
 
   final ApiClient _api;
 
+  bool _isHtmlPayload(dynamic data) {
+    if (data is String) {
+      final t = data.trimLeft();
+      return t.startsWith('<!DOCTYPE') || t.startsWith('<html');
+    }
+    return false;
+  }
+
   Future<List<LiveStream>> listStreams({String? status}) async {
-    final res = await _api.get<dynamic>(
-      '/api/streams',
-      queryParameters: {if (status != null) 'status': status},
-    );
-    final data = res.data;
-    final list = data is List
-        ? data
-        : (data is Map && data['streams'] is List)
-            ? data['streams'] as List
-            : <dynamic>[];
-    return list
-        .map((e) => LiveStream.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    try {
+      final res = await _api.get<dynamic>(
+        '/api/streams',
+        queryParameters: {if (status != null) 'status': status},
+      );
+      final data = res.data;
+      if (_isHtmlPayload(data)) return DemoCatalog.streams;
+      final list = data is List
+          ? data
+          : (data is Map && data['streams'] is List)
+              ? data['streams'] as List
+              : <dynamic>[];
+      final parsed = list
+          .map((e) => LiveStream.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      return parsed.isEmpty ? DemoCatalog.streams : parsed;
+    } catch (_) {
+      return DemoCatalog.streams;
+    }
   }
 
   Future<LiveStream?> getStream(String id) async {
-    final res = await _api.get<Map<String, dynamic>>('/api/streams/$id');
-    if (res.data == null) return null;
-    return LiveStream.fromJson(res.data!);
+    try {
+      final res = await _api.get<dynamic>('/api/streams/$id');
+      if (_isHtmlPayload(res.data) || res.data is! Map) {
+        return DemoCatalog.streams.where((s) => s.id == id).firstOrNull;
+      }
+      return LiveStream.fromJson(Map<String, dynamic>.from(res.data as Map));
+    } catch (_) {
+      return DemoCatalog.streams.where((s) => s.id == id).firstOrNull;
+    }
   }
 
   Future<LiveStream> createStream(Map<String, dynamic> body) async {
