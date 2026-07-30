@@ -1,0 +1,11 @@
+.git
+.dart_tool
+build/ios
+build/android
+android
+ios
+lib
+test
+docs
+**/*.md
+**/node_modules/**
