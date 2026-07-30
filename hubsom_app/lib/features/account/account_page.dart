@@ -1,0 +1,73 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/providers/core_providers.dart';
+import '../../core/theme/hubsom_colors.dart';
+import '../../core/utils/money.dart';
+
+class AccountPage extends ConsumerWidget {
+  const AccountPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authStateProvider);
+    return auth.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('$e')),
+      data: (user) {
+        if (user == null) {
+          return Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Sign in to manage your Hubsom account'),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: () => context.push('/auth/sign-in'), child: const Text('Sign in')),
+              TextButton(onPressed: () => context.push('/auth/sign-up'), child: const Text('Create account')),
+            ]),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: HubsomColors.mint,
+                child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
+              ),
+              title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text('${user.email}\nWallet ${formatGhs(user.walletBalanceGhs)}'),
+              isThreeLine: true,
+            ),
+            const Divider(),
+            _link(context, Icons.person_outline, 'Profile', '/account/profile'),
+            _link(context, Icons.favorite_border, 'Saved products', '/account/saved'),
+            _link(context, Icons.storefront_outlined, 'Following', '/account/following'),
+            _link(context, Icons.location_on_outlined, 'Addresses', '/account/addresses'),
+            _link(context, Icons.account_balance_wallet_outlined, 'Wallet', '/wallet'),
+            _link(context, Icons.notifications_outlined, 'Notifications', '/notifications'),
+            _link(context, Icons.chat_bubble_outline, 'Messages', '/messages'),
+            _link(context, Icons.settings_outlined, 'Settings', '/settings'),
+            if (user.role == 'seller' || user.role == 'both')
+              _link(context, Icons.dashboard_outlined, 'Seller hub', '/seller'),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () => ref.read(authStateProvider.notifier).signOut(),
+              child: const Text('Sign out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _link(BuildContext context, IconData icon, String label, String path) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: HubsomColors.forest),
+      title: Text(label),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => context.push(path),
+    );
+  }
+}
