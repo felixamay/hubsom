@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/data/demo_catalog.dart';
 import '../../core/providers/core_providers.dart';
 import '../../models/product.dart';
 import '../../models/promotion.dart';
@@ -27,10 +28,42 @@ class _MarketplacePageState extends ConsumerState<MarketplacePage> {
 
   @override
   Widget build(BuildContext context) {
-    final args = (category: _category, q: _q.text.trim().isEmpty ? null : _q.text.trim());
+    final args = (
+      category: _category,
+      q: _q.text.trim().isEmpty ? null : _q.text.trim(),
+    );
     final productsAsync = ref.watch(productsProvider(args));
     final promosAsync = ref.watch(promotionsProvider('marketplace'));
-    final cross = ResponsiveScaffold.isWide(context) ? 5 : ResponsiveScaffold.isTablet(context) ? 3 : 2;
+    final cross = ResponsiveScaffold.isWide(context)
+        ? 5
+        : ResponsiveScaffold.isTablet(context)
+            ? 3
+            : 2;
+
+    final products = productsAsync.when(
+      data: (list) {
+        final typed = list.whereType<Product>().toList();
+        return typed.isEmpty
+            ? DemoCatalog.productsFiltered(category: args.category, q: args.q)
+            : typed;
+      },
+      loading: () => DemoCatalog.productsFiltered(category: args.category, q: args.q),
+      error: (_, __) =>
+          DemoCatalog.productsFiltered(category: args.category, q: args.q),
+    );
+
+    final promos = promosAsync.when(
+      data: (list) {
+        final typed = list.whereType<Promotion>().toList();
+        return typed.isEmpty
+            ? DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList()
+            : typed;
+      },
+      loading: () =>
+          DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList(),
+      error: (_, __) =>
+          DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList(),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Marketplace')),
@@ -44,49 +77,28 @@ class _MarketplacePageState extends ConsumerState<MarketplacePage> {
               children: [
                 TextField(
                   controller: _q,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Search products…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.tune),
-                      onPressed: () async {
-                        // simple category filter via dialog
-                      },
-                    ),
+                    prefixIcon: Icon(Icons.search),
                   ),
                   onSubmitted: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
-                promosAsync.when(
-                  data: (list) => PromoBanner(promotions: list.cast<Promotion>()),
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
+                PromoBanner(promotions: promos),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: productsAsync.when(
-                    data: (products) {
-                      final list = products.cast<Product>();
-                      if (list.isEmpty) {
-                        return const Center(child: Text('No products found'));
-                      }
-                      return GridView.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cross,
-                          mainAxisSpacing: 14,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.68,
+                  child: products.isEmpty
+                      ? const Center(child: Text('No products found'))
+                      : GridView.builder(
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cross,
+                            mainAxisSpacing: 14,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.68,
+                          ),
+                          itemCount: products.length,
+                          itemBuilder: (_, i) => ProductCard(product: products[i]),
                         ),
-                        itemCount: list.length,
-                        itemBuilder: (_, i) => ProductCard(
-                          product: list[i],
-                          onSave: () => ref.read(catalogRepositoryProvider).toggleSave(list[i].id),
-                        ),
-                      );
-                    },
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text('$e')),
-                  ),
                 ),
               ],
             ),

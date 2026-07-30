@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/data/demo_catalog.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
@@ -20,6 +21,43 @@ class HomePage extends ConsumerWidget {
     final streamsAsync = ref.watch(streamsProvider);
     final promosAsync = ref.watch(promotionsProvider('landing'));
 
+    // Never leave Buy now empty: show demo catalog while loading / on error.
+    final products = productsAsync.when(
+      data: (list) {
+        final typed = list.whereType<Product>().toList();
+        return typed.isEmpty ? DemoCatalog.products : typed;
+      },
+      loading: () => DemoCatalog.products,
+      error: (_, __) => DemoCatalog.products,
+    );
+
+    final streams = streamsAsync.when(
+      data: (list) {
+        final typed = list.whereType<LiveStream>().toList();
+        return typed.isEmpty ? DemoCatalog.streams : typed;
+      },
+      loading: () => DemoCatalog.streams,
+      error: (_, __) => DemoCatalog.streams,
+    );
+
+    final promos = promosAsync.when(
+      data: (list) {
+        final typed = list.whereType<Promotion>().toList();
+        return typed.isEmpty
+            ? DemoCatalog.promotions.where((p) => p.placement == 'landing').toList()
+            : typed;
+      },
+      loading: () => DemoCatalog.promotions.where((p) => p.placement == 'landing').toList(),
+      error: (_, __) =>
+          DemoCatalog.promotions.where((p) => p.placement == 'landing').toList(),
+    );
+
+    final cross = ResponsiveScaffold.isWide(context)
+        ? 5
+        : ResponsiveScaffold.isTablet(context)
+            ? 3
+            : 2;
+
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(productsProvider((category: null, q: null)));
@@ -27,6 +65,7 @@ class HomePage extends ConsumerWidget {
         ref.invalidate(promotionsProvider('landing'));
       },
       child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
@@ -68,21 +107,15 @@ class HomePage extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  promosAsync.when(
-                    data: (list) => PromoBanner(
-                      promotions: list.cast<Promotion>(),
-                    ),
-                    loading: () => const SizedBox(height: 8),
-                    error: (_, __) => const SizedBox.shrink(),
-                  ),
+                  PromoBanner(promotions: promos),
                 ],
               ),
             ),
           ),
           SliverToBoxAdapter(
-            child: streamsAsync.when(
-              data: (streams) {
-                final live = streams.cast<LiveStream>().where((s) => s.isLive).toList();
+            child: Builder(
+              builder: (context) {
+                final live = streams.where((s) => s.isLive).toList();
                 if (live.isEmpty) return const SizedBox.shrink();
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,9 +123,18 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        Text('Live now', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(
+                          'Live now',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
                         const Spacer(),
-                        TextButton(onPressed: () => context.push('/live'), child: const Text('See all')),
+                        TextButton(
+                          onPressed: () => context.push('/live'),
+                          child: const Text('See all'),
+                        ),
                       ],
                     ),
                     SizedBox(
@@ -118,13 +160,37 @@ class HomePage extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
                                     color: HubsomColors.live,
-                                    child: const Text('LIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
+                                    child: const Text(
+                                      'LIVE',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
                                   ),
                                   const Spacer(),
-                                  Text(s.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                                  Text('${s.viewerCount} watching', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
+                                  Text(
+                                    s.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${s.viewerCount} watching',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.85),
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -135,8 +201,6 @@ class HomePage extends ConsumerWidget {
                   ],
                 );
               },
-              loading: () => const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-              error: (_, __) => const SizedBox.shrink(),
             ),
           ),
           SliverToBoxAdapter(
@@ -144,52 +208,34 @@ class HomePage extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 24, bottom: 8),
               child: Row(
                 children: [
-                  Text('Buy now', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  Text(
+                    'Buy now',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
                   const Spacer(),
-                  TextButton(onPressed: () => context.push('/marketplace'), child: const Text('Browse all')),
+                  TextButton(
+                    onPressed: () => context.push('/marketplace'),
+                    child: const Text('Browse all'),
+                  ),
                 ],
               ),
             ),
           ),
-          productsAsync.when(
-            data: (products) {
-              final list = products.cast<Product>();
-              final cross = ResponsiveScaffold.isWide(context)
-                  ? 5
-                  : ResponsiveScaffold.isTablet(context)
-                      ? 3
-                      : 2;
-              return SliverPadding(
-                padding: const EdgeInsets.only(bottom: 100),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: cross,
-                    mainAxisSpacing: 14,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.68,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => ProductCard(
-                      product: list[i],
-                      onSave: () => ref.read(catalogRepositoryProvider).toggleSave(list[i].id),
-                    ),
-                    childCount: list.length.clamp(0, 12),
-                  ),
-                ),
-              );
-            },
-            loading: () => const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(40),
-                child: Center(child: CircularProgressIndicator()),
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 100),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cross,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.68,
               ),
-            ),
-            error: (e, _) => SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Catalog is temporarily unavailable. Pull to refresh.\n$e',
-                ),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => ProductCard(product: products[i]),
+                childCount: products.length.clamp(0, 12),
               ),
             ),
           ),

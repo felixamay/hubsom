@@ -31,16 +31,18 @@
 
   <title>Hubsom</title>
   <link rel="manifest" href="manifest.json">
+  <!-- cache-bust: 2026-07-30-catalog-v2 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <script>
+    // Force clients off a stale Flutter service worker after Hosting deploys.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) { reg.update(); });
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

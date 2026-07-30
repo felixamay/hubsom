@@ -9,8 +9,8 @@ class ApiClient {
             Dio(
               BaseOptions(
                 baseUrl: AppConfig.apiBaseUrl,
-                connectTimeout: const Duration(seconds: 20),
-                receiveTimeout: const Duration(seconds: 30),
+                connectTimeout: const Duration(seconds: 8),
+                receiveTimeout: const Duration(seconds: 12),
                 // Do not set Content-Type globally — it forces CORS preflight
                 // on every GET and breaks when Hosting has no /api backend yet.
                 headers: {
@@ -43,7 +43,12 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? queryParameters,
   }) =>
-      _dio.get<T>(path, queryParameters: queryParameters);
+      _dio.get<T>(
+        path,
+        queryParameters: queryParameters,
+        // Plain text avoids JSON-parse crashes when Hosting returns index.html
+        options: Options(responseType: ResponseType.plain, validateStatus: (s) => s != null && s < 500),
+      );
 
   Options get _jsonBody => Options(
         contentType: Headers.jsonContentType,
