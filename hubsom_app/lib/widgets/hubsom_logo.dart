@@ -14,7 +14,9 @@ class HubsomLogo extends StatelessWidget {
         Image.asset(
           'assets/brand/hubsom-logo.png',
           height: height,
+          width: height,
           fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
           errorBuilder: (_, __, ___) => Icon(
             Icons.storefront,
             size: height,
@@ -22,12 +24,13 @@ class HubsomLogo extends StatelessWidget {
           ),
         ),
         if (showWordmark) ...[
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Text(
             'Hubsom',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
           ),
         ],

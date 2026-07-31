@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 /** Official Hubsom mark — transparent PNG, always object-contain (never stretched). */
 export const HUBSOM_LOGO = {
   src: "/brand/hubsom-logo.png",
-  width: 1363,
-  height: 462,
+  width: 1024,
+  height: 1024,
   alt: "Hubsom",
 } as const;
 
