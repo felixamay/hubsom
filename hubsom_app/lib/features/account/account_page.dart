@@ -14,7 +14,20 @@ class AccountPage extends ConsumerWidget {
     final auth = ref.watch(authStateProvider);
     return auth.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (_, __) => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Sign in to manage your Hubsom account'),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () => context.push('/auth/sign-in'),
+            child: const Text('Sign in'),
+          ),
+          TextButton(
+            onPressed: () => context.push('/auth/sign-up'),
+            child: const Text('Create account'),
+          ),
+        ]),
+      ),
       data: (user) {
         if (user == null) {
           return Center(

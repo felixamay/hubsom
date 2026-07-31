@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/user.dart';
 import '../services/api_client.dart';
+import '../services/api_response.dart';
 import '../services/local_store.dart';
 
 class AuthException implements Exception {
@@ -42,8 +43,9 @@ class AuthRepository {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password, name: name);
 
+    // Prefer remote Auth.js API when it returns real JSON.
     try {
-      final res = await _api.post<Map<String, dynamic>>(
+      final res = await _api.post(
         '/api/auth/signup',
         data: {
           'email': normalized,
@@ -52,39 +54,38 @@ class AuthRepository {
           'role': role,
         },
       );
-      final data = res.data;
-      if (data != null && data['error'] != null) {
-        throw AuthException('${data['error']}');
-      }
-      final userMap = data?['user'] as Map? ?? data;
-      if (userMap is! Map) {
-        throw AuthException('Signup failed');
-      }
-      final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
-      final token = data?['token'] as String? ?? _issueLocalToken(user);
-      await _persist(user, token);
-      await _storeLocalCredentials(
-        email: normalized,
-        password: password,
-        user: user,
-      );
-      return user;
-    } on AuthException {
-      rethrow;
-    } on DioException catch (e) {
-      // Hosting / offline: secure local account vault.
-      if (_shouldUseLocalAuth(e)) {
-        return _localSignUp(
+      final data = ApiResponse.asMap(res.data);
+      if (data != null) {
+        if (data['error'] != null) {
+          throw AuthException('${data['error']}');
+        }
+        final userMap = data['user'] as Map? ?? data;
+        final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+        final token = data['token'] as String? ?? _issueLocalToken(user);
+        await _persist(user, token);
+        await _storeLocalCredentials(
           email: normalized,
           password: password,
-          name: name.trim(),
-          role: role,
+          user: user,
         );
+        return user;
       }
-      final msg = e.response?.data is Map
-          ? '${(e.response!.data as Map)['error'] ?? e.message}'
-          : (e.message ?? 'Signup failed');
-      throw AuthException(msg);
+      // HTML / empty from Firebase Hosting SPA rewrite → local vault.
+      return _localSignUp(
+        email: normalized,
+        password: password,
+        name: name.trim(),
+        role: role,
+      );
+    } on AuthException {
+      rethrow;
+    } catch (_) {
+      return _localSignUp(
+        email: normalized,
+        password: password,
+        name: name.trim(),
+        role: role,
+      );
     }
   }
 
@@ -96,12 +97,11 @@ class AuthRepository {
     _validateCredentials(normalized, password);
 
     try {
-      // Auth.js credentials flow (CSRF + callback) when API is available.
-      final csrf = await _api.get<dynamic>('/api/auth/csrf');
-      final csrfData = _asMap(csrf.data);
+      final csrf = await _api.get('/api/auth/csrf');
+      final csrfData = ApiResponse.asMap(csrf.data);
       final csrfToken = csrfData?['csrfToken'] as String?;
 
-      final res = await _api.post<dynamic>(
+      final res = await _api.post(
         '/api/auth/callback/credentials',
         data: {
           'email': normalized,
@@ -112,29 +112,26 @@ class AuthRepository {
         },
       );
 
-      final data = _asMap(res.data) ?? (res.data is Map ? Map<String, dynamic>.from(res.data as Map) : null);
-      Map? userMap;
+      final data = ApiResponse.asMap(res.data);
       if (data != null) {
-        userMap = data['user'] as Map? ?? data['data'] as Map?;
         if (data['error'] != null) {
           throw AuthException('${data['error']}');
         }
+        final userMap = data['user'] as Map? ?? data['data'] as Map?;
+        if (userMap != null) {
+          final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+          final token = data['token'] as String? ?? _issueLocalToken(user);
+          await _persist(user, token);
+          await _storeLocalCredentials(
+            email: normalized,
+            password: password,
+            user: user,
+          );
+          final profile = await fetchProfile();
+          return profile ?? user;
+        }
       }
 
-      if (userMap != null) {
-        final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
-        final token = data?['token'] as String? ?? _issueLocalToken(user);
-        await _persist(user, token);
-        await _storeLocalCredentials(
-          email: normalized,
-          password: password,
-          user: user,
-        );
-        final profile = await fetchProfile();
-        return profile ?? user;
-      }
-
-      // Some Auth.js setups set cookie only — hydrate profile.
       final profile = await fetchProfile();
       if (profile != null) {
         await _storeLocalCredentials(
@@ -145,19 +142,24 @@ class AuthRepository {
         return profile;
       }
 
-      // Fall through to local vault if remote auth didn't yield a session.
       return _localSignIn(email: normalized, password: password);
     } on AuthException {
       rethrow;
     } on DioException catch (e) {
-      if (_shouldUseLocalAuth(e)) {
-        return _localSignIn(email: normalized, password: password);
-      }
-      // Invalid credentials from API
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        // Still allow local vault accounts.
+        try {
+          return _localSignIn(email: normalized, password: password);
+        } on AuthException {
+          throw AuthException('Invalid email or password');
+        }
+      }
+      try {
+        return _localSignIn(email: normalized, password: password);
+      } on AuthException {
         throw AuthException('Invalid email or password');
       }
-      // Try local vault as secondary (device accounts)
+    } catch (_) {
       try {
         return _localSignIn(email: normalized, password: password);
       } on AuthException {
@@ -168,12 +170,10 @@ class AuthRepository {
 
   Future<HubsomUser?> fetchProfile() async {
     try {
-      final res = await _api.get<dynamic>('/api/account/profile');
-      final data = res.data;
-      if (data is String && data.trimLeft().startsWith('<')) return currentUser();
-      if (data is! Map) return currentUser();
-      if (data['error'] != null) return null;
-      final user = HubsomUser.fromJson(Map<String, dynamic>.from(data));
+      final res = await _api.get('/api/account/profile');
+      final data = ApiResponse.asMap(res.data);
+      if (data == null || data['error'] != null) return currentUser();
+      final user = HubsomUser.fromJson(data);
       LocalStore.userJson = jsonEncode(user.toJson());
       return user;
     } catch (_) {
@@ -183,43 +183,45 @@ class AuthRepository {
 
   Future<HubsomUser> updateProfile(Map<String, dynamic> patch) async {
     try {
-      final res = await _api.patch<Map<String, dynamic>>(
-        '/api/account/profile',
-        data: patch,
-      );
-      final user = HubsomUser.fromJson(res.data ?? {});
-      LocalStore.userJson = jsonEncode(user.toJson());
-      return user;
-    } on DioException {
-      final current = currentUser();
-      if (current == null) throw AuthException('Sign in required');
-      final updated = HubsomUser(
-        id: current.id,
-        email: current.email,
-        name: patch['name'] as String? ?? current.name,
-        image: current.image,
-        phone: patch['phone'] as String? ?? current.phone,
-        city: patch['city'] as String? ?? current.city,
-        region: current.region,
-        bio: patch['bio'] as String? ?? current.bio,
-        role: current.role,
-        sellerId: current.sellerId,
-        followingSellerIds: current.followingSellerIds,
-        savedProductIds: current.savedProductIds,
-        addresses: current.addresses,
-        emailVerified: current.emailVerified,
-        walletBalanceGhs: current.walletBalanceGhs,
-      );
-      LocalStore.userJson = jsonEncode(updated.toJson());
-      final vault = LocalStore.loadCredentialVault();
-      final entry = vault[current.email.toLowerCase()];
-      if (entry is Map) {
-        entry['userJson'] = updated.toJson();
-        vault[current.email.toLowerCase()] = entry;
-        await LocalStore.saveCredentialVault(vault);
+      final res = await _api.patch('/api/account/profile', data: patch);
+      final data = ApiResponse.asMap(res.data);
+      if (data != null && data['error'] == null && data['id'] != null) {
+        final user = HubsomUser.fromJson(data);
+        LocalStore.userJson = jsonEncode(user.toJson());
+        return user;
       }
-      return updated;
+    } catch (_) {
+      // fall through to local update
     }
+
+    final current = currentUser();
+    if (current == null) throw AuthException('Sign in required');
+    final updated = HubsomUser(
+      id: current.id,
+      email: current.email,
+      name: patch['name'] as String? ?? current.name,
+      image: current.image,
+      phone: patch['phone'] as String? ?? current.phone,
+      city: patch['city'] as String? ?? current.city,
+      region: current.region,
+      bio: patch['bio'] as String? ?? current.bio,
+      role: current.role,
+      sellerId: current.sellerId,
+      followingSellerIds: current.followingSellerIds,
+      savedProductIds: current.savedProductIds,
+      addresses: current.addresses,
+      emailVerified: current.emailVerified,
+      walletBalanceGhs: current.walletBalanceGhs,
+    );
+    LocalStore.userJson = jsonEncode(updated.toJson());
+    final vault = LocalStore.loadCredentialVault();
+    final entry = vault[current.email.toLowerCase()];
+    if (entry is Map) {
+      entry['userJson'] = updated.toJson();
+      vault[current.email.toLowerCase()] = entry;
+      await LocalStore.saveCredentialVault(vault);
+    }
+    return updated;
   }
 
   Future<void> signOut() async {
@@ -231,8 +233,6 @@ class AuthRepository {
 
   Future<void> invalidateSession() => LocalStore.clearSession();
 
-  // --- local secure vault (used when Firebase Hosting has no Auth.js API) ---
-
   Future<HubsomUser> _localSignUp({
     required String email,
     required String password,
@@ -241,7 +241,7 @@ class AuthRepository {
   }) async {
     final vault = LocalStore.loadCredentialVault();
     if (vault.containsKey(email)) {
-      throw AuthException('An account with this email already exists');
+      throw AuthException('An account with this email already exists. Please sign in.');
     }
     final user = HubsomUser(
       id: 'local-${DateTime.now().millisecondsSinceEpoch}',
@@ -301,17 +301,6 @@ class AuthRepository {
     }
   }
 
-  bool _shouldUseLocalAuth(DioException e) {
-    final data = e.response?.data;
-    if (data is String && data.trimLeft().startsWith('<')) return true;
-    final code = e.response?.statusCode;
-    if (code == null) return true; // network
-    if (code >= 500) return true;
-    return e.type == DioExceptionType.connectionError ||
-        e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout;
-  }
-
   Future<void> _persist(HubsomUser user, String token) async {
     LocalStore.sessionToken = token;
     LocalStore.userJson = jsonEncode(user.toJson());
@@ -343,17 +332,4 @@ class AuthRepository {
     return _hashPassword(password, salt) == hash;
   }
 
-  static Map<String, dynamic>? _asMap(dynamic data) {
-    if (data is Map) return Map<String, dynamic>.from(data);
-    if (data is String) {
-      final t = data.trim();
-      if (t.startsWith('{') || t.startsWith('[')) {
-        try {
-          final decoded = jsonDecode(t);
-          if (decoded is Map) return Map<String, dynamic>.from(decoded);
-        } catch (_) {}
-      }
-    }
-    return null;
-  }
 }

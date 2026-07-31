@@ -50,3 +50,6 @@ build/
 .flutter-plugins-dependencies
 .packages
 
+
+.firebase/
+.firebase

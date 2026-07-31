@@ -103,8 +103,9 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
       final user = await _repo.signIn(email: email, password: password);
       state = AsyncValue.data(user);
     } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      rethrow;
+      // Keep Account usable — never stick Dio/HTML dumps into auth state.
+      state = const AsyncValue.data(null);
+      Error.throwWithStackTrace(e, st);
     }
   }
 
@@ -124,8 +125,8 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
       );
       state = AsyncValue.data(user);
     } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      rethrow;
+      state = const AsyncValue.data(null);
+      Error.throwWithStackTrace(e, st);
     }
   }
 

@@ -27,8 +27,19 @@ class AuthGate extends ConsumerWidget {
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       ),
-      error: (e, _) => Scaffold(
-        body: Center(child: Text('Auth error: $e')),
+      // Treat restore failures as signed-out — never dump Dio/HTML.
+      error: (_, __) => _LockedScaffold(
+        title: 'Sign in required',
+        message: message,
+        primaryLabel: 'Sign in',
+        onPrimary: () {
+          final here = GoRouterState.of(context).uri.toString();
+          context.go(
+            '/auth/sign-in?callbackUrl=${Uri.encodeComponent(here)}',
+          );
+        },
+        secondaryLabel: 'Create account',
+        onSecondary: () => context.go('/auth/sign-up'),
       ),
       data: (user) {
         if (user == null) {

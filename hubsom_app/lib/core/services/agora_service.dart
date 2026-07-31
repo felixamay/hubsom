@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import 'api_client.dart';
+import 'api_response.dart';
 
 /// Agora live streaming — same provider as the existing Hubsom web app.
 class AgoraService {
@@ -18,11 +19,11 @@ class AgoraService {
     String role = 'audience',
   }) async {
     try {
-      final res = await _api.post<Map<String, dynamic>>(
+      final res = await _api.post(
         '/api/agora/token',
         data: {'channelName': channelName, 'uid': uid, 'role': role},
       );
-      return res.data?['token'] as String?;
+      return ApiResponse.asMap(res.data)?['token'] as String?;
     } catch (e) {
       if (kDebugMode) debugPrint('Agora token error: $e');
       return null;

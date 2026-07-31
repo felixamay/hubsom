@@ -18,6 +18,10 @@ class ApiClient {
                 headers: {
                   'Accept': 'application/json',
                 },
+                // Always plain: Firebase Hosting may return index.html for /api/*
+                // and JSON decoding/cast must be done by callers.
+                responseType: ResponseType.plain,
+                validateStatus: (s) => s != null && s < 500,
               ),
             ) {
     _dio.interceptors.add(
@@ -26,7 +30,6 @@ class ApiClient {
           final token = LocalStore.sessionToken;
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
-            // Auth.js session cookie bridge when same-site API is available.
             options.headers['Cookie'] =
                 'authjs.session-token=$token; next-auth.session-token=$token';
           }
@@ -60,43 +63,39 @@ class ApiClient {
 
   Dio get dio => _dio;
 
-  Future<Response<T>> get<T>(
+  Future<Response<dynamic>> get(
     String path, {
     Map<String, dynamic>? queryParameters,
   }) =>
-      _dio.get<T>(
-        path,
-        queryParameters: queryParameters,
-        options: Options(
-          responseType: ResponseType.plain,
-          validateStatus: (s) => s != null && s < 500,
-        ),
-      );
+      _dio.get<dynamic>(path, queryParameters: queryParameters);
 
   Options get _jsonBody => Options(
         contentType: Headers.jsonContentType,
         headers: {'Content-Type': 'application/json'},
-        validateStatus: (s) => s != null && s < 500,
       );
 
-  Future<Response<T>> post<T>(
+  Future<Response<dynamic>> post(
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
   }) =>
-      _dio.post<T>(
+      _dio.post<dynamic>(
         path,
         data: data,
         queryParameters: queryParameters,
         options: data == null ? null : _jsonBody,
       );
 
-  Future<Response<T>> put<T>(String path, {Object? data}) =>
-      _dio.put<T>(path, data: data, options: data == null ? null : _jsonBody);
+  Future<Response<dynamic>> put(String path, {Object? data}) =>
+      _dio.put<dynamic>(path, data: data, options: data == null ? null : _jsonBody);
 
-  Future<Response<T>> patch<T>(String path, {Object? data}) =>
-      _dio.patch<T>(path, data: data, options: data == null ? null : _jsonBody);
+  Future<Response<dynamic>> patch(String path, {Object? data}) =>
+      _dio.patch<dynamic>(
+        path,
+        data: data,
+        options: data == null ? null : _jsonBody,
+      );
 
-  Future<Response<T>> delete<T>(String path, {Object? data}) =>
-      _dio.delete<T>(path, data: data);
+  Future<Response<dynamic>> delete(String path, {Object? data}) =>
+      _dio.delete<dynamic>(path, data: data);
 }

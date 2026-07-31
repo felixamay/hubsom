@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 
 import '../../models/product.dart';
@@ -8,33 +6,13 @@ import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../data/demo_catalog.dart';
 import '../services/api_client.dart';
+import '../services/api_response.dart';
 import '../services/local_store.dart';
 
 class CatalogRepository {
   CatalogRepository(this._api);
 
   final ApiClient _api;
-
-  bool _isHtmlPayload(dynamic data) {
-    if (data is! String) return false;
-    final t = data.trimLeft().toLowerCase();
-    return t.startsWith('<!doctype') || t.startsWith('<html');
-  }
-
-  dynamic _decodeBody(dynamic data) {
-    if (data == null) return null;
-    if (data is String) {
-      if (_isHtmlPayload(data)) return null;
-      final trimmed = data.trim();
-      if (trimmed.isEmpty) return null;
-      try {
-        return jsonDecode(trimmed);
-      } catch (_) {
-        return null;
-      }
-    }
-    return data;
-  }
 
   Future<List<Product>> listProducts({
     String? category,
@@ -51,7 +29,7 @@ class CatalogRepository {
 
     try {
       final res = await _api
-          .get<dynamic>(
+          .get(
             '/api/products',
             queryParameters: {
               if (category != null) 'category': category,
@@ -65,9 +43,9 @@ class CatalogRepository {
 
       // Force plain-body handling: Hosting may return HTML for /api/*
       final raw = res.data;
-      if (_isHtmlPayload(raw)) return demo;
+      if (ApiResponse.isHtml(raw)) return demo;
 
-      final data = _decodeBody(raw);
+      final data = ApiResponse.decode(raw);
       if (data == null) return demo;
 
       final list = data is List
@@ -129,10 +107,9 @@ class CatalogRepository {
 
   Future<List<Seller>> listSellers() async {
     try {
-      final res = await _api
-          .get<dynamic>('/api/sellers')
-          .timeout(const Duration(seconds: 4));
-      final data = _decodeBody(res.data);
+      final res =
+          await _api.get('/api/sellers').timeout(const Duration(seconds: 4));
+      final data = ApiResponse.decode(res.data);
       if (data == null) return DemoCatalog.sellers;
       final list = data is List
           ? data
@@ -159,8 +136,8 @@ class CatalogRepository {
 
   Future<bool> toggleSave(String productId) async {
     try {
-      final res = await _api.post<Map<String, dynamic>>('/api/products/$productId/save');
-      return res.data?['saved'] as bool? ?? false;
+      final res = await _api.post('/api/products/$productId/save');
+      return ApiResponse.asMap(res.data)?['saved'] as bool? ?? false;
     } catch (_) {
       return false;
     }
@@ -168,8 +145,8 @@ class CatalogRepository {
 
   Future<List<ProductReview>> listReviews(String productId) async {
     try {
-      final res = await _api.get<dynamic>('/api/products/$productId/reviews');
-      final data = _decodeBody(res.data);
+      final res = await _api.get('/api/products/$productId/reviews');
+      final data = ApiResponse.decode(res.data);
       if (data == null) return const [];
       final list = data is List
           ? data
@@ -189,11 +166,13 @@ class CatalogRepository {
     required int rating,
     required String comment,
   }) async {
-    final res = await _api.post<Map<String, dynamic>>(
+    final res = await _api.post(
       '/api/products/$productId/reviews',
       data: {'rating': rating, 'comment': comment},
     );
-    return ProductReview.fromJson(res.data ?? {});
+    final data = ApiResponse.asMap(res.data);
+    if (data == null) throw StateError('Review submit failed');
+    return ProductReview.fromJson(data);
   }
 
   Future<List<Promotion>> listPromotions(String placement) async {
@@ -201,12 +180,12 @@ class CatalogRepository {
         DemoCatalog.promotions.where((p) => p.placement == placement).toList();
     try {
       final res = await _api
-          .get<dynamic>(
+          .get(
             '/api/promotions',
             queryParameters: {'placement': placement},
           )
           .timeout(const Duration(seconds: 4));
-      final data = _decodeBody(res.data);
+      final data = ApiResponse.decode(res.data);
       if (data == null) return demo;
       final list = data is List
           ? data
@@ -224,9 +203,8 @@ class CatalogRepository {
 
   Future<bool> followSeller(String sellerId) async {
     try {
-      final res =
-          await _api.post<Map<String, dynamic>>('/api/sellers/$sellerId/follow');
-      return res.data?['following'] as bool? ?? false;
+      final res = await _api.post('/api/sellers/$sellerId/follow');
+      return ApiResponse.asMap(res.data)?['following'] as bool? ?? false;
     } catch (_) {
       return false;
     }

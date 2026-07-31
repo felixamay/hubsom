@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import 'api_client.dart';
+import 'api_response.dart';
 
 /// Payment rails preserved from Hubsom: Stripe, Paystack, MTN MoMo,
 /// Telecel Cash, AirtelTigo Money.
@@ -28,7 +29,7 @@ class PaymentService {
     String? streamId,
     bool oneTap = false,
   }) async {
-    final res = await _api.post<Map<String, dynamic>>(
+    final res = await _api.post(
       '/api/checkout',
       data: {
         'items': items,
@@ -38,7 +39,7 @@ class PaymentService {
         'oneTap': oneTap,
       },
     );
-    return res.data ?? {};
+    return ApiResponse.asMap(res.data) ?? {};
   }
 
   Future<void> openStripeCheckout(String url) async {
