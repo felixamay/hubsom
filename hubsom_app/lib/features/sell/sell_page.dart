@@ -18,9 +18,23 @@ class SellPage extends ConsumerWidget {
         const SizedBox(height: 8),
         const Text('List products, go live, run auctions, and dispatch Hubers — same seller workflows as web.'),
         const SizedBox(height: 20),
-        if (user == null)
-          FilledButton(onPressed: () => context.push('/auth/sign-up'), child: const Text('Create seller account'))
-        else ...[
+        if (user == null) ...[
+          FilledButton(
+            onPressed: () => context.push('/auth/sign-up?callbackUrl=%2Fsell'),
+            child: const Text('Create seller account'),
+          ),
+          TextButton(
+            onPressed: () => context.push('/auth/sign-in?callbackUrl=%2Fsell'),
+            child: const Text('Sign in'),
+          ),
+        ] else if (user.role != 'seller' && user.role != 'both' && user.role != 'admin') ...[
+          const Text('Your account is a buyer account. Create a seller (or buyer & seller) account to access seller tools.'),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () => context.push('/account/profile'),
+            child: const Text('Manage account'),
+          ),
+        ] else ...[
           _tile(context, Icons.dashboard, 'Seller hub', '/seller'),
           _tile(context, Icons.add_box_outlined, 'New product', '/seller/products/new'),
           _tile(context, Icons.videocam, 'Go live', '/seller/go-live'),

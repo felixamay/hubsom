@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
@@ -34,6 +35,9 @@ class ProductDetailPage extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.favorite_border),
                 onPressed: () async {
+                  if (!ensureSignedIn(context, ref, message: 'Sign in to save products')) {
+                    return;
+                  }
                   await ref.read(catalogRepositoryProvider).toggleSave(product.id);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -124,6 +128,9 @@ class ProductDetailPage extends ConsumerWidget {
                 Expanded(
                   child: FilledButton(
                     onPressed: () async {
+                      if (!ensureSignedIn(context, ref, message: 'Sign in to buy')) {
+                        return;
+                      }
                       await ref.read(cartProvider.notifier).add(CartItem(
                         productId: product.id,
                         quantity: 1,

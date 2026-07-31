@@ -1,18 +1,20 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import 'local_store.dart';
 
+typedef UnauthorizedHandler = Future<void> Function();
+
 class ApiClient {
-  ApiClient({Dio? dio})
-      : _dio = dio ??
+  ApiClient({Dio? dio, UnauthorizedHandler? onUnauthorized})
+      : _onUnauthorized = onUnauthorized,
+        _dio = dio ??
             Dio(
               BaseOptions(
                 baseUrl: AppConfig.apiBaseUrl,
                 connectTimeout: const Duration(seconds: 8),
                 receiveTimeout: const Duration(seconds: 12),
-                // Do not set Content-Type globally — it forces CORS preflight
-                // on every GET and breaks when Hosting has no /api backend yet.
                 headers: {
                   'Accept': 'application/json',
                 },
@@ -24,18 +26,37 @@ class ApiClient {
           final token = LocalStore.sessionToken;
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
-            options.headers['Cookie'] = 'authjs.session-token=$token';
+            // Auth.js session cookie bridge when same-site API is available.
+            options.headers['Cookie'] =
+                'authjs.session-token=$token; next-auth.session-token=$token';
           }
           if (AppConfig.adminApiKey.isNotEmpty) {
             options.headers['X-Hubsom-Admin-Key'] = AppConfig.adminApiKey;
           }
           handler.next(options);
         },
+        onError: (error, handler) async {
+          final status = error.response?.statusCode;
+          if (status == 401 || status == 403) {
+            final path = error.requestOptions.path;
+            final isAuthCall = path.contains('/api/auth/');
+            if (!isAuthCall) {
+              if (kDebugMode) {
+                debugPrint('API unauthorized on $path — clearing session');
+              }
+              await LocalStore.clearSession();
+              final cb = _onUnauthorized;
+              if (cb != null) await cb();
+            }
+          }
+          handler.next(error);
+        },
       ),
     );
   }
 
   final Dio _dio;
+  final UnauthorizedHandler? _onUnauthorized;
 
   Dio get dio => _dio;
 
@@ -46,13 +67,16 @@ class ApiClient {
       _dio.get<T>(
         path,
         queryParameters: queryParameters,
-        // Plain text avoids JSON-parse crashes when Hosting returns index.html
-        options: Options(responseType: ResponseType.plain, validateStatus: (s) => s != null && s < 500),
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (s) => s != null && s < 500,
+        ),
       );
 
   Options get _jsonBody => Options(
         contentType: Headers.jsonContentType,
         headers: {'Content-Type': 'application/json'},
+        validateStatus: (s) => s != null && s < 500,
       );
 
   Future<Response<T>> post<T>(

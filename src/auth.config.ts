@@ -29,6 +29,34 @@ export const authConfig = {
         return true;
       }
 
+      // Public read-only catalog APIs for Flutter / web browsing.
+      // Mutations still require session checks inside route handlers.
+      if (
+        request.method === "GET" &&
+        (pathname === "/api/products" ||
+          pathname.startsWith("/api/products/") ||
+          pathname === "/api/sellers" ||
+          pathname.startsWith("/api/sellers/") ||
+          pathname === "/api/streams" ||
+          pathname.startsWith("/api/streams/"))
+      ) {
+        // Block authenticated-only subpaths even on GET.
+        if (
+          pathname.endsWith("/save") ||
+          pathname.includes("/reviews") ||
+          pathname.includes("/follow") ||
+          pathname.includes("/chat") ||
+          pathname.includes("/reactions") ||
+          pathname.includes("/analytics") ||
+          pathname.includes("/end") ||
+          pathname.includes("/bid")
+        ) {
+          // fall through to auth check
+        } else {
+          return true;
+        }
+      }
+
       // HubsomAdmin integration (API key checked in route handlers).
       if (pathname.startsWith("/api/admin")) return true;
 

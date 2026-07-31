@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -109,7 +110,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage> {
                 Text('${s.viewerCount} watching', style: const TextStyle(color: Colors.white)),
                 const Spacer(),
                 IconButton(
-                  onPressed: () => ref.read(liveRepositoryProvider).sendReaction(s.id, '❤️'),
+                  onPressed: () {
+                    if (!ensureSignedIn(context, ref, message: 'Sign in to react')) return;
+                    ref.read(liveRepositoryProvider).sendReaction(s.id, '❤️');
+                  },
                   icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
                 ),
               ]),
@@ -125,6 +129,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage> {
                     subtitle: Text(formatGhs(pinned!.effectivePrice)),
                     trailing: FilledButton(
                       onPressed: () {
+                        if (!ensureSignedIn(context, ref, message: 'Sign in to buy from live')) {
+                          return;
+                        }
                         ref.read(cartProvider.notifier).add(CartItem(
                           productId: pinned!.id,
                           quantity: 1,
@@ -154,6 +161,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage> {
                     trailing: FilledButton(
                       style: FilledButton.styleFrom(backgroundColor: HubsomColors.forest),
                       onPressed: () async {
+                        if (!ensureSignedIn(context, ref, message: 'Sign in to place a bid')) {
+                          return;
+                        }
                         final next = s.auction!.currentBidGhs + s.auction!.minIncrementGhs;
                         await ref.read(liveRepositoryProvider).placeBid(s.auction!.id, next);
                         await _load();
@@ -193,6 +203,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage> {
                     ),
                     IconButton(
                       onPressed: () async {
+                        if (!ensureSignedIn(context, ref, message: 'Sign in to chat')) {
+                          return;
+                        }
                         final text = _chatCtrl.text.trim();
                         if (text.isEmpty) return;
                         await ref.read(liveRepositoryProvider).sendChat(s.id, text);

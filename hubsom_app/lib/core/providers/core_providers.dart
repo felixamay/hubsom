@@ -15,7 +15,15 @@ import '../services/maps_service.dart';
 import '../services/notification_service.dart';
 import '../services/payment_service.dart';
 
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+final _unauthorizedTickProvider = StateProvider<int>((ref) => 0);
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  return ApiClient(
+    onUnauthorized: () async {
+      ref.read(_unauthorizedTickProvider.notifier).state++;
+    },
+  );
+});
 
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepository(ref.watch(apiClientProvider)),
@@ -57,7 +65,17 @@ final notificationServiceProvider = Provider<NotificationService>(
 
 final authStateProvider =
     StateNotifierProvider<AuthController, AsyncValue<HubsomUser?>>((ref) {
-  return AuthController(ref.watch(authRepositoryProvider));
+  final controller = AuthController(ref.watch(authRepositoryProvider));
+  ref.listen<int>(_unauthorizedTickProvider, (prev, next) {
+    if (prev != next) {
+      controller.forceSignedOut();
+    }
+  });
+  return controller;
+});
+
+final isAuthenticatedProvider = Provider<bool>((ref) {
+  return ref.watch(authStateProvider).valueOrNull != null;
 });
 
 class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
@@ -68,12 +86,26 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
   final AuthRepository _repo;
 
   Future<void> _hydrate() async {
-    state = AsyncValue.data(_repo.currentUser());
+    final local = _repo.currentUser();
+    state = AsyncValue.data(local);
+    if (local != null) {
+      // Validate / refresh profile in background.
+      final fresh = await _repo.fetchProfile();
+      if (fresh != null) {
+        state = AsyncValue.data(fresh);
+      }
+    }
   }
 
   Future<void> signIn(String email, String password) async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => _repo.signIn(email: email, password: password));
+    try {
+      final user = await _repo.signIn(email: email, password: password);
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
   }
 
   Future<void> signUp({
@@ -83,9 +115,18 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     String role = 'buyer',
   }) async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(
-      () => _repo.signUp(email: email, password: password, name: name, role: role),
-    );
+    try {
+      final user = await _repo.signUp(
+        email: email,
+        password: password,
+        name: name,
+        role: role,
+      );
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {
@@ -93,9 +134,13 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     state = const AsyncValue.data(null);
   }
 
+  void forceSignedOut() {
+    state = const AsyncValue.data(null);
+  }
+
   Future<void> refresh() async {
     final user = await _repo.fetchProfile();
-    state = AsyncValue.data(user);
+    state = AsyncValue.data(user ?? _repo.currentUser());
   }
 }
 
@@ -109,7 +154,8 @@ class CartController extends StateNotifier<List<CartItem>> {
   Future<void> _persist() => LocalStore.saveCart(state);
 
   Future<void> add(CartItem item) async {
-    final idx = state.indexWhere((e) => e.productId == item.productId && e.source == item.source);
+    final idx =
+        state.indexWhere((e) => e.productId == item.productId && e.source == item.source);
     if (idx >= 0) {
       final next = [...state];
       next[idx] = next[idx].copyWith(quantity: next[idx].quantity + item.quantity);

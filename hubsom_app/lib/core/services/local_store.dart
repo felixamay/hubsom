@@ -33,6 +33,21 @@ class LocalStore {
     }
   }
 
+  /// Local credential vault: email → { salt, hash, userJson }
+  static Map<String, dynamic> loadCredentialVault() {
+    final raw = _box.get('credentialVault') as String?;
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveCredentialVault(Map<String, dynamic> vault) async {
+    await _box.put('credentialVault', jsonEncode(vault));
+  }
+
   static List<CartItem> loadCart() {
     final raw = _box.get('cart') as String?;
     if (raw == null || raw.isEmpty) return [];
