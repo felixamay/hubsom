@@ -22,7 +22,29 @@ class LiveListPage extends ConsumerWidget {
       body: streamsAsync.when(
         data: (streams) {
           final list = streams.cast<LiveStream>();
-          if (list.isEmpty) return const Center(child: Text('No streams yet'));
+          if (list.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('No live shows yet'),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Sellers can start a show from Seller hub → Go live.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => context.push('/seller/go-live'),
+                      child: const Text('Go live'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: list.length,

@@ -59,17 +59,21 @@ class AgoraService {
   }) async {
     final engine = await ensureEngine();
     if (engine == null) return;
-    await engine.setClientRole(role: ClientRoleType.clientRoleAudience);
-    await engine.joinChannel(
-      token: token,
-      channelId: channelName,
-      uid: uid,
-      options: const ChannelMediaOptions(
-        clientRoleType: ClientRoleType.clientRoleAudience,
-        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-      ),
-    );
-    joined = true;
+    try {
+      await engine.setClientRole(role: ClientRoleType.clientRoleAudience);
+      await engine.joinChannel(
+        token: token,
+        channelId: channelName,
+        uid: uid,
+        options: const ChannelMediaOptions(
+          clientRoleType: ClientRoleType.clientRoleAudience,
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+        ),
+      );
+      joined = true;
+    } catch (e) {
+      if (kDebugMode) debugPrint('Agora audience join skipped: $e');
+    }
   }
 
   Future<void> joinAsHost({
@@ -79,20 +83,24 @@ class AgoraService {
   }) async {
     final engine = await ensureEngine();
     if (engine == null) return;
-    await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
-    await engine.startPreview();
-    await engine.joinChannel(
-      token: token,
-      channelId: channelName,
-      uid: uid,
-      options: const ChannelMediaOptions(
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-        publishCameraTrack: true,
-        publishMicrophoneTrack: true,
-      ),
-    );
-    joined = true;
+    try {
+      await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+      await engine.startPreview();
+      await engine.joinChannel(
+        token: token,
+        channelId: channelName,
+        uid: uid,
+        options: const ChannelMediaOptions(
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+          publishCameraTrack: true,
+          publishMicrophoneTrack: true,
+        ),
+      );
+      joined = true;
+    } catch (e) {
+      if (kDebugMode) debugPrint('Agora host join skipped: $e');
+    }
   }
 
   Future<void> leave() async {

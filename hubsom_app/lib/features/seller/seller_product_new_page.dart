@@ -57,8 +57,15 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   'category': _category,
                   'priceGhs': double.tryParse(_price.text) ?? 0,
                   'stock': int.tryParse(_stock.text) ?? 0,
-                  'supports': ['buy-now', 'store-listing', 'live-selling'],
+                  'supports': [
+                    'buy-now',
+                    'store-listing',
+                    'live-selling',
+                    'live-auction',
+                  ],
                 });
+                ref.invalidate(productsProvider((category: null, q: null)));
+                await ref.read(authStateProvider.notifier).refresh();
                 if (context.mounted) {
                   final id = created['id'] as String?;
                   if (id != null) {

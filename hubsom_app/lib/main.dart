@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'core/config/app_config.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/firebase_bootstrap.dart';
+import 'core/services/local_commerce_store.dart';
 import 'core/services/local_store.dart';
 import 'core/theme/hubsom_theme.dart';
 import 'features/shell/app_router.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   AppConfig.load();
   await Hive.initFlutter();
   await LocalStore.init();
+  await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();
   runApp(const ProviderScope(child: HubsomApp()));
 }

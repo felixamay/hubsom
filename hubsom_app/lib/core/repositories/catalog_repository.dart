@@ -4,9 +4,9 @@ import '../../models/product.dart';
 import '../../models/promotion.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
-import '../data/demo_catalog.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 
 class CatalogRepository {
@@ -21,7 +21,7 @@ class CatalogRepository {
     int? limit,
     int? offset,
   }) async {
-    final demo = DemoCatalog.productsFiltered(
+    final local = LocalCommerceStore.listProducts(
       category: category,
       q: q,
       sellerId: sellerId,
@@ -41,12 +41,11 @@ class CatalogRepository {
           )
           .timeout(const Duration(seconds: 4));
 
-      // Force plain-body handling: Hosting may return HTML for /api/*
       final raw = res.data;
-      if (ApiResponse.isHtml(raw)) return demo;
+      if (ApiResponse.isHtml(raw)) return local;
 
       final data = ApiResponse.decode(raw);
-      if (data == null) return demo;
+      if (data == null) return local;
 
       final list = data is List
           ? data
@@ -54,7 +53,7 @@ class CatalogRepository {
               ? data['products'] as List
               : <dynamic>[];
 
-      if (list.isEmpty) return demo;
+      if (list.isEmpty) return local;
 
       final products = <Product>[];
       for (final e in list) {
@@ -62,41 +61,23 @@ class CatalogRepository {
           products.add(Product.fromJson(Map<String, dynamic>.from(e)));
         }
       }
-      if (products.isEmpty) return demo;
+      if (products.isEmpty) return local;
 
       await LocalStore.cacheJson(
         'products',
-        products
-            .map(
-              (p) => {
-                'id': p.id,
-                'slug': p.slug,
-                'name': p.name,
-                'description': p.description,
-                'category': p.category,
-                'priceGhs': p.priceGhs,
-                'compareAtGhs': p.compareAtGhs,
-                'currency': p.currency,
-                'images': p.images,
-                'sellerId': p.sellerId,
-                'stock': p.stock,
-                'rating': p.rating,
-                'reviewCount': p.reviewCount,
-                'tags': p.tags,
-                'supports': p.supports,
-              },
-            )
-            .toList(),
+        products.map((p) => p.toJson()).toList(),
       );
       return products;
     } on DioException {
-      return demo;
+      return local;
     } catch (_) {
-      return demo;
+      return local;
     }
   }
 
   Future<Product?> getProduct(String id) async {
+    final local = LocalCommerceStore.getProduct(id);
+    if (local != null) return local;
     final products = await listProducts();
     try {
       return products.firstWhere((p) => p.id == id || p.slug == id);
@@ -106,26 +87,29 @@ class CatalogRepository {
   }
 
   Future<List<Seller>> listSellers() async {
+    final local = LocalCommerceStore.listSellers();
     try {
       final res =
           await _api.get('/api/sellers').timeout(const Duration(seconds: 4));
       final data = ApiResponse.decode(res.data);
-      if (data == null) return DemoCatalog.sellers;
+      if (data == null) return local;
       final list = data is List
           ? data
           : (data is Map && data['sellers'] is List)
               ? data['sellers'] as List
               : <dynamic>[];
-      if (list.isEmpty) return DemoCatalog.sellers;
+      if (list.isEmpty) return local;
       return list
           .map((e) => Seller.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     } catch (_) {
-      return DemoCatalog.sellers;
+      return local;
     }
   }
 
   Future<Seller?> getSeller(String idOrSlug) async {
+    final local = LocalCommerceStore.getSeller(idOrSlug);
+    if (local != null) return local;
     final sellers = await listSellers();
     try {
       return sellers.firstWhere((s) => s.id == idOrSlug || s.slug == idOrSlug);
@@ -176,8 +160,6 @@ class CatalogRepository {
   }
 
   Future<List<Promotion>> listPromotions(String placement) async {
-    final demo =
-        DemoCatalog.promotions.where((p) => p.placement == placement).toList();
     try {
       final res = await _api
           .get(
@@ -186,18 +168,17 @@ class CatalogRepository {
           )
           .timeout(const Duration(seconds: 4));
       final data = ApiResponse.decode(res.data);
-      if (data == null) return demo;
+      if (data == null) return const [];
       final list = data is List
           ? data
           : (data is Map && data['promotions'] is List)
               ? data['promotions'] as List
               : <dynamic>[];
-      final parsed = list
+      return list
           .map((e) => Promotion.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      return parsed.isEmpty ? demo : parsed;
     } catch (_) {
-      return demo;
+      return const [];
     }
   }
 

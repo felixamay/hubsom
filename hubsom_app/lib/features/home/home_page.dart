@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/data/demo_catalog.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
@@ -21,35 +20,22 @@ class HomePage extends ConsumerWidget {
     final streamsAsync = ref.watch(streamsProvider);
     final promosAsync = ref.watch(promotionsProvider('landing'));
 
-    // Never leave Buy now empty: show demo catalog while loading / on error.
     final products = productsAsync.when(
-      data: (list) {
-        final typed = list.whereType<Product>().toList();
-        return typed.isEmpty ? DemoCatalog.products : typed;
-      },
-      loading: () => DemoCatalog.products,
-      error: (_, __) => DemoCatalog.products,
+      data: (list) => list.whereType<Product>().toList(),
+      loading: () => const <Product>[],
+      error: (_, __) => const <Product>[],
     );
 
     final streams = streamsAsync.when(
-      data: (list) {
-        final typed = list.whereType<LiveStream>().toList();
-        return typed.isEmpty ? DemoCatalog.streams : typed;
-      },
-      loading: () => DemoCatalog.streams,
-      error: (_, __) => DemoCatalog.streams,
+      data: (list) => list.whereType<LiveStream>().toList(),
+      loading: () => const <LiveStream>[],
+      error: (_, __) => const <LiveStream>[],
     );
 
     final promos = promosAsync.when(
-      data: (list) {
-        final typed = list.whereType<Promotion>().toList();
-        return typed.isEmpty
-            ? DemoCatalog.promotions.where((p) => p.placement == 'landing').toList()
-            : typed;
-      },
-      loading: () => DemoCatalog.promotions.where((p) => p.placement == 'landing').toList(),
-      error: (_, __) =>
-          DemoCatalog.promotions.where((p) => p.placement == 'landing').toList(),
+      data: (list) => list.whereType<Promotion>().toList(),
+      loading: () => const <Promotion>[],
+      error: (_, __) => const <Promotion>[],
     );
 
     final cross = ResponsiveScaffold.isWide(context)
@@ -224,22 +210,31 @@ class HomePage extends ConsumerWidget {
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.only(bottom: 100),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cross,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 12,
-                // Taller tiles so name + price stay visible under the image.
-                childAspectRatio: 0.74,
+          if (products.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(0, 8, 0, 100),
+                child: Text(
+                  'No products yet. Sellers can publish from Sell → New product, then go live.',
+                ),
               ),
-              delegate: SliverChildBuilderDelegate(
-                (_, i) => ProductCard(product: products[i]),
-                childCount: products.length.clamp(0, 12),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.only(bottom: 100),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cross,
+                  mainAxisSpacing: 14,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.74,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => ProductCard(product: products[i]),
+                  childCount: products.length.clamp(0, 12),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -10,58 +10,8 @@ import type {
 const FILE = "promotions.json";
 type Store = { promotions: Promotion[] };
 
-const SEED: Promotion[] = [
-  {
-    id: "promo-live-weekend",
-    title: "Weekend live drops",
-    subtitle: "Sellers go live with limited stock — tap in before it sells out.",
-    ctaLabel: "Watch live",
-    href: "/live",
-    tone: "live",
-    placements: ["landing", "marketplace"],
-    active: true,
-    source: "seed",
-    sortOrder: 10,
-  },
-  {
-    id: "promo-flash-hub",
-    title: "Flash sale lane",
-    subtitle: "Timed discounts across categories — Buy Now in GHS.",
-    ctaLabel: "Shop flash",
-    href: "/flash-sales",
-    tone: "gold",
-    placements: ["landing", "marketplace", "category"],
-    active: true,
-    source: "seed",
-    sortOrder: 20,
-  },
-  {
-    id: "promo-fashion-edit",
-    title: "Fashion edit",
-    subtitle: "New Ankara & streetwear picks from Hubsom stores.",
-    ctaLabel: "Browse fashion",
-    href: "/categories/fashion",
-    tone: "cyan",
-    placements: ["landing", "category", "product"],
-    categorySlugs: ["fashion"],
-    active: true,
-    source: "seed",
-    sortOrder: 30,
-  },
-  {
-    id: "promo-phones",
-    title: "Phones & accessories",
-    subtitle: "Deals on gadgets from verified sellers.",
-    ctaLabel: "Shop phones",
-    href: "/categories/phones-accessories",
-    tone: "forest",
-    placements: ["category", "marketplace"],
-    categorySlugs: ["phones-accessories"],
-    active: true,
-    source: "seed",
-    sortOrder: 40,
-  },
-];
+/** No seeded demos — promotions are created by admins / sellers. */
+const SEED: Promotion[] = [];
 
 function normalizePlacement(p: string): PromoPlacement | null {
   if (p === "home") return "landing";

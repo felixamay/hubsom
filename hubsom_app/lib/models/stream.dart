@@ -20,6 +20,13 @@ class StreamHost extends Equatable {
         avatar: json['avatar'] as String? ?? '',
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'role': role,
+        'avatar': avatar,
+      };
+
   @override
   List<Object?> get props => [id, role];
 }
@@ -57,6 +64,37 @@ class LiveAuction extends Equatable {
         bidderCount: (json['bidderCount'] as num?)?.toInt() ?? 0,
         highestBidder: json['highestBidder'] as String?,
         status: json['status'] as String? ?? 'upcoming',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'startingBidGhs': startingBidGhs,
+        'currentBidGhs': currentBidGhs,
+        'minIncrementGhs': minIncrementGhs,
+        'endsAt': endsAt,
+        'bidderCount': bidderCount,
+        if (highestBidder != null) 'highestBidder': highestBidder,
+        'status': status,
+      };
+
+  LiveAuction copyWith({
+    double? currentBidGhs,
+    int? bidderCount,
+    String? highestBidder,
+    String? status,
+    String? endsAt,
+  }) =>
+      LiveAuction(
+        id: id,
+        productId: productId,
+        startingBidGhs: startingBidGhs,
+        currentBidGhs: currentBidGhs ?? this.currentBidGhs,
+        minIncrementGhs: minIncrementGhs,
+        endsAt: endsAt ?? this.endsAt,
+        bidderCount: bidderCount ?? this.bidderCount,
+        highestBidder: highestBidder ?? this.highestBidder,
+        status: status ?? this.status,
       );
 
   @override
@@ -138,6 +176,65 @@ class LiveStream extends Equatable {
         replayAvailable: json['replayAvailable'] as bool? ?? false,
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'description': description,
+        'sellerId': sellerId,
+        'status': status,
+        'channelName': channelName,
+        'cover': cover,
+        'viewerCount': viewerCount,
+        'peakViewers': peakViewers,
+        if (startedAt != null) 'startedAt': startedAt,
+        if (endedAt != null) 'endedAt': endedAt,
+        if (recordingUrl != null) 'recordingUrl': recordingUrl,
+        'productIds': productIds,
+        if (pinnedProductId != null) 'pinnedProductId': pinnedProductId,
+        'hosts': hosts.map((h) => h.toJson()).toList(),
+        if (auction != null) 'auction': auction!.toJson(),
+        'categories': categories,
+        'latencyMs': latencyMs,
+        'isMultiHost': isMultiHost,
+        'replayAvailable': replayAvailable,
+      };
+
+  LiveStream copyWith({
+    String? status,
+    int? viewerCount,
+    int? peakViewers,
+    String? endedAt,
+    String? pinnedProductId,
+    List<String>? productIds,
+    LiveAuction? auction,
+    bool clearPinned = false,
+    bool clearAuction = false,
+    bool? replayAvailable,
+  }) =>
+      LiveStream(
+        id: id,
+        title: title,
+        description: description,
+        sellerId: sellerId,
+        status: status ?? this.status,
+        channelName: channelName,
+        cover: cover,
+        viewerCount: viewerCount ?? this.viewerCount,
+        peakViewers: peakViewers ?? this.peakViewers,
+        startedAt: startedAt,
+        endedAt: endedAt ?? this.endedAt,
+        recordingUrl: recordingUrl,
+        productIds: productIds ?? this.productIds,
+        pinnedProductId:
+            clearPinned ? null : (pinnedProductId ?? this.pinnedProductId),
+        hosts: hosts,
+        auction: clearAuction ? null : (auction ?? this.auction),
+        categories: categories,
+        latencyMs: latencyMs,
+        isMultiHost: isMultiHost,
+        replayAvailable: replayAvailable ?? this.replayAvailable,
+      );
+
   @override
   List<Object?> get props => [id, status, viewerCount, pinnedProductId, auction];
 }
@@ -170,6 +267,16 @@ class ChatMessage extends Equatable {
         createdAt: json['createdAt'] as String? ?? '',
         moderated: json['moderated'] as bool? ?? false,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'streamId': streamId,
+        'userId': userId,
+        'displayName': displayName,
+        'text': text,
+        'createdAt': createdAt,
+        'moderated': moderated,
+      };
 
   @override
   List<Object?> get props => [id, text, moderated];

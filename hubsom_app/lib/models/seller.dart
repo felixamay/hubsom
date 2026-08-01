@@ -47,6 +47,22 @@ class Seller extends Equatable {
         ownerUserId: json['ownerUserId'] as String?,
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'slug': slug,
+        'name': name,
+        'city': city,
+        'region': region,
+        'bio': bio,
+        'avatar': avatar,
+        'cover': cover,
+        'rating': rating,
+        'followers': followers,
+        'verified': verified,
+        'categories': categories,
+        if (ownerUserId != null) 'ownerUserId': ownerUserId,
+      };
+
   @override
   List<Object?> get props => [id, slug, name, followers, verified];
 }

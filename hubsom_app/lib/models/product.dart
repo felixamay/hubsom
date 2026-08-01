@@ -77,6 +77,29 @@ class Product extends Equatable {
         supports: (json['supports'] as List?)?.cast<String>() ?? const [],
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'slug': slug,
+        'name': name,
+        'description': description,
+        'category': category,
+        'priceGhs': priceGhs,
+        if (compareAtGhs != null) 'compareAtGhs': compareAtGhs,
+        'currency': currency,
+        'images': images,
+        'sellerId': sellerId,
+        'stock': stock,
+        'rating': rating,
+        'reviewCount': reviewCount,
+        'tags': tags,
+        if (flashSale != null)
+          'flashSale': {
+            'endsAt': flashSale!.endsAt,
+            'discountPct': flashSale!.discountPct,
+          },
+        'supports': supports,
+      };
+
   @override
   List<Object?> get props => [id, slug, name, priceGhs, sellerId, stock];
 }

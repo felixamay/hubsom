@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/data/demo_catalog.dart';
 import '../../core/providers/core_providers.dart';
 import '../../models/product.dart';
 import '../../models/promotion.dart';
@@ -41,28 +40,15 @@ class _MarketplacePageState extends ConsumerState<MarketplacePage> {
             : 2;
 
     final products = productsAsync.when(
-      data: (list) {
-        final typed = list.whereType<Product>().toList();
-        return typed.isEmpty
-            ? DemoCatalog.productsFiltered(category: args.category, q: args.q)
-            : typed;
-      },
-      loading: () => DemoCatalog.productsFiltered(category: args.category, q: args.q),
-      error: (_, __) =>
-          DemoCatalog.productsFiltered(category: args.category, q: args.q),
+      data: (list) => list.whereType<Product>().toList(),
+      loading: () => const <Product>[],
+      error: (_, __) => const <Product>[],
     );
 
     final promos = promosAsync.when(
-      data: (list) {
-        final typed = list.whereType<Promotion>().toList();
-        return typed.isEmpty
-            ? DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList()
-            : typed;
-      },
-      loading: () =>
-          DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList(),
-      error: (_, __) =>
-          DemoCatalog.promotions.where((p) => p.placement == 'marketplace').toList(),
+      data: (list) => list.whereType<Promotion>().toList(),
+      loading: () => const <Promotion>[],
+      error: (_, __) => const <Promotion>[],
     );
 
     return Scaffold(

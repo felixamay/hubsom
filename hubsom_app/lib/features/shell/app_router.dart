@@ -163,7 +163,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/live', builder: (_, __) => const LiveListPage()),
       GoRoute(
         path: '/live/:id',
-        builder: (_, state) => LiveRoomPage(streamId: state.pathParameters['id']!),
+        builder: (_, state) => LiveRoomPage(
+          streamId: state.pathParameters['id']!,
+          hostMode: state.uri.queryParameters['host'] == '1',
+        ),
       ),
       GoRoute(
         path: '/products/:id',
