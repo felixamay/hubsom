@@ -150,6 +150,9 @@ class LocalCommerceStore {
       'live-auction',
     ],
   }) async {
+    if (images.length < 3) {
+      throw StateError('Upload at least 3 product photos before publishing');
+    }
     final seller = await ensureSellerForUser(user);
     final id = 'prod-${_uuid.v4().substring(0, 8)}';
     final slug = name

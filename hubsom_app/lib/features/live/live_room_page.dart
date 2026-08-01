@@ -67,6 +67,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         if (mounted) setState(() => error = 'Live show not found');
         return;
       }
+
+      // Paint the room immediately so go-live never lands on a blank page.
+      if (mounted) {
+        setState(() {
+          stream = s;
+          error = null;
+        });
+      }
+
       final messages = await repo.listChat(widget.streamId);
       final products = <Product>[];
       for (final id in s.productIds) {
@@ -85,37 +94,45 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         pin ??= await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
 
-      if (join) {
-        _agora = ref.read(agoraServiceProvider);
-        final token = await _agora!.fetchToken(
-          channelName: s.channelName,
-          uid: widget.hostMode ? 1 : 0,
-          role: widget.hostMode ? 'publisher' : 'subscriber',
-        );
-        if (widget.hostMode) {
-          await _agora!.joinAsHost(
-            channelName: s.channelName,
-            token: token ?? '',
-            uid: 1,
-          );
-        } else {
-          await _agora!.joinAsAudience(
-            channelName: s.channelName,
-            token: token ?? '',
-          );
-        }
-      }
-
       if (!mounted) return;
       setState(() {
-        stream = s;
         chat = messages;
         bag = products;
         pinned = pin;
-        error = null;
       });
+
+      if (join) {
+        // Non-blocking: web uses a stub so this must never freeze the UI.
+        // ignore: unawaited_futures
+        _joinAgora(s);
+      }
     } catch (e) {
       if (mounted) setState(() => error = '$e');
+    }
+  }
+
+  Future<void> _joinAgora(LiveStream s) async {
+    try {
+      _agora = ref.read(agoraServiceProvider);
+      final token = await _agora!.fetchToken(
+        channelName: s.channelName,
+        uid: widget.hostMode ? 1 : 0,
+        role: widget.hostMode ? 'publisher' : 'subscriber',
+      );
+      if (widget.hostMode) {
+        await _agora!.joinAsHost(
+          channelName: s.channelName,
+          token: token ?? '',
+          uid: 1,
+        );
+      } else {
+        await _agora!.joinAsAudience(
+          channelName: s.channelName,
+          token: token ?? '',
+        );
+      }
+    } catch (_) {
+      // Live commerce UI still works without RTC.
     }
   }
 

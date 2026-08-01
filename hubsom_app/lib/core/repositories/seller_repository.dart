@@ -72,6 +72,11 @@ class SellerRepository {
   }
 
   Future<Map<String, dynamic>> createProduct(Map<String, dynamic> body) async {
+    final images = (body['images'] as List?)?.cast<String>() ?? const <String>[];
+    if (images.length < 3) {
+      throw AuthException('Upload at least 3 product photos before publishing');
+    }
+
     try {
       final res = await _api.post('/api/products', data: body);
       final data = ApiResponse.asMap(res.data);
@@ -79,8 +84,9 @@ class SellerRepository {
       if (product != null && product['id'] != null) {
         return Map<String, dynamic>.from(product);
       }
-    } catch (_) {
-      // fall through
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      // fall through to local store when API is unavailable
     }
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
@@ -91,7 +97,7 @@ class SellerRepository {
       category: body['category'] as String? ?? 'miscellaneous',
       priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? 0,
       stock: (body['stock'] as num?)?.toInt() ?? 0,
-      images: (body['images'] as List?)?.cast<String>() ?? const [],
+      images: images,
       supports: (body['supports'] as List?)?.cast<String>() ??
           const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
     );

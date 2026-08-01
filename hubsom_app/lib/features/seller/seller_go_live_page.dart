@@ -6,6 +6,7 @@ import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
+import '../../widgets/hubsom_image.dart';
 
 class SellerGoLivePage extends ConsumerStatefulWidget {
   const SellerGoLivePage({super.key});
@@ -28,22 +29,34 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProducts());
   }
 
   Future<void> _loadProducts() async {
+    setState(() {
+      _loadingProducts = true;
+      _error = null;
+    });
     try {
       final products = await ref.read(sellerRepositoryProvider).myProducts();
       if (!mounted) return;
       setState(() {
         _products = products;
         _loadingProducts = false;
-        if (_products.isNotEmpty && _selected.isEmpty) {
-          _selected.add(_products.first.id);
+        if (_products.isNotEmpty) {
+          _selected
+            ..clear()
+            ..add(_products.first.id);
+          _auctionProductId = _products.first.id;
         }
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingProducts = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingProducts = false;
+          _error = 'Could not load products: $e';
+        });
+      }
     }
   }
 
@@ -80,25 +93,18 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
           'startingBidGhs': double.tryParse(_startingBid.text.trim()) ?? 50,
       });
 
-      final agora = ref.read(agoraServiceProvider);
-      final token = await agora.fetchToken(
-        channelName: stream.channelName,
-        uid: 1,
-        role: 'publisher',
-      );
-      // Join even when certificate-less API returns null token.
-      await agora.joinAsHost(
-        channelName: stream.channelName,
-        token: token ?? '',
-        uid: 1,
-      );
-
       ref.invalidate(streamsProvider);
       await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
-      context.go('/live/${stream.id}?host=1');
+
+      // Navigate immediately — Agora join happens inside the room (web-safe stub).
+      final dest = Uri(
+        path: '/live/${stream.id}',
+        queryParameters: const {'host': '1'},
+      ).toString();
+      context.go(dest);
     } catch (e) {
-      setState(() => _error = '$e');
+      if (mounted) setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -107,7 +113,16 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Go live')),
+      appBar: AppBar(
+        title: const Text('Go live'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh products',
+            onPressed: _loadingProducts ? null : _loadProducts,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: _loadingProducts
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -151,12 +166,13 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'You need at least one product before going live.',
+                            'You need at least one product before going live. Create a product with 3+ photos, then you will return here.',
                           ),
                           const SizedBox(height: 12),
                           FilledButton(
-                            onPressed: () =>
-                                context.push('/seller/products/new'),
+                            onPressed: () => context.push(
+                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                            ),
                             child: const Text('Create a product'),
                           ),
                         ],
@@ -166,11 +182,24 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 else
                   ..._products.map((p) {
                     final selected = _selected.contains(p.id);
+                    final thumb =
+                        p.images.isNotEmpty ? p.images.first : null;
                     return CheckboxListTile(
                       value: selected,
                       contentPadding: EdgeInsets.zero,
+                      secondary: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: HubsomImage(
+                          url: thumb,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                       title: Text(p.name),
-                      subtitle: Text(formatGhs(p.effectivePrice)),
+                      subtitle: Text(
+                        '${formatGhs(p.effectivePrice)} · ${p.images.length} photos',
+                      ),
                       onChanged: (v) {
                         setState(() {
                           if (v == true) {
@@ -178,31 +207,43 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                           } else {
                             _selected.remove(p.id);
                             if (_auctionProductId == p.id) {
-                              _auctionProductId = null;
+                              _auctionProductId =
+                                  _selected.isNotEmpty ? _selected.first : null;
                             }
                           }
                         });
                       },
                     );
                   }),
+                if (_products.isNotEmpty) ...[
+                  TextButton(
+                    onPressed: () => context.push(
+                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                    ),
+                    child: const Text('Add another product'),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Include live auction'),
                   subtitle: const Text('Viewers can bid on one product'),
                   value: _auction,
-                  onChanged: _products.isEmpty
+                  onChanged: _products.isEmpty || _selected.isEmpty
                       ? null
                       : (v) => setState(() {
                             _auction = v;
-                            _auctionProductId ??=
-                                _selected.isNotEmpty ? _selected.first : null;
+                            _auctionProductId ??= _selected.first;
                           }),
                 ),
-                if (_auction) ...[
+                if (_auction && _selected.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
-                    initialValue: _auctionProductId ??
-                        (_selected.isNotEmpty ? _selected.first : null),
+                    key: ValueKey(
+                      'auction-${_selected.join(',')}-${_auctionProductId ?? ''}',
+                    ),
+                    initialValue: _selected.contains(_auctionProductId ?? '')
+                        ? _auctionProductId
+                        : _selected.first,
                     items: [
                       for (final id in _selected)
                         DropdownMenuItem(

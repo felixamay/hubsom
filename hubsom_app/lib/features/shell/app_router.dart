@@ -245,8 +245,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/seller/products/new',
-        builder: (_, __) =>
-            const AuthGate(requireSeller: true, child: SellerProductNewPage()),
+        builder: (_, state) => AuthGate(
+          requireSeller: true,
+          child: SellerProductNewPage(
+            returnTo: state.uri.queryParameters['returnTo'],
+          ),
+        ),
       ),
       GoRoute(
         path: '/driver/track/:shipmentId',

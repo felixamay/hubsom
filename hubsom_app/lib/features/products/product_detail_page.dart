@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import '../../core/utils/money.dart';
 import '../../models/cart.dart';
 import '../../models/product.dart';
 import '../../models/review.dart';
+import '../../widgets/hubsom_image.dart';
 
 class ProductDetailPage extends ConsumerWidget {
   const ProductDetailPage({super.key, required this.productId});
@@ -55,11 +55,36 @@ class ProductDetailPage extends ConsumerWidget {
                 aspectRatio: 1.1,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: image != null && image.startsWith('http')
-                      ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover)
-                      : Container(color: HubsomColors.mist, child: const Icon(Icons.image, size: 64)),
+                  child: HubsomImage(
+                    url: image,
+                    fit: BoxFit.cover,
+                    placeholder: Container(
+                      color: HubsomColors.mist,
+                      child: const Icon(Icons.image, size: 64),
+                    ),
+                  ),
                 ),
               ),
+              if (product.images.length > 1) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 72,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: product.images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: HubsomImage(
+                        url: product.images[i],
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Text(product.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),

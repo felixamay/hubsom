@@ -1,11 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/hubsom_colors.dart';
 import '../core/utils/money.dart';
 import '../models/product.dart';
+import 'hubsom_image.dart';
 
 class ProductCard extends StatelessWidget {
   const ProductCard({super.key, required this.product, this.onSave});
@@ -120,57 +119,29 @@ class _ProductImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url == null || url!.isEmpty) return _fallback();
-
-    // cached_network_image can be flaky on some web builds; Image.network is reliable.
-    if (kIsWeb) {
-      return Image.network(
-        url!,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _fallback(),
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return Container(
-            color: HubsomColors.mist,
-            alignment: Alignment.center,
-            child: const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        },
-      );
-    }
-
-    return CachedNetworkImage(
-      imageUrl: url!,
+    return HubsomImage(
+      url: url,
       fit: BoxFit.cover,
-      placeholder: (_, __) => Container(color: HubsomColors.mist),
-      errorWidget: (_, __, ___) => _fallback(),
-    );
-  }
-
-  Widget _fallback() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [HubsomColors.mint, HubsomColors.forest],
+      placeholder: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [HubsomColors.mint, HubsomColors.forest],
+          ),
         ),
-      ),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(12),
-      child: Text(
-        name,
-        textAlign: TextAlign.center,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-          fontSize: 14,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          name,
+          textAlign: TextAlign.center,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+          ),
         ),
       ),
     );
