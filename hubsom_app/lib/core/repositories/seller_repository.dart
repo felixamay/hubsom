@@ -52,7 +52,14 @@ class SellerRepository {
     try {
       final res = await _api.put('/api/seller/store', data: body);
       final data = ApiResponse.asMap(res.data);
-      if (data != null) return Seller.fromJson(data);
+      if (data != null && data['id'] != null) {
+        final remote = Seller.fromJson(data);
+        await LocalCommerceStore.upsertSeller(remote);
+        try {
+          await CloudStore.upsertDocs(CloudStore.sellers, [remote.toJson()]);
+        } catch (_) {}
+        return remote;
+      }
     } catch (_) {
       // fall through
     }
@@ -75,7 +82,11 @@ class SellerRepository {
           current.categories,
       ownerUserId: current.ownerUserId,
     );
-    return LocalCommerceStore.upsertSeller(updated);
+    final saved = await LocalCommerceStore.upsertSeller(updated);
+    try {
+      await CloudStore.upsertDocs(CloudStore.sellers, [saved.toJson()]);
+    } catch (_) {}
+    return saved;
   }
 
   Future<Map<String, dynamic>> createProduct(
