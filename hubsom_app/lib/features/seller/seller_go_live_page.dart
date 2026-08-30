@@ -21,6 +21,8 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   final _selected = <String>{};
   String? _auctionProductId;
   bool _auction = false;
+  /// Auction clock set by seller — max 30 seconds.
+  int _auctionSeconds = 30;
   bool _busy = false;
   String? _error;
   List<Product> _products = const [];
@@ -91,6 +93,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         if (_auction) 'auctionProductId': _auctionProductId ?? _selected.first,
         if (_auction)
           'startingBidGhs': double.tryParse(_startingBid.text.trim()) ?? 50,
+        if (_auction) 'auctionDurationSeconds': _auctionSeconds.clamp(1, 30),
       });
 
       ref.invalidate(streamsProvider);
@@ -264,6 +267,28 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                       labelText: 'Starting bid (GHS)',
                     ),
                     keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Auction time · $_auctionSeconds s (max 30)',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  Slider(
+                    value: _auctionSeconds.toDouble(),
+                    min: 5,
+                    max: 30,
+                    divisions: 25,
+                    label: '$_auctionSeconds s',
+                    onChanged: (v) =>
+                        setState(() => _auctionSeconds = v.round()),
+                  ),
+                  Text(
+                    'Countdown starts when you go live. Late bids can add a few seconds.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: HubsomColors.ink.withValues(alpha: 0.65),
+                        ),
                   ),
                 ],
                 if (_error != null) ...[

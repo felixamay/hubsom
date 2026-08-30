@@ -221,6 +221,7 @@ class LocalCommerceStore {
     String? pinnedProductId,
     String? auctionProductId,
     double startingBidGhs = 50,
+    int auctionDurationSeconds = 30,
     bool multiHost = false,
   }) async {
     if (productIds.isEmpty) {
@@ -238,6 +239,8 @@ class LocalCommerceStore {
         ? pinnedProductId
         : owned.first;
 
+    final durationSecs = auctionDurationSeconds.clamp(1, 30);
+
     LiveAuction? auction;
     if (auctionProductId != null && owned.contains(auctionProductId)) {
       final product = getProduct(auctionProductId)!;
@@ -247,9 +250,9 @@ class LocalCommerceStore {
         productId: auctionProductId,
         startingBidGhs: start,
         currentBidGhs: start,
-        minIncrementGhs: (start * 0.05).clamp(5, 50),
+        minIncrementGhs: (start * 0.05).clamp(1, 50),
         endsAt: DateTime.now()
-            .add(const Duration(hours: 2))
+            .add(Duration(seconds: durationSecs))
             .toUtc()
             .toIso8601String(),
         status: 'open',
@@ -387,9 +390,9 @@ class LocalCommerceStore {
       throw StateError('Bid must be at least ${min.toStringAsFixed(0)} GHS');
     }
 
-    // Soft close: late bids extend the auction so bargaining can continue.
-    if (endsAt.difference(now).inSeconds < 45) {
-      endsAt = now.add(const Duration(seconds: 45));
+    // Soft close: late bids nudge the clock so short auctions stay fair.
+    if (endsAt.difference(now).inSeconds < 3) {
+      endsAt = now.add(const Duration(seconds: 5));
     }
 
     final bid = AuctionBid(

@@ -60,8 +60,16 @@ void main() {
       pinnedProductId: product.id,
       auctionProductId: product.id,
       startingBidGhs: 80,
+      auctionDurationSeconds: 30,
     );
   }
+
+  test('auction duration is capped at 30 seconds', () async {
+    final stream = await goLive();
+    final left = stream.auction!.timeLeft!;
+    expect(left.inSeconds, lessThanOrEqualTo(30));
+    expect(left.inSeconds, greaterThan(25));
+  });
 
   test('live auction accepts bids with history and soft-close', () async {
     final stream = await goLive();
@@ -73,7 +81,7 @@ void main() {
     final nearEnd = stream.auction!.copyWith(
       endsAt: DateTime.now()
           .toUtc()
-          .add(const Duration(seconds: 20))
+          .add(const Duration(seconds: 2))
           .toIso8601String(),
     );
     await LocalCommerceStore.updateStream(stream.id, auction: nearEnd);
@@ -88,7 +96,7 @@ void main() {
     expect(first.recentBids, isNotEmpty);
     expect(first.recentBids.first.bidderName, 'Kojo Bidder');
     final left = first.timeLeft!;
-    expect(left.inSeconds, greaterThanOrEqualTo(40));
+    expect(left.inSeconds, greaterThanOrEqualTo(4));
 
     final chat = LocalCommerceStore.listChat(stream.id);
     expect(chat.any((m) => m.text.contains('Bid')), isTrue);

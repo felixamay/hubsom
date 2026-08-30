@@ -130,6 +130,8 @@ class LiveRepository {
       pinnedProductId: body['pinnedProductId'] as String?,
       auctionProductId: body['auctionProductId'] as String?,
       startingBidGhs: (body['startingBidGhs'] as num?)?.toDouble() ?? 50,
+      auctionDurationSeconds:
+          (body['auctionDurationSeconds'] as num?)?.toInt() ?? 30,
       multiHost: body['multiHost'] as bool? ?? false,
     );
     await _syncStream(stream);
