@@ -216,7 +216,16 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               initialValue: _category,
               items: [
                 for (final c in hubsomCategories)
-                  DropdownMenuItem(value: c.slug, child: Text(c.name)),
+                  DropdownMenuItem(
+                    value: c.slug,
+                    child: Row(
+                      children: [
+                        Icon(c.icon, size: 20),
+                        const SizedBox(width: 8),
+                        Flexible(child: Text(c.name)),
+                      ],
+                    ),
+                  ),
               ],
               onChanged: (v) => setState(() => _category = v ?? _category),
               decoration: const InputDecoration(labelText: 'Category'),

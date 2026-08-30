@@ -21,7 +21,17 @@ class CategoryDetailPage extends ConsumerWidget {
     final cross = ResponsiveScaffold.isWide(context) ? 5 : 2;
 
     return Scaffold(
-      appBar: AppBar(title: Text(meta?.name ?? slug)),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            if (meta != null) ...[
+              Icon(meta.icon),
+              const SizedBox(width: 8),
+            ],
+            Flexible(child: Text(meta?.name ?? slug)),
+          ],
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
