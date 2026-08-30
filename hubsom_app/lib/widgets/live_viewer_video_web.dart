@@ -34,9 +34,9 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   Timer? _poll;
   bool _ready = false;
   bool _connecting = true;
+  bool _needsUnmute = false;
   String? _status;
   int _hostIceApplied = 0;
-  bool _answerSent = false;
   String? _acceptedOfferSdp;
   final List<String> _localIce = [];
   bool _iceDirty = false;
@@ -100,7 +100,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       if ((signal.offerSdp ?? '').isNotEmpty &&
           signal.offerSdp != _acceptedOfferSdp) {
         await _acceptOffer(signal);
-        _acceptedOfferSdp = signal.offerSdp;
       }
 
       final pc = _pc;
@@ -139,7 +138,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _pc = pc;
     _hostIceApplied = 0;
     _localIce.clear();
-    _answerSent = false;
     _acceptedOfferSdp = null;
 
     pc.ontrack = ((web.Event event) {
@@ -189,7 +187,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         )
         .toDart;
 
-    _answerSent = true;
+    _acceptedOfferSdp = signal.offerSdp;
     await LiveWebrtcSignalStore.upsert(
       signal.copyWith(
         state: 'answered',
@@ -213,8 +211,27 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       final video = el as web.HTMLVideoElement;
       video.srcObject = stream;
       video.muted = false;
+      video.play().toDart.then(
+        (_) {
+          if (mounted) setState(() => _needsUnmute = false);
+        },
+        onError: (_) {
+          video.muted = true;
+          video.play().toDart;
+          if (mounted) setState(() => _needsUnmute = true);
+        },
+      );
+    }
+  }
+
+  void _unmute() {
+    final el = web.document.getElementById(_viewType);
+    if (el != null && el.isA<web.HTMLVideoElement>()) {
+      final video = el as web.HTMLVideoElement;
+      video.muted = false;
       video.play().toDart;
     }
+    if (mounted) setState(() => _needsUnmute = false);
   }
 
   Future<void> _disposePc() async {
@@ -229,7 +246,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
 
   Future<void> _resetPeer({required bool rejoin}) async {
     await _disposePc();
-    _answerSent = false;
     _acceptedOfferSdp = null;
     _hostIceApplied = 0;
     _localIce.clear();
@@ -300,6 +316,20 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+            ),
+          ),
+        if (_ready && _needsUnmute)
+          Positioned(
+            right: 16,
+            bottom: 24,
+            child: TextButton.icon(
+              onPressed: _unmute,
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.black54,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.volume_up, size: 18),
+              label: const Text('Tap for sound'),
             ),
           ),
       ],
