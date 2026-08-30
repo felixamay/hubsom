@@ -13,11 +13,17 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     required this.productId,
     this.remoteUrl,
     this.aspectRatio = 16 / 9,
+    this.expand = false,
+    this.autoplay = false,
+    this.borderRadius = 12,
   });
 
   final String productId;
   final String? remoteUrl;
   final double aspectRatio;
+  final bool expand;
+  final bool autoplay;
+  final double borderRadius;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -58,6 +64,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       }
 
       await controller.initialize();
+      controller.setLooping(true);
       controller.addListener(() {
         if (mounted) setState(() {});
       });
@@ -69,6 +76,9 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         _controller = controller;
         _ready = true;
       });
+      if (widget.autoplay) {
+        await controller.play();
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not play demo video');
     }
@@ -88,52 +98,75 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
   Widget build(BuildContext context) {
     if (_error != null) {
       return Container(
-        height: 160,
+        height: widget.expand ? null : 160,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: HubsomColors.mist,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(_error!),
+        color: Colors.black,
+        child: Text(_error!, style: const TextStyle(color: Colors.white70)),
       );
     }
     if (!_ready || _controller == null) {
-      return const SizedBox(
-        height: 160,
-        child: Center(child: CircularProgressIndicator()),
+      return ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: CircularProgressIndicator(
+            color: widget.expand ? Colors.white : HubsomColors.forest,
+          ),
+        ),
       );
     }
     final c = _controller!;
+    final video = Stack(
+      fit: StackFit.expand,
+      alignment: Alignment.center,
+      children: [
+        ColoredBox(
+          color: Colors.black,
+          child: widget.expand
+              ? FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: c.value.size.width == 0 ? 16 : c.value.size.width,
+                    height: c.value.size.height == 0 ? 9 : c.value.size.height,
+                    child: VideoPlayer(c),
+                  ),
+                )
+              : VideoPlayer(c),
+        ),
+        IconButton(
+          iconSize: 56,
+          color: Colors.white,
+          onPressed: () {
+            setState(() {
+              if (c.value.isPlaying) {
+                c.pause();
+              } else {
+                c.play();
+              }
+            });
+          },
+          icon: Icon(
+            c.value.isPlaying
+                ? Icons.pause_circle_filled
+                : Icons.play_circle_filled,
+          ),
+        ),
+      ],
+    );
+
+    if (widget.expand) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: video,
+      );
+    }
+
     return AspectRatio(
       aspectRatio: c.value.aspectRatio == 0
           ? widget.aspectRatio
           : c.value.aspectRatio,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            ColoredBox(color: Colors.black, child: VideoPlayer(c)),
-            IconButton(
-              iconSize: 56,
-              color: Colors.white,
-              onPressed: () {
-                setState(() {
-                  if (c.value.isPlaying) {
-                    c.pause();
-                  } else {
-                    c.play();
-                  }
-                });
-              },
-              icon: Icon(
-                c.value.isPlaying
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_filled,
-              ),
-            ),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: video,
       ),
     );
   }
