@@ -53,3 +53,4 @@ build/
 
 .firebase/
 .firebase
+.firebase-token
