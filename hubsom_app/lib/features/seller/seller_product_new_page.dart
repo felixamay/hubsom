@@ -4,10 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_image.dart';
 
@@ -26,7 +26,6 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _price = TextEditingController();
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
-  final _picker = ImagePicker();
   final _images = <String>[];
   String _category = hubsomCategories.first.slug;
   bool _busy = false;
@@ -64,29 +63,21 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         setState(() => _error = 'You can upload up to $_maxImages photos');
         return;
       }
-      final picked = await _picker.pickMultiImage(
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 72,
-        limit: remaining,
-      );
+      final picked = await pickProductPhotos(remaining: remaining);
       if (picked.isEmpty) return;
 
       for (final file in picked) {
         if (_images.length >= _maxImages) break;
-        final bytes = await file.readAsBytes();
-        // Keep uploads small enough for Hive / local store.
-        if (bytes.lengthInBytes > 1_800_000) {
-          setState(() => _error = 'Each photo must be under ~1.5MB after compress');
+        if (file.bytes.lengthInBytes > 1_800_000) {
+          setState(() => _error = 'Each photo must be under ~1.5MB');
           continue;
         }
-        final b64 = base64Encode(bytes);
-        final mime = file.mimeType ?? 'image/jpeg';
-        _images.add('data:$mime;base64,$b64');
+        final mime = file.mimeType.isEmpty ? 'image/jpeg' : file.mimeType;
+        _images.add('data:$mime;base64,${base64Encode(file.bytes)}');
       }
       if (mounted) setState(() {});
     } catch (e) {
-      setState(() => _error = 'Could not pick images: $e');
+      setState(() => _error = 'Could not pick images. Try again or use JPG/PNG.');
     }
   }
 
