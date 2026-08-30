@@ -32,7 +32,7 @@ void main() {
         isA<AuthException>().having(
           (e) => e.message,
           'message',
-          contains('No Hubsom account for this email'),
+          contains('No Hubsom account for'),
         ),
       ),
     );

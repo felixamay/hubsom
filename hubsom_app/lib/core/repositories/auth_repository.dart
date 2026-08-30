@@ -44,7 +44,7 @@ class AuthRepository {
     String role = 'buyer',
     HuberSignUpDetails? huber,
   }) async {
-    final normalized = email.trim().toLowerCase();
+    final normalized = CloudStore.accountDocId(email);
     _validateCredentials(normalized, password, name: name);
     if (AuthRoutes.isHuberRole(role) &&
         (huber == null || huber.phone.trim().isEmpty)) {
@@ -117,7 +117,7 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
-    final normalized = email.trim().toLowerCase();
+    final normalized = CloudStore.accountDocId(email);
     _validateCredentials(normalized, password);
 
     try {
@@ -128,7 +128,7 @@ class AuthRepository {
       if (cloudUser != null) return cloudUser;
     } on AuthException {
       rethrow;
-    } catch (e) {
+    } catch (_) {
       final vault = LocalStore.loadCredentialVault();
       if (!vault.containsKey(normalized)) {
         throw AuthException(
@@ -143,7 +143,7 @@ class AuthRepository {
     }
 
     throw AuthException(
-      'No Hubsom account for this email. Create one once — it is stored in the database, then any browser can sign in.',
+      'No Hubsom account for $normalized. Use the exact email from sign-up, or create the account once on this site.',
     );
   }
 
@@ -308,9 +308,14 @@ class AuthRepository {
     }
     final userJson = remote['userJson'];
     if (userJson is! Map) {
-      throw AuthException('Invalid email or password');
+      throw AuthException('This Hubsom account is incomplete. Create the account again.');
     }
-    final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    final HubsomUser user;
+    try {
+      user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    } catch (_) {
+      throw AuthException('This Hubsom account is incomplete. Create the account again.');
+    }
     final vault = LocalStore.loadCredentialVault();
     vault[email] = {
       'salt': salt,
@@ -409,7 +414,8 @@ class AuthRepository {
   }
 
   void _validateCredentials(String email, String password, {String? name}) {
-    if (email.isEmpty || !email.contains('@')) {
+    final normalized = CloudStore.accountDocId(email);
+    if (normalized.isEmpty || !normalized.contains('@')) {
       throw AuthException('Enter a valid email address');
     }
     if (password.length < 8) {

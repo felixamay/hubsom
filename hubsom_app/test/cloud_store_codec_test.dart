@@ -27,5 +27,9 @@ void main() {
     expect(user['id'], 'u1');
     expect(user['walletBalanceGhs'], 12.5);
     expect(CloudStore.accountDocId('  Ama@Hubsom.TEST '), 'ama@hubsom.test');
+    expect(
+      CloudStore.accountDocId('ama\u200b@hubsom.test'),
+      'ama@hubsom.test',
+    );
   });
 }

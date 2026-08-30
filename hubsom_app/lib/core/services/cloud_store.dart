@@ -52,37 +52,114 @@ class CloudStore {
 
   static bool get available => useNetwork;
 
-  static String accountDocId(String email) => email.trim().toLowerCase();
+  /// Stable account document id: lowercase email with invisible chars stripped.
+  static String accountDocId(String email) {
+    return email
+        .replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '')
+        .trim()
+        .toLowerCase();
+  }
 
-  /// Reads an account from the live Firestore REST API.
+  static Map<String, dynamic>? _asJsonMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    if (data is String) {
+      final trimmed = data.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('<')) return null;
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static Map<String, dynamic>? _accountFromResponse(dynamic data) {
+    final map = _asJsonMap(data);
+    if (map == null) return null;
+    if (map['error'] != null) {
+      final err = map['error'];
+      final code = err is Map ? err['code'] : null;
+      final status = err is Map ? '${err['status']}' : '';
+      if (code == 404 || status == 'NOT_FOUND') return null;
+      throw StateError('Could not read Hubsom account: ${map['error']}');
+    }
+    final decoded = decodeDocument(map);
+    return decoded.isEmpty ? null : decoded;
+  }
+
+  /// Reads an account from the live Firestore REST API (document id, then email query).
   ///
-  /// The FlutterFire SDK is not used here: it can return a local IndexedDB
-  /// write that never reached the server, which is why a new browser then
-  /// looks like it has no account.
+  /// The FlutterFire SDK is not used for auth: it can succeed against IndexedDB
+  /// without the server, which made new browsers look like they had no account.
   static Future<Map<String, dynamic>?> getAccount(String email) async {
     if (!useNetwork) return null;
     final id = accountDocId(email);
-    try {
-      final res = await _rest.get<dynamic>(
-        '$_root/$accounts/${Uri.encodeComponent(id)}',
-        queryParameters: {'key': _apiKey},
-      );
-      if (res.statusCode == 404 || res.data == null) return null;
-      if (res.data is Map && res.data['error'] != null) {
-        final err = res.data['error'];
-        final code = err is Map ? err['code'] : null;
-        final status = err is Map ? '${err['status']}' : '';
-        if (code == 404 || status == 'NOT_FOUND') return null;
-        throw StateError('Could not read Hubsom account: ${res.data}');
+    if (id.isEmpty || !id.contains('@')) return null;
+
+    Object? lastError;
+    for (final pathId in <String>[Uri.encodeComponent(id), id]) {
+      try {
+        final res = await _rest.get<dynamic>(
+          '$_root/$accounts/$pathId',
+          queryParameters: {'key': _apiKey},
+        );
+        if (res.statusCode == 404) continue;
+        final account = _accountFromResponse(res.data);
+        if (account != null) return account;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) continue;
+        lastError = e;
+      } catch (e) {
+        lastError = e;
       }
-      final decoded = decodeDocument(res.data);
-      return decoded.isEmpty ? null : decoded;
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) return null;
+    }
+
+    try {
+      final queried = await _queryAccountByEmail(id);
+      if (queried != null) return queried;
+    } catch (e) {
+      lastError = e;
+    }
+
+    if (lastError != null) {
       throw StateError(
         'Could not reach the Hubsom account database. Check your connection.',
       );
     }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> _queryAccountByEmail(String email) async {
+    final res = await _rest.post<dynamic>(
+      'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents:runQuery',
+      queryParameters: {'key': _apiKey},
+      data: {
+        'structuredQuery': {
+          'from': [
+            {'collectionId': accounts},
+          ],
+          'where': {
+            'fieldFilter': {
+              'field': {'fieldPath': 'email'},
+              'op': 'EQUAL',
+              'value': {'stringValue': email},
+            },
+          },
+          'limit': 1,
+        },
+      },
+    );
+    final data = res.data;
+    if (data is! List) return null;
+    for (final row in data) {
+      if (row is! Map) continue;
+      final doc = row['document'];
+      if (doc == null) continue;
+      final account = _accountFromResponse(doc);
+      if (account != null) return account;
+    }
+    return null;
   }
 
   /// Writes an account and refuses to return until the server can read it back.
@@ -110,7 +187,7 @@ class CloudStore {
     }
 
     final verify = await getAccount(id);
-    if (verify == null || '${verify['email']}' != id) {
+    if (verify == null || accountDocId('${verify['email']}') != id) {
       throw StateError(
         'Account was not visible in the Hubsom database after save. Try again.',
       );

@@ -17,7 +17,7 @@
 
   <title>Hubsom</title>
   <link rel="manifest" href="manifest.json">
-  <!-- cache-bust: 2026-08-30-force-reload-v4 -->
+  <!-- cache-bust: 2026-08-30-force-reload-v5 -->
 </head>
 <body>
   <script>
@@ -25,6 +25,9 @@
       navigator.serviceWorker.getRegistrations().then(function (regs) {
         regs.forEach(function (reg) { reg.unregister(); });
       });
+      navigator.serviceWorker.register = function () {
+        return Promise.reject(new Error('Hubsom disables service workers so account updates are not stuck on an old build'));
+      };
     }
     if (window.caches && caches.keys) {
       caches.keys().then(function (keys) {
@@ -32,6 +35,6 @@
       });
     }
   </script>
-  <script src="flutter_bootstrap.js?v=20260830v3" async></script>
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
