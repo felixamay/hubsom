@@ -152,7 +152,53 @@ class LocalHuberStore {
       rows.insert(0, order);
     }
     await _writeList(_ordersKey, rows.map((e) => e.toJson()).toList());
+    try {
+      await CloudStore.upsertDocs(CloudStore.orders, [order.toJson()]);
+    } catch (_) {}
     return order;
+  }
+
+  static Order? getOrder(String id) {
+    for (final o in listOrders()) {
+      if (o.id == id) return o;
+    }
+    return null;
+  }
+
+  static Future<Order> updateOrderStatus(String orderId, String status) async {
+    final current = getOrder(orderId);
+    if (current == null) throw StateError('Order not found');
+    return saveOrder(current.copyWith(status: status));
+  }
+
+  static Future<void> syncOrdersForShipment(
+    Shipment shipment,
+    String orderStatus,
+  ) async {
+    for (final orderId in shipment.orderIds) {
+      final order = getOrder(orderId);
+      if (order == null) continue;
+      if (order.status == orderStatus) continue;
+      // Don't regress delivered / cancelled.
+      if (order.status == 'delivered' || order.status == 'cancelled') continue;
+      await saveOrder(order.copyWith(status: orderStatus));
+    }
+  }
+
+  static Future<Shipment> markShipmentShipped(String shipmentId) async {
+    final shipment = getShipment(shipmentId);
+    if (shipment == null) throw StateError('Shipment not found');
+    if (shipment.status != 'assigned') {
+      throw StateError(
+        'Wait for a Huber to accept, then ship. Current status: ${shipment.status}',
+      );
+    }
+    final now = DateTime.now().toUtc().toIso8601String();
+    final updated = await saveShipment(
+      shipment.copyWith(status: 'shipped', updatedAt: now),
+    );
+    await syncOrdersForShipment(updated, 'shipped');
+    return updated;
   }
 
   static List<Shipment> listShipments() =>
@@ -174,6 +220,9 @@ class LocalHuberStore {
       rows.insert(0, shipment);
     }
     await _writeList(_shipmentsKey, rows.map((e) => e.toJson()).toList());
+    try {
+      await CloudStore.upsertDocs(CloudStore.shipments, [shipment.toJson()]);
+    } catch (_) {}
     return shipment;
   }
 
@@ -234,7 +283,7 @@ class LocalHuberStore {
           )
         : shipping;
     final now = DateTime.now().toUtc().toIso8601String();
-    return saveShipment(
+    final created = await saveShipment(
       Shipment(
         id: 'shp_${_uuid.v4().replaceAll('-', '').substring(0, 10)}',
         sellerId: sellerId,
@@ -247,6 +296,8 @@ class LocalHuberStore {
         updatedAt: now,
       ),
     );
+    await syncOrdersForShipment(created, 'processing');
+    return created;
   }
 
   // --- offers / deliveries ---
@@ -453,6 +504,10 @@ class LocalHuberStore {
     final deliveries = listDeliveries();
     deliveries.insert(0, delivery);
     await _saveDeliveries(deliveries);
+    final assignedShipment = getShipment(offer.shipmentId);
+    if (assignedShipment != null) {
+      await syncOrdersForShipment(assignedShipment, 'processing');
+    }
     return delivery;
   }
 
@@ -502,7 +557,13 @@ class LocalHuberStore {
         'delivered' => 'delivered',
         _ => shipment.status,
       };
-      await saveShipment(shipment.copyWith(status: mapped, updatedAt: now));
+      final updatedShipment =
+          await saveShipment(shipment.copyWith(status: mapped, updatedAt: now));
+      if (mapped == 'out_for_delivery' || mapped == 'shipped') {
+        await syncOrdersForShipment(updatedShipment, 'shipped');
+      } else if (mapped == 'delivered') {
+        await syncOrdersForShipment(updatedShipment, 'delivered');
+      }
     }
 
     if (nextStatus == 'delivered') {

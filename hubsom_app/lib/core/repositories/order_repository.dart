@@ -87,10 +87,32 @@ class OrderRepository {
       final res = await _api.patch('/api/seller/orders/$orderId', data: patch);
       final data = ApiResponse.asMap(res.data);
       if (data != null && data['id'] != null) {
-        return Order.fromJson(data);
+        final remote = Order.fromJson(data);
+        await LocalHuberStore.saveOrder(remote);
+        return remote;
       }
     } catch (_) {}
-    throw StateError('Order update failed');
+    final status = patch['status'] as String?;
+    if (status == null || status.isEmpty) {
+      throw StateError('Order update failed');
+    }
+    return LocalHuberStore.updateOrderStatus(orderId, status);
+  }
+
+  Future<Shipment> markShipmentShipped(String shipmentId) async {
+    try {
+      final res = await _api.post(
+        '/api/seller/shipments/$shipmentId/ship',
+      );
+      final data = ApiResponse.asMap(res.data);
+      if (data != null && data['id'] != null) {
+        final remote = Shipment.fromJson(data);
+        await LocalHuberStore.saveShipment(remote);
+        await LocalHuberStore.syncOrdersForShipment(remote, 'shipped');
+        return remote;
+      }
+    } catch (_) {}
+    return LocalHuberStore.markShipmentShipped(shipmentId);
   }
 
   Future<List<Shipment>> listShipments() async {

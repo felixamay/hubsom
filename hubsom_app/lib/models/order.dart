@@ -176,4 +176,29 @@ class Order extends Equatable {
 
   @override
   List<Object?> get props => [id, status, subtotalGhs, lines];
+
+  Order copyWith({
+    String? status,
+    String? buyerName,
+    String? buyerEmail,
+    OrderShipping? shipping,
+    String? deliveryEstimate,
+  }) {
+    return Order(
+      id: id,
+      currency: currency,
+      subtotalGhs: subtotalGhs,
+      status: status ?? this.status,
+      userId: userId,
+      buyerName: buyerName ?? this.buyerName,
+      buyerEmail: buyerEmail ?? this.buyerEmail,
+      streamId: streamId,
+      oneTap: oneTap,
+      lines: lines,
+      shipping: shipping ?? this.shipping,
+      paymentMethods: paymentMethods,
+      deliveryEstimate: deliveryEstimate ?? this.deliveryEstimate,
+      createdAt: createdAt,
+    );
+  }
 }
