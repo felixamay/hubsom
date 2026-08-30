@@ -24,6 +24,7 @@ class CloudStore {
   static const shipments = 'shipments';
   static const products = 'products';
   static const sellers = 'sellers';
+  static const streams = 'streams';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -272,6 +273,7 @@ class CloudStore {
       'localShipments': shipments,
       'localProducts': products,
       'localSellers': sellers,
+      'localStreams': streams,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

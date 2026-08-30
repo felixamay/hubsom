@@ -370,20 +370,46 @@ class LocalCommerceStore {
     if (!stream.isLive) throw StateError('Show has ended');
     final auction = stream.auction!;
     if (auction.status != 'open') throw StateError('Auction is closed');
-    final min = auction.currentBidGhs + auction.minIncrementGhs;
-    if (amountGhs < min) {
-      throw StateError('Bid must be at least $min GHS');
+
+    final now = DateTime.now().toUtc();
+    DateTime endsAt;
+    try {
+      endsAt = DateTime.parse(auction.endsAt).toUtc();
+    } catch (_) {
+      endsAt = now.add(const Duration(hours: 1));
     }
+    if (endsAt.isBefore(now)) {
+      throw StateError('Auction has ended');
+    }
+
+    final min = auction.currentBidGhs + auction.minIncrementGhs;
+    if (amountGhs + 0.001 < min) {
+      throw StateError('Bid must be at least ${min.toStringAsFixed(0)} GHS');
+    }
+
+    // Soft close: late bids extend the auction so bargaining can continue.
+    if (endsAt.difference(now).inSeconds < 45) {
+      endsAt = now.add(const Duration(seconds: 45));
+    }
+
+    final bid = AuctionBid(
+      bidderName: bidder.name,
+      amountGhs: amountGhs,
+      at: now.toIso8601String(),
+    );
+    final recent = [bid, ...auction.recentBids].take(12).toList();
     final next = auction.copyWith(
       currentBidGhs: amountGhs,
       bidderCount: auction.bidderCount + 1,
       highestBidder: bidder.name,
+      endsAt: endsAt.toIso8601String(),
+      recentBids: recent,
     );
     await updateStream(stream.id, auction: next);
     await sendChat(
       streamId: stream.id,
       user: bidder,
-      text: 'Bid ${amountGhs.toStringAsFixed(0)} GHS on auction',
+      text: '🔥 Bid ${amountGhs.toStringAsFixed(0)} GHS — leading now',
     );
     return next;
   }

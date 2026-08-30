@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
@@ -13,6 +15,7 @@ import '../../core/utils/money.dart';
 import '../../models/cart.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
+import '../../widgets/live_host_camera.dart';
 
 class LiveRoomPage extends ConsumerStatefulWidget {
   const LiveRoomPage({super.key, required this.streamId, this.hostMode = false});
@@ -36,8 +39,12 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _camOn = true;
   bool _ending = false;
   bool _shopOpen = false;
+  bool _following = false;
+  bool _followBusy = false;
+  bool _bidBusy = false;
   final _floating = <_FloatRx>[];
   Timer? _poll;
+  Timer? _tick;
   late final AnimationController _pulse;
 
   bool get _isHost {
@@ -48,6 +55,14 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         stream!.hosts.any((h) => h.id == user.id);
   }
 
+  String get _hostName {
+    final hosts = stream?.hosts;
+    if (hosts != null && hosts.isNotEmpty && hosts.first.name.isNotEmpty) {
+      return hosts.first.name;
+    }
+    return 'Host';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -56,7 +71,20 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _load(join: true);
-    _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refreshQuiet());
+    _startPoll();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (stream?.auction?.isOpen == true) setState(() {});
+    });
+  }
+
+  void _startPoll() {
+    _poll?.cancel();
+    final auctionOpen = stream?.auction?.isOpen == true;
+    _poll = Timer.periodic(
+      Duration(seconds: auctionOpen ? 2 : 4),
+      (_) => _refreshQuiet(),
+    );
   }
 
   Future<void> _load({bool join = false}) async {
@@ -73,7 +101,11 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         setState(() {
           stream = s;
           error = null;
+          _following = ref
+              .read(catalogRepositoryProvider)
+              .isFollowingSeller(s.sellerId);
         });
+        _startPoll();
       }
 
       final messages = await repo.listChat(widget.streamId);
@@ -148,12 +180,69 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (pinId != null && pin?.id != pinId) {
         pin = await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
+      final wasOpen = stream?.auction?.isOpen == true;
+      final isOpen = s.auction?.isOpen == true;
       setState(() {
         stream = s;
         chat = messages;
         pinned = pin;
+        _following = ref
+            .read(catalogRepositoryProvider)
+            .isFollowingSeller(s.sellerId);
       });
+      if (wasOpen != isOpen) _startPoll();
     } catch (_) {}
+  }
+
+  Future<void> _shareShow() async {
+    final s = stream;
+    if (s == null) return;
+    final uri = Uri.base.replace(
+      path: '/live/${s.id}',
+      query: '',
+      fragment: '',
+    );
+    final link = uri.toString();
+    final text =
+        'Watch $_hostName live on Hubsom — ${s.title}\nBargain in real time:\n$link';
+    try {
+      await Share.share(text, subject: s.title);
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: link));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live link copied — paste to share.')),
+      );
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    final s = stream;
+    if (s == null || _isHost || _followBusy) return;
+    if (!ensureSignedIn(context, ref, message: 'Sign in to follow this seller')) {
+      return;
+    }
+    setState(() => _followBusy = true);
+    try {
+      final catalog = ref.read(catalogRepositoryProvider);
+      final next = _following
+          ? await catalog.unfollowSeller(s.sellerId)
+          : await catalog.followSeller(s.sellerId);
+      if (!mounted) return;
+      setState(() => _following = next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next ? 'Following $_hostName' : 'Unfollowed $_hostName',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _followBusy = false);
+    }
   }
 
   Future<void> _react() async {
@@ -183,10 +272,18 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('End live show?'),
-        content: const Text('Viewers will no longer be able to join this show as live.'),
+        content: const Text(
+          'Viewers will no longer be able to join this show as live.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('End live')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('End live'),
+          ),
         ],
       ),
     );
@@ -243,21 +340,97 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     );
   }
 
-  Future<void> _bid() async {
+  Future<void> _bidQuick() async {
+    final a = stream?.auction;
+    if (a == null || !a.isOpen) return;
+    await _submitBid(a.nextMinBidGhs);
+  }
+
+  Future<void> _bidCustom() async {
+    final a = stream?.auction;
+    if (a == null || !a.isOpen) return;
+    final min = a.nextMinBidGhs;
+    final ctrl = TextEditingController(text: min.toStringAsFixed(0));
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Place your bid'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Minimum next bid: ${formatGhs(min)}',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Your bid (GHS)',
+                prefixText: 'GH₵ ',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final v = double.tryParse(ctrl.text.trim());
+              Navigator.pop(ctx, v);
+            },
+            child: const Text('Bid now'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (amount == null) return;
+    await _submitBid(amount);
+  }
+
+  Future<void> _submitBid(double amount) async {
     if (!ensureSignedIn(context, ref, message: 'Sign in to place a bid')) {
       return;
     }
     final a = stream?.auction;
-    if (a == null) return;
-    final next = a.currentBidGhs + a.minIncrementGhs;
+    if (a == null || _bidBusy) return;
+    setState(() => _bidBusy = true);
     try {
-      await ref.read(liveRepositoryProvider).placeBid(a.id, next);
+      final auction =
+          await ref.read(liveRepositoryProvider).placeBid(a.id, amount);
+      if (!mounted) return;
+      setState(() {
+        stream = stream!.copyWith(auction: auction);
+      });
+      _startPoll();
       await _refreshQuiet();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Bid placed — highest ${formatGhs(auction.currentBidGhs)}'
+            '${auction.highestBidder == null ? '' : ' · ${auction.highestBidder}'}',
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', '')),
+          ),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _bidBusy = false);
     }
   }
 
@@ -280,6 +453,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   @override
   void dispose() {
     _poll?.cancel();
+    _tick?.cancel();
     _pulse.dispose();
     _chatCtrl.dispose();
     for (final f in _floating) {
@@ -364,8 +538,16 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       body: SafeArea(
         child: Stack(
           children: [
-            Positioned.fill(child: _Stage(stream: s, camOn: _camOn, pulse: _pulse, isHost: _isHost)),
-            // Floating reactions
+            Positioned.fill(
+              child: _Stage(
+                stream: s,
+                camOn: _camOn,
+                micOn: _micOn,
+                pulse: _pulse,
+                isHost: _isHost,
+                hostName: _hostName,
+              ),
+            ),
             ..._floating.map((f) {
               return AnimatedBuilder(
                 animation: f.controller,
@@ -395,7 +577,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   ScaleTransition(
                     scale: Tween(begin: 0.95, end: 1.05).animate(_pulse),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       color: HubsomColors.live,
                       child: const Text(
                         'LIVE',
@@ -408,11 +593,42 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    '${s.viewerCount} watching',
-                    style: const TextStyle(color: Colors.white),
+                  Expanded(
+                    child: Text(
+                      '$_hostName · ${s.viewerCount} watching',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
-                  const Spacer(),
+                  if (!_isHost)
+                    TextButton(
+                      onPressed: _followBusy ? null : _toggleFollow,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: _following
+                            ? Colors.white24
+                            : HubsomColors.live,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        _following ? 'Following' : 'Follow',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Share live',
+                    onPressed: _shareShow,
+                    icon: const Icon(Icons.ios_share, color: Colors.white),
+                  ),
                   if (_isHost)
                     IconButton(
                       tooltip: _micOn ? 'Mute' : 'Unmute',
@@ -437,7 +653,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   ),
                   IconButton(
                     onPressed: () => setState(() => _shopOpen = !_shopOpen),
-                    icon: const Icon(Icons.shopping_bag_outlined, color: Colors.white),
+                    icon: const Icon(
+                      Icons.shopping_bag_outlined,
+                      color: Colors.white,
+                    ),
                   ),
                   if (_isHost)
                     IconButton(
@@ -451,28 +670,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: 250,
-                child: Material(
-                  color: HubsomColors.gold,
-                  borderRadius: BorderRadius.circular(12),
-                  child: ListTile(
-                    title: Text(
-                      'Auction · ${formatGhs(s.auction!.currentBidGhs)}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text(
-                      'Min +${formatGhs(s.auction!.minIncrementGhs)} · ${s.auction!.bidderCount} bidders',
-                    ),
-                    trailing: _isHost
-                        ? null
-                        : FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: HubsomColors.forest,
-                            ),
-                            onPressed: _bid,
-                            child: const Text('Bid'),
-                          ),
-                  ),
+                top: 64,
+                child: _AuctionPanel(
+                  auction: s.auction!,
+                  isHost: _isHost,
+                  bidBusy: _bidBusy,
+                  onQuickBid: _bidQuick,
+                  onCustomBid: _bidCustom,
                 ),
               ),
             if (pinned != null)
@@ -504,7 +708,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 bottom: 0,
                 child: Material(
                   color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: SizedBox(
                     height: min(360, MediaQuery.sizeOf(context).height * 0.45),
                     child: Column(
@@ -559,13 +765,19 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                     child: ListView(
                       reverse: true,
                       children: chat.take(30).map((m) {
+                        final isBid = m.text.contains('Bid ') &&
+                            m.text.contains('GHS');
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
                             '${m.displayName}: ${m.text}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              shadows: [
+                            style: TextStyle(
+                              color: isBid
+                                  ? HubsomColors.gold
+                                  : Colors.white,
+                              fontWeight:
+                                  isBid ? FontWeight.w700 : FontWeight.w400,
+                              shadows: const [
                                 Shadow(blurRadius: 6, color: Colors.black),
                               ],
                             ),
@@ -613,17 +825,29 @@ class _Stage extends StatelessWidget {
   const _Stage({
     required this.stream,
     required this.camOn,
+    required this.micOn,
     required this.pulse,
     required this.isHost,
+    required this.hostName,
   });
 
   final LiveStream stream;
   final bool camOn;
+  final bool micOn;
   final AnimationController pulse;
   final bool isHost;
+  final String hostName;
 
   @override
   Widget build(BuildContext context) {
+    if (isHost) {
+      return LiveHostCamera(
+        enabled: camOn,
+        micOn: micOn,
+        hostName: hostName,
+      );
+    }
+
     return AnimatedBuilder(
       animation: pulse,
       builder: (context, _) {
@@ -634,9 +858,17 @@ class _Stage extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Color.lerp(const Color(0xFF0B1F17), HubsomColors.forest, t * 0.25)!,
+                Color.lerp(
+                  const Color(0xFF0B1F17),
+                  HubsomColors.forest,
+                  t * 0.25,
+                )!,
                 const Color(0xFF12261C),
-                Color.lerp(HubsomColors.ink, const Color(0xFF1A3A2A), t * 0.3)!,
+                Color.lerp(
+                  HubsomColors.ink,
+                  const Color(0xFF1A3A2A),
+                  t * 0.3,
+                )!,
               ],
             ),
           ),
@@ -644,36 +876,213 @@ class _Stage extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                isHost
-                    ? (camOn ? Icons.videocam : Icons.videocam_off)
-                    : Icons.live_tv,
-                color: Colors.white.withValues(alpha: 0.55 + t * 0.25),
-                size: 76,
+              Container(
+                width: 108,
+                height: 108,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: HubsomColors.forest,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: HubsomColors.live.withValues(alpha: 0.45 + t * 0.2),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  hostName.isNotEmpty ? hostName[0].toUpperCase() : 'H',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 42,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(
-                stream.title,
-                textAlign: TextAlign.center,
+                hostName,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
-                  fontSize: 20,
+                  fontSize: 22,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                isHost
-                    ? (camOn
-                        ? 'You are live - ${stream.channelName}'
-                        : 'Camera off - audio ${stream.channelName}')
-                    : 'Watching - ${stream.channelName}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                stream.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: HubsomColors.live.withValues(alpha: 0.85),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.circle, color: HubsomColors.live, size: 10),
+                    SizedBox(width: 8),
+                    Text(
+                      'Host is live · bid to bargain',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _AuctionPanel extends StatelessWidget {
+  const _AuctionPanel({
+    required this.auction,
+    required this.isHost,
+    required this.bidBusy,
+    required this.onQuickBid,
+    required this.onCustomBid,
+  });
+
+  final LiveAuction auction;
+  final bool isHost;
+  final bool bidBusy;
+  final VoidCallback onQuickBid;
+  final VoidCallback onCustomBid;
+
+  @override
+  Widget build(BuildContext context) {
+    final open = auction.isOpen;
+    final left = auction.timeLeft ?? Duration.zero;
+    final mins = left.inMinutes;
+    final secs = left.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final history = auction.recentBids.take(4).toList();
+
+    return Material(
+      color: Colors.black.withValues(alpha: 0.78),
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.gavel, color: HubsomColors.gold, size: 18),
+                const SizedBox(width: 6),
+                const Text(
+                  'Live auction',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  open ? '$mins:$secs left' : 'Ended',
+                  style: TextStyle(
+                    color: open ? HubsomColors.gold : Colors.white70,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Highest bid  ${formatGhs(auction.currentBidGhs)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              auction.highestBidder == null
+                  ? 'Opening · next ${formatGhs(auction.nextMinBidGhs)}'
+                  : 'Leading: ${auction.highestBidder} · next ${formatGhs(auction.nextMinBidGhs)}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 12,
+              ),
+            ),
+            if (history.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...history.map(
+                (b) => Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '${b.bidderName} → ${formatGhs(b.amountGhs)}',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (open && !isHost) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: HubsomColors.gold,
+                        foregroundColor: HubsomColors.ink,
+                      ),
+                      onPressed: bidBusy ? null : onQuickBid,
+                      child: Text(
+                        bidBusy
+                            ? 'Bidding…'
+                            : 'Bid ${formatGhs(auction.nextMinBidGhs)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: bidBusy ? null : onCustomBid,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                    ),
+                    child: const Text('Custom'),
+                  ),
+                ],
+              ),
+            ],
+            if (open && isHost)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Viewers are bidding live — stay on camera and call out the price.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

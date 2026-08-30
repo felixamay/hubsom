@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import '../../models/product.dart';
 import '../../models/promotion.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
+import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/local_commerce_store.dart';
@@ -185,9 +188,80 @@ class CatalogRepository {
   Future<bool> followSeller(String sellerId) async {
     try {
       final res = await _api.post('/api/sellers/$sellerId/follow');
-      return ApiResponse.asMap(res.data)?['following'] as bool? ?? false;
+      final following = ApiResponse.asMap(res.data)?['following'] as bool?;
+      if (following != null) {
+        await _patchFollowing(sellerId, following);
+        return following;
+      }
     } catch (_) {
-      return false;
+      // fall through to local follow list
     }
+    if (_currentUser() == null) return false;
+    await _patchFollowing(sellerId, true);
+    return true;
+  }
+
+  Future<bool> unfollowSeller(String sellerId) async {
+    try {
+      final res = await _api.delete('/api/sellers/$sellerId/follow');
+      final following = ApiResponse.asMap(res.data)?['following'] as bool?;
+      if (following != null) {
+        await _patchFollowing(sellerId, following);
+        return following;
+      }
+    } catch (_) {
+      // fall through
+    }
+    if (_currentUser() == null) return false;
+    await _patchFollowing(sellerId, false);
+    return false;
+  }
+
+  bool isFollowingSeller(String sellerId) {
+    final user = _currentUser();
+    if (user == null) return false;
+    return user.followingSellerIds.contains(sellerId);
+  }
+
+  HubsomUser? _currentUser() {
+    final raw = LocalStore.userJson;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return HubsomUser.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _patchFollowing(String sellerId, bool following) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final ids = [...user.followingSellerIds];
+    if (following) {
+      if (!ids.contains(sellerId)) ids.add(sellerId);
+    } else {
+      ids.remove(sellerId);
+    }
+    final patched = HubsomUser(
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.image,
+      phone: user.phone,
+      city: user.city,
+      region: user.region,
+      bio: user.bio,
+      role: user.role,
+      sellerId: user.sellerId,
+      huberId: user.huberId,
+      followingSellerIds: ids,
+      savedProductIds: user.savedProductIds,
+      addresses: user.addresses,
+      emailVerified: user.emailVerified,
+      walletBalanceGhs: user.walletBalanceGhs,
+    );
+    await LocalStore.setUserJson(jsonEncode(patched.toJson()));
   }
 }

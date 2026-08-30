@@ -28,5 +28,8 @@ service cloud.firestore {
     match /sellers/{id} {
       allow read, write: if true;
     }
+    match /streams/{id} {
+      allow read, write: if true;
+    }
   }
 }

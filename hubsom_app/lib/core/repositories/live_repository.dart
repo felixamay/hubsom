@@ -4,6 +4,7 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import 'auth_repository.dart';
@@ -25,6 +26,12 @@ class LiveRepository {
     }
   }
 
+  Future<void> _syncStream(LiveStream stream) async {
+    try {
+      await CloudStore.upsertDocs(CloudStore.streams, [stream.toJson()]);
+    } catch (_) {}
+  }
+
   Future<List<LiveStream>> listStreams({String? status}) async {
     try {
       final res = await _api.get(
@@ -38,9 +45,36 @@ class LiveRepository {
             .toList();
       }
     } catch (_) {
-      // fall through to local
+      // fall through to local / cloud
     }
-    return LocalCommerceStore.listStreams(status: status);
+
+    final local = LocalCommerceStore.listStreams(status: status);
+    try {
+      final remoteRows = await CloudStore.listDocs(CloudStore.streams);
+      final remote = <LiveStream>[];
+      for (final row in remoteRows) {
+        try {
+          final s = LiveStream.fromJson(row);
+          if (status != null && s.status != status) continue;
+          remote.add(s);
+        } catch (_) {}
+      }
+      if (remote.isEmpty) return local;
+      final byId = <String, LiveStream>{
+        for (final s in remote) s.id: s,
+        for (final s in local) s.id: s,
+      };
+      final merged = byId.values.toList()
+        ..sort((a, b) {
+          final aLive = a.isLive ? 0 : 1;
+          final bLive = b.isLive ? 0 : 1;
+          if (aLive != bLive) return aLive - bLive;
+          return (b.startedAt ?? '').compareTo(a.startedAt ?? '');
+        });
+      return merged;
+    } catch (_) {
+      return local;
+    }
   }
 
   Future<LiveStream?> getStream(String id, {bool joinAsViewer = false}) async {
@@ -54,10 +88,24 @@ class LiveRepository {
     } catch (_) {
       // fall through
     }
+
+    LiveStream? local;
     if (joinAsViewer) {
-      return LocalCommerceStore.joinViewer(id);
+      local = await LocalCommerceStore.joinViewer(id);
+    } else {
+      local = LocalCommerceStore.getStream(id);
     }
-    return LocalCommerceStore.getStream(id);
+    if (local != null) return local;
+
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.streams);
+      for (final row in rows) {
+        if ('${row['id']}' == id) {
+          return LiveStream.fromJson(row);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<LiveStream> createStream(Map<String, dynamic> body) async {
@@ -74,7 +122,7 @@ class LiveRepository {
 
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
-    return LocalCommerceStore.createStream(
+    final stream = await LocalCommerceStore.createStream(
       user: user,
       title: body['title'] as String? ?? 'Hubsom Live Show',
       description: body['description'] as String? ?? '',
@@ -84,6 +132,8 @@ class LiveRepository {
       startingBidGhs: (body['startingBidGhs'] as num?)?.toDouble() ?? 50,
       multiHost: body['multiHost'] as bool? ?? false,
     );
+    await _syncStream(stream);
+    return stream;
   }
 
   Future<LiveStream> endStream(String id) async {
@@ -99,6 +149,7 @@ class LiveRepository {
     }
     final ended = await LocalCommerceStore.updateStream(id, end: true);
     if (ended == null) throw StateError('Stream not found');
+    await _syncStream(ended);
     return ended;
   }
 
@@ -121,6 +172,7 @@ class LiveRepository {
       pinnedProductId: productId,
     );
     if (updated == null) throw StateError('Stream not found');
+    await _syncStream(updated);
     return updated;
   }
 
@@ -133,7 +185,6 @@ class LiveRepository {
             .map((e) => ChatMessage.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
       }
-      // Empty API list is valid — don't mix with local unless HTML/no API.
       if (!ApiResponse.isHtml(res.data) && ApiResponse.decode(res.data) != null) {
         return const [];
       }
@@ -197,11 +248,14 @@ class LiveRepository {
     }
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
-    return LocalCommerceStore.placeBid(
+    final next = await LocalCommerceStore.placeBid(
       auctionId: auctionId,
       amountGhs: amountGhs,
       bidder: user,
     );
+    final stream = LocalCommerceStore.findStreamByAuction(auctionId);
+    if (stream != null) await _syncStream(stream);
+    return next;
   }
 
   Future<Map<String, dynamic>> analytics(String streamId) async {
