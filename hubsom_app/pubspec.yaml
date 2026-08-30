@@ -1,7 +1,7 @@
 name: hubsom_app
 description: Hubsom marketplace — Android, iOS, and Web from one Flutter codebase.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.1+3
 
 environment:
   sdk: ^3.8.0

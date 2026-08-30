@@ -25,6 +25,19 @@ if [ ! -d "$ROOT/build/web" ]; then
   exit 1
 fi
 
+# Flutter keeps main.dart.js / flutter_bootstrap.js at the same URL every
+# release. Stamp query params so browsers do not keep a year-old bundle.
+STAMP="${HOSTING_STAMP:-$(date -u +%Y%m%d%H%M%S)}"
+if [ -f "$ROOT/build/web/index.html" ]; then
+  sed -i "s|flutter_bootstrap.js[^\"']*|flutter_bootstrap.js?v=${STAMP}|g" "$ROOT/build/web/index.html"
+fi
+for f in flutter_bootstrap.js flutter.js; do
+  if [ -f "$ROOT/build/web/$f" ]; then
+    sed -i "s|main.dart.js|main.dart.js?v=${STAMP}|g" "$ROOT/build/web/$f"
+  fi
+done
+echo "Stamped hosting assets with v=${STAMP}"
+
 export PATH="${HOME}/.npm-global/bin:${PATH}"
 if ! command -v firebase >/dev/null 2>&1; then
   npm install -g firebase-tools --prefix "${HOME}/.npm-global"
