@@ -7,9 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:uuid/uuid.dart';
+
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
+import '../../core/services/live_webrtc_signal_store.dart';
+import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/cart.dart';
@@ -17,6 +21,7 @@ import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/live_host_camera.dart';
+import '../../widgets/live_viewer_video.dart';
 
 class LiveRoomPage extends ConsumerStatefulWidget {
   const LiveRoomPage({super.key, required this.streamId, this.hostMode = false});
@@ -64,6 +69,17 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       return hosts.first.name;
     }
     return 'Host';
+  }
+
+  String get _viewerPeerId {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user != null && user.id.isNotEmpty) return user.id;
+    const key = 'liveViewerPeerId';
+    final existing = LocalStore.getString(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = 'v_${const Uuid().v4()}';
+    unawaited(LocalStore.setString(key, id));
+    return id;
   }
 
   @override
@@ -352,6 +368,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     if (ok != true) return;
     setState(() => _ending = true);
     try {
+      await LiveWebrtcSignalStore.closeAllForStream(widget.streamId);
       await ref.read(liveRepositoryProvider).endStream(widget.streamId);
       if (!mounted) return;
       await _goHomeAfterEnd();
@@ -643,6 +660,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 pulse: _pulse,
                 isHost: _isHost,
                 hostName: _hostName,
+                viewerId: _viewerPeerId,
               ),
             ),
             ..._floating.map((f) {
@@ -992,6 +1010,7 @@ class _Stage extends StatelessWidget {
     required this.pulse,
     required this.isHost,
     required this.hostName,
+    required this.viewerId,
   });
 
   final LiveStream stream;
@@ -1000,6 +1019,7 @@ class _Stage extends StatelessWidget {
   final AnimationController pulse;
   final bool isHost;
   final String hostName;
+  final String viewerId;
 
   @override
   Widget build(BuildContext context) {
@@ -1008,108 +1028,15 @@ class _Stage extends StatelessWidget {
         enabled: camOn,
         micOn: micOn,
         hostName: hostName,
+        streamId: stream.id,
       );
     }
 
-    return AnimatedBuilder(
-      animation: pulse,
-      builder: (context, _) {
-        final t = pulse.value;
-        return Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color.lerp(
-                  const Color(0xFF0B1F17),
-                  HubsomColors.forest,
-                  t * 0.25,
-                )!,
-                const Color(0xFF12261C),
-                Color.lerp(
-                  HubsomColors.ink,
-                  const Color(0xFF1A3A2A),
-                  t * 0.3,
-                )!,
-              ],
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 108,
-                height: 108,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: HubsomColors.forest,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: HubsomColors.live.withValues(alpha: 0.45 + t * 0.2),
-                      blurRadius: 24,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  hostName.isNotEmpty ? hostName[0].toUpperCase() : 'H',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 42,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                hostName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 22,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                stream.title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: HubsomColors.live.withValues(alpha: 0.85),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.circle, color: HubsomColors.live, size: 10),
-                    SizedBox(width: 8),
-                    Text(
-                      'Host is live · bid to bargain',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    return LiveViewerVideo(
+      streamId: stream.id,
+      viewerId: viewerId,
+      hostName: hostName,
+      pulse: pulse,
     );
   }
 }

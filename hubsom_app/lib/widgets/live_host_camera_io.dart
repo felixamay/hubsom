@@ -9,11 +9,13 @@ class LiveHostCamera extends StatelessWidget {
     required this.enabled,
     required this.micOn,
     this.hostName = 'Host',
+    this.streamId,
   });
 
   final bool enabled;
   final bool micOn;
   final String hostName;
+  final String? streamId;
 
   @override
   Widget build(BuildContext context) {

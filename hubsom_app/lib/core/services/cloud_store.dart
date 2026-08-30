@@ -25,6 +25,7 @@ class CloudStore {
   static const products = 'products';
   static const sellers = 'sellers';
   static const streams = 'streams';
+  static const liveSignals = 'liveSignals';
   static const productComments = 'productComments';
   static const timelinePosts = 'timelinePosts';
   static const productLikes = 'productLikes';

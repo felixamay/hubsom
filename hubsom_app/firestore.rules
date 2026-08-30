@@ -31,6 +31,10 @@ service cloud.firestore {
     match /streams/{id} {
       allow read, write: if true;
     }
+    // WebRTC offer/answer + ICE for live seller → viewer video.
+    match /liveSignals/{id} {
+      allow read, write: if true;
+    }
     match /productComments/{id} {
       allow read, write: if true;
     }
