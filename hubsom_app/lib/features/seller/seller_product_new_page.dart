@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_image.dart';
@@ -29,10 +30,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _images = <String>[];
   String _category = hubsomCategories.first.slug;
   bool _busy = false;
+  bool _picking = false;
   String? _error;
 
   static const _minImages = 3;
   static const _maxImages = 8;
+  /// After compression; raw camera files are resized first.
+  static const _maxStoredBytes = 700_000;
 
   @override
   void dispose() {
@@ -56,7 +60,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   }
 
   Future<void> _pickImages() async {
-    setState(() => _error = null);
+    if (_picking) return;
+    setState(() {
+      _error = null;
+      _picking = true;
+    });
     try {
       final remaining = _maxImages - _images.length;
       if (remaining <= 0) {
@@ -66,18 +74,37 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       final picked = await pickProductPhotos(remaining: remaining);
       if (picked.isEmpty) return;
 
+      var skipped = 0;
       for (final file in picked) {
         if (_images.length >= _maxImages) break;
-        if (file.bytes.lengthInBytes > 1_800_000) {
-          setState(() => _error = 'Each photo must be under ~1.5MB');
-          continue;
+        try {
+          final compressed = await compressProductPhoto(file.bytes);
+          if (compressed.isEmpty) {
+            skipped++;
+            continue;
+          }
+          if (compressed.lengthInBytes > _maxStoredBytes) {
+            skipped++;
+            continue;
+          }
+          _images.add(
+            'data:image/jpeg;base64,${base64Encode(compressed)}',
+          );
+        } catch (_) {
+          skipped++;
         }
-        final mime = file.mimeType.isEmpty ? 'image/jpeg' : file.mimeType;
-        _images.add('data:$mime;base64,${base64Encode(file.bytes)}');
       }
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {
+        if (_images.length < _minImages && skipped > 0) {
+          _error =
+              'Could not use $skipped photo${skipped == 1 ? '' : 's'}. Try clearer JPG/PNG shots — Hubsom compresses them automatically.';
+        }
+      });
     } catch (e) {
       setState(() => _error = 'Could not pick images. Try again or use JPG/PNG.');
+    } finally {
+      if (mounted) setState(() => _picking = false);
     }
   }
 
@@ -138,7 +165,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              'At least $_minImages photos are required (up to $_maxImages).',
+              'At least $_minImages photos are required (up to $_maxImages). Phone camera shots are compressed automatically.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 10),
@@ -167,19 +194,29 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                             backgroundColor: Colors.black54,
                             foregroundColor: Colors.white,
                           ),
-                          onPressed: () => setState(() => _images.removeAt(i)),
+                          onPressed: _busy || _picking
+                              ? null
+                              : () => setState(() => _images.removeAt(i)),
                           icon: const Icon(Icons.close, size: 16),
                         ),
                       ),
                     ],
                   ),
                 OutlinedButton.icon(
-                  onPressed: _busy ? null : _pickImages,
-                  icon: const Icon(Icons.add_a_photo_outlined),
+                  onPressed: _busy || _picking ? null : _pickImages,
+                  icon: _picking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_a_photo_outlined),
                   label: Text(
-                    _images.isEmpty
-                        ? 'Add photos'
-                        : '${_images.length}/$_maxImages',
+                    _picking
+                        ? 'Compressing…'
+                        : _images.isEmpty
+                            ? 'Add photos'
+                            : '${_images.length}/$_maxImages',
                   ),
                 ),
               ],
@@ -261,7 +298,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _busy ? null : _submit,
+              onPressed: _busy || _picking ? null : _submit,
               child: Text(_busy ? 'Publishing…' : 'Publish product'),
             ),
             if (kIsWeb)

@@ -22,6 +22,8 @@ class CloudStore {
   static const deliveries = 'huberDeliveries';
   static const orders = 'orders';
   static const shipments = 'shipments';
+  static const products = 'products';
+  static const sellers = 'sellers';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -268,6 +270,8 @@ class CloudStore {
       'huberDeliveries': deliveries,
       'localOrders': orders,
       'localShipments': shipments,
+      'localProducts': products,
+      'localSellers': sellers,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

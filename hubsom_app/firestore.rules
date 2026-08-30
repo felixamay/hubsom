@@ -22,5 +22,11 @@ service cloud.firestore {
     match /shipments/{id} {
       allow read, write: if true;
     }
+    match /products/{id} {
+      allow read, write: if true;
+    }
+    match /sellers/{id} {
+      allow read, write: if true;
+    }
   }
 }

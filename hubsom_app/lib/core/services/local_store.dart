@@ -54,10 +54,20 @@ class LocalStore {
 
   static Future<void> setString(String key, String? value) async {
     final dest = '$_prefix$key';
-    if (value == null || value.isEmpty) {
-      await _prefs.remove(dest);
-    } else {
-      await _prefs.setString(dest, value);
+    try {
+      if (value == null || value.isEmpty) {
+        await _prefs.remove(dest);
+      } else {
+        await _prefs.setString(dest, value);
+      }
+    } catch (e) {
+      final message = '$e'.toLowerCase();
+      if (message.contains('quota')) {
+        throw StateError(
+          'Browser storage quota exceeded while saving "$key". Free space or use smaller photos.',
+        );
+      }
+      rethrow;
     }
     try {
       if (_box != null) {
