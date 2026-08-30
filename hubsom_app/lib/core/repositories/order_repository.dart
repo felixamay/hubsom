@@ -5,6 +5,7 @@ import '../../models/shipment.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
 
@@ -50,7 +51,35 @@ class OrderRepository {
         return const [];
       }
     } catch (_) {}
-    return LocalHuberStore.listOrders();
+
+    final sellerId = _sessionUser?.sellerId;
+    final byId = <String, Order>{
+      for (final o in LocalHuberStore.listOrders()) o.id: o,
+    };
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.orders);
+      for (final row in rows) {
+        try {
+          final o = Order.fromJson(row);
+          if (sellerId != null &&
+              sellerId.isNotEmpty &&
+              !o.lines.any((l) => l.sellerId == sellerId)) {
+            continue;
+          }
+          byId[o.id] = o;
+          await LocalHuberStore.saveOrder(o);
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    var orders = byId.values.toList();
+    if (sellerId != null && sellerId.isNotEmpty) {
+      orders = orders
+          .where((o) => o.lines.any((l) => l.sellerId == sellerId))
+          .toList();
+    }
+    orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return orders;
   }
 
   Future<Order> updateOrder(String orderId, Map<String, dynamic> patch) async {

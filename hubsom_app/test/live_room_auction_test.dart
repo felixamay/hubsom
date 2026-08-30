@@ -116,6 +116,64 @@ void main() {
     expect(catalog.isFollowingSeller('seller-u-seller-1'), isFalse);
   });
 
+  test('winning bid creates a seller order when auction ends', () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: auction.nextMinBidGhs,
+      bidder: bidder,
+    );
+
+    // Force clock to zero.
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNotNull);
+    expect(order!.buyerName, 'Kojo Bidder');
+    expect(order.userId, 'buyer-1');
+    expect(order.streamId, stream.id);
+    expect(order.lines.first.sellerId, stream.sellerId);
+    expect(order.status, 'paid');
+
+    final sold = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(sold.status, 'sold');
+    expect(sold.orderId, order.id);
+
+    // Idempotent.
+    final again = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(again?.id, order.id);
+  });
+
+  test('fresher cloud auction wins over stale host copy', () {
+    final stale = LiveAuction(
+      id: 'a1',
+      productId: 'p1',
+      startingBidGhs: 50,
+      currentBidGhs: 50,
+      minIncrementGhs: 5,
+      endsAt: DateTime.now().toUtc().add(const Duration(seconds: 20)).toIso8601String(),
+      status: 'open',
+    );
+    final fresh = stale.copyWith(
+      currentBidGhs: 80,
+      bidderCount: 2,
+      highestBidder: 'Kojo Bidder',
+      highestBidderId: 'buyer-1',
+    );
+    final preferred =
+        LocalCommerceStore.preferFresherAuction(stale, fresh);
+    expect(preferred?.currentBidGhs, 80);
+    expect(preferred?.highestBidder, 'Kojo Bidder');
+  });
+
   test('LiveAuction.isOpen reflects status and end time', () {
     final open = LiveAuction(
       id: 'a1',
@@ -139,5 +197,6 @@ void main() {
           .toIso8601String(),
     );
     expect(ended.isOpen, isFalse);
+    expect(ended.needsFinalize, isFalse); // no highest bidder
   });
 }

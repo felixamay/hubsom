@@ -64,8 +64,19 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage> with Single
                     itemBuilder: (_, i) {
                       final o = orders[i];
                       return ListTile(
-                        title: Text(o.id, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Text('${o.status} · ${formatGhs(o.subtotalGhs)} · ${o.lines.length} lines'),
+                        title: Text(
+                          o.lines.isNotEmpty ? o.lines.first.name : o.id,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          [
+                            o.status,
+                            formatGhs(o.subtotalGhs),
+                            if (o.buyerName != null && o.buyerName!.isNotEmpty)
+                              o.buyerName!,
+                            if (o.streamId != null) 'live auction',
+                          ].join(' · '),
+                        ),
                         trailing: o.shipping?.location != null
                             ? IconButton(
                                 tooltip: 'Locate buyer',

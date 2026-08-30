@@ -2,10 +2,12 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 
+import '../../models/order.dart';
 import '../../models/product.dart';
 import '../../models/seller.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
+import 'local_huber_store.dart';
 import 'local_store.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
@@ -200,6 +202,51 @@ class LocalCommerceStore {
       if (s.id == id) return s;
     }
     return null;
+  }
+
+  static Future<LiveStream> upsertStream(LiveStream stream) async {
+    final streams = listStreams();
+    final idx = streams.indexWhere((s) => s.id == stream.id);
+    if (idx >= 0) {
+      streams[idx] = stream;
+    } else {
+      streams.insert(0, stream);
+    }
+    await _saveStreams(streams);
+    return stream;
+  }
+
+  /// Prefer the auction with the freshest bids / sold order.
+  static LiveAuction? preferFresherAuction(LiveAuction? a, LiveAuction? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    if (b.orderId != null && a.orderId == null) return b;
+    if (a.orderId != null && b.orderId == null) return a;
+    if (b.currentBidGhs > a.currentBidGhs + 0.001) return b;
+    if (a.currentBidGhs > b.currentBidGhs + 0.001) return a;
+    if (b.bidderCount > a.bidderCount) return b;
+    if (a.bidderCount > b.bidderCount) return a;
+    if (b.endsAt.compareTo(a.endsAt) > 0) return b;
+    if (a.endsAt.compareTo(b.endsAt) > 0) return a;
+    if (b.recentBids.length > a.recentBids.length) return b;
+    return a;
+  }
+
+  static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
+    final auction = preferFresherAuction(local.auction, remote.auction);
+    final preferRemoteEnded = !remote.isLive && local.isLive;
+    final viewers = remote.viewerCount > local.viewerCount
+        ? remote.viewerCount
+        : local.viewerCount;
+    return local.copyWith(
+      status: preferRemoteEnded ? remote.status : local.status,
+      endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
+      viewerCount: viewers,
+      peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
+      pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
+      auction: auction,
+      replayAvailable: remote.replayAvailable || local.replayAvailable,
+    );
   }
 
   static LiveStream? findStreamByAuction(String auctionId) {
@@ -399,12 +446,15 @@ class LocalCommerceStore {
       bidderName: bidder.name,
       amountGhs: amountGhs,
       at: now.toIso8601String(),
+      bidderId: bidder.id,
     );
     final recent = [bid, ...auction.recentBids].take(12).toList();
     final next = auction.copyWith(
       currentBidGhs: amountGhs,
       bidderCount: auction.bidderCount + 1,
       highestBidder: bidder.name,
+      highestBidderId: bidder.id,
+      highestBidderEmail: bidder.email,
       endsAt: endsAt.toIso8601String(),
       recentBids: recent,
     );
@@ -415,6 +465,86 @@ class LocalCommerceStore {
       text: '🔥 Bid ${amountGhs.toStringAsFixed(0)} GHS — leading now',
     );
     return next;
+  }
+
+  /// When the auction clock hits zero with a winner, create a seller order once.
+  static Future<Order?> finalizeAuction(String streamId) async {
+    final stream = getStream(streamId);
+    if (stream == null || stream.auction == null) return null;
+    var auction = stream.auction!;
+
+    if (auction.orderId != null) {
+      for (final o in LocalHuberStore.listOrders()) {
+        if (o.id == auction.orderId) return o;
+      }
+      return null;
+    }
+
+    // Still counting down.
+    if (auction.status == 'open' && auction.isOpen) return null;
+
+    // No winning bidder — just mark closed.
+    if (auction.highestBidder == null && auction.highestBidderId == null) {
+      await updateStream(
+        streamId,
+        auction: auction.copyWith(status: 'closed'),
+      );
+      return null;
+    }
+
+    final product = getProduct(auction.productId);
+    final orderId = 'ord_auc_${auction.id}';
+    // Idempotent if another device already saved this order id.
+    for (final o in LocalHuberStore.listOrders()) {
+      if (o.id == orderId) {
+        await updateStream(
+          streamId,
+          auction: auction.copyWith(status: 'sold', orderId: orderId),
+        );
+        return o;
+      }
+    }
+
+    final price = auction.currentBidGhs;
+    final order = Order(
+      id: orderId,
+      subtotalGhs: price,
+      status: 'paid',
+      userId: auction.highestBidderId,
+      buyerName: auction.highestBidder,
+      buyerEmail: auction.highestBidderEmail,
+      streamId: streamId,
+      lines: [
+        OrderLine(
+          productId: auction.productId,
+          sellerId: stream.sellerId,
+          name: product?.name ?? 'Live auction win',
+          image: product?.images.isNotEmpty == true ? product!.images.first : null,
+          quantity: 1,
+          unitPriceGhs: price,
+          lineTotalGhs: price,
+          category: product?.category ?? 'auction',
+        ),
+      ],
+      shipping: OrderShipping(
+        recipientName: auction.highestBidder ?? 'Winner',
+        phone: '',
+        line1: 'Live auction win — confirm delivery with buyer',
+        city: 'Accra',
+        region: 'Greater Accra',
+        notes: 'Won on Hubsom live auction ${auction.id}',
+        label: 'Live auction',
+      ),
+      paymentMethods: const ['live-auction'],
+      deliveryEstimate: 'Arrange with buyer',
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await LocalHuberStore.saveOrder(order);
+    await updateStream(
+      streamId,
+      auction: auction.copyWith(status: 'sold', orderId: orderId),
+    );
+    return order;
   }
 
   // --- chat ---

@@ -61,9 +61,13 @@ class LiveRepository {
       }
       if (remote.isEmpty) return local;
       final byId = <String, LiveStream>{
-        for (final s in remote) s.id: s,
         for (final s in local) s.id: s,
       };
+      for (final s in remote) {
+        final existing = byId[s.id];
+        byId[s.id] =
+            existing == null ? s : LocalCommerceStore.mergeStreams(existing, s);
+      }
       final merged = byId.values.toList()
         ..sort((a, b) {
           final aLive = a.isLive ? 0 : 1;
@@ -75,6 +79,18 @@ class LiveRepository {
     } catch (_) {
       return local;
     }
+  }
+
+  Future<LiveStream?> _cloudStream(String id) async {
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.streams);
+      for (final row in rows) {
+        if ('${row['id']}' == id) {
+          return LiveStream.fromJson(row);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<LiveStream?> getStream(String id, {bool joinAsViewer = false}) async {
@@ -89,23 +105,28 @@ class LiveRepository {
       // fall through
     }
 
-    LiveStream? local;
-    if (joinAsViewer) {
-      local = await LocalCommerceStore.joinViewer(id);
-    } else {
-      local = LocalCommerceStore.getStream(id);
-    }
-    if (local != null) return local;
+    LiveStream? local = LocalCommerceStore.getStream(id);
+    final remote = await _cloudStream(id);
 
-    try {
-      final rows = await CloudStore.listDocs(CloudStore.streams);
-      for (final row in rows) {
-        if ('${row['id']}' == id) {
-          return LiveStream.fromJson(row);
-        }
+    if (local == null && remote == null) return null;
+
+    if (local == null && remote != null) {
+      await LocalCommerceStore.upsertStream(remote);
+      local = remote;
+    } else if (local != null && remote != null) {
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+      if (merged.auction != local.auction ||
+          merged.status != local.status ||
+          merged.viewerCount != local.viewerCount) {
+        await LocalCommerceStore.upsertStream(merged);
       }
-    } catch (_) {}
-    return null;
+      local = merged;
+    }
+
+    if (joinAsViewer && local != null && local.isLive) {
+      local = await LocalCommerceStore.joinViewer(id) ?? local;
+    }
+    return local;
   }
 
   Future<LiveStream> createStream(Map<String, dynamic> body) async {
@@ -250,14 +271,44 @@ class LiveRepository {
     }
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+
+    // Ensure the live show is local (viewer may have only seen cloud copy).
+    var stream = LocalCommerceStore.findStreamByAuction(auctionId);
+    if (stream == null) {
+      final rows = await CloudStore.listDocs(CloudStore.streams);
+      for (final row in rows) {
+        try {
+          final s = LiveStream.fromJson(row);
+          if (s.auction?.id == auctionId) {
+            await LocalCommerceStore.upsertStream(s);
+            stream = s;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
     final next = await LocalCommerceStore.placeBid(
       auctionId: auctionId,
       amountGhs: amountGhs,
       bidder: user,
     );
-    final stream = LocalCommerceStore.findStreamByAuction(auctionId);
+    stream = LocalCommerceStore.findStreamByAuction(auctionId);
     if (stream != null) await _syncStream(stream);
     return next;
+  }
+
+  /// Close a finished auction and create a seller order for the winner.
+  Future<LiveStream?> finalizeAuctionIfNeeded(String streamId) async {
+    // Pull freshest cloud auction first so host/viewer agree on winner.
+    await getStream(streamId);
+    final order = await LocalCommerceStore.finalizeAuction(streamId);
+    final stream = LocalCommerceStore.getStream(streamId);
+    if (stream != null) await _syncStream(stream);
+    if (order != null) {
+      // Order already cloud-synced via LocalHuberStore.saveOrder.
+    }
+    return stream;
   }
 
   Future<Map<String, dynamic>> analytics(String streamId) async {

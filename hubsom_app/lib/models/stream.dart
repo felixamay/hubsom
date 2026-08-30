@@ -41,8 +41,11 @@ class LiveAuction extends Equatable {
     required this.endsAt,
     this.bidderCount = 0,
     this.highestBidder,
+    this.highestBidderId,
+    this.highestBidderEmail,
     required this.status,
     this.recentBids = const [],
+    this.orderId,
   });
 
   final String id;
@@ -53,8 +56,12 @@ class LiveAuction extends Equatable {
   final String endsAt;
   final int bidderCount;
   final String? highestBidder;
+  final String? highestBidderId;
+  final String? highestBidderEmail;
   final String status;
   final List<AuctionBid> recentBids;
+  /// Set when the winning bid is converted into a seller order.
+  final String? orderId;
 
   double get nextMinBidGhs => currentBidGhs + minIncrementGhs;
 
@@ -63,6 +70,12 @@ class LiveAuction extends Equatable {
     final left = timeLeft;
     return left == null || left > Duration.zero;
   }
+
+  bool get needsFinalize =>
+      orderId == null &&
+      status == 'open' &&
+      !isOpen &&
+      (highestBidderId != null || highestBidder != null);
 
   Duration? get timeLeft {
     try {
@@ -83,11 +96,14 @@ class LiveAuction extends Equatable {
         endsAt: json['endsAt'] as String? ?? '',
         bidderCount: (json['bidderCount'] as num?)?.toInt() ?? 0,
         highestBidder: json['highestBidder'] as String?,
+        highestBidderId: json['highestBidderId'] as String?,
+        highestBidderEmail: json['highestBidderEmail'] as String?,
         status: json['status'] as String? ?? 'upcoming',
         recentBids: (json['recentBids'] as List?)
                 ?.map((e) => AuctionBid.fromJson(Map<String, dynamic>.from(e as Map)))
                 .toList() ??
             const [],
+        orderId: json['orderId'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -99,17 +115,23 @@ class LiveAuction extends Equatable {
         'endsAt': endsAt,
         'bidderCount': bidderCount,
         if (highestBidder != null) 'highestBidder': highestBidder,
+        if (highestBidderId != null) 'highestBidderId': highestBidderId,
+        if (highestBidderEmail != null) 'highestBidderEmail': highestBidderEmail,
         'status': status,
         'recentBids': recentBids.map((b) => b.toJson()).toList(),
+        if (orderId != null) 'orderId': orderId,
       };
 
   LiveAuction copyWith({
     double? currentBidGhs,
     int? bidderCount,
     String? highestBidder,
+    String? highestBidderId,
+    String? highestBidderEmail,
     String? status,
     String? endsAt,
     List<AuctionBid>? recentBids,
+    String? orderId,
   }) =>
       LiveAuction(
         id: id,
@@ -120,12 +142,16 @@ class LiveAuction extends Equatable {
         endsAt: endsAt ?? this.endsAt,
         bidderCount: bidderCount ?? this.bidderCount,
         highestBidder: highestBidder ?? this.highestBidder,
+        highestBidderId: highestBidderId ?? this.highestBidderId,
+        highestBidderEmail: highestBidderEmail ?? this.highestBidderEmail,
         status: status ?? this.status,
         recentBids: recentBids ?? this.recentBids,
+        orderId: orderId ?? this.orderId,
       );
 
   @override
-  List<Object?> get props => [id, productId, currentBidGhs, status, endsAt, bidderCount];
+  List<Object?> get props =>
+      [id, productId, currentBidGhs, status, endsAt, bidderCount, orderId];
 }
 
 class AuctionBid extends Equatable {
@@ -133,26 +159,30 @@ class AuctionBid extends Equatable {
     required this.bidderName,
     required this.amountGhs,
     required this.at,
+    this.bidderId,
   });
 
   final String bidderName;
   final double amountGhs;
   final String at;
+  final String? bidderId;
 
   factory AuctionBid.fromJson(Map<String, dynamic> json) => AuctionBid(
         bidderName: json['bidderName'] as String? ?? 'Bidder',
         amountGhs: (json['amountGhs'] as num?)?.toDouble() ?? 0,
         at: json['at'] as String? ?? '',
+        bidderId: json['bidderId'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
         'bidderName': bidderName,
         'amountGhs': amountGhs,
         'at': at,
+        if (bidderId != null) 'bidderId': bidderId,
       };
 
   @override
-  List<Object?> get props => [bidderName, amountGhs, at];
+  List<Object?> get props => [bidderName, amountGhs, at, bidderId];
 }
 
 class LiveStream extends Equatable {

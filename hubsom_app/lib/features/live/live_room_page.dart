@@ -75,7 +75,22 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     _startPoll();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (stream?.auction?.isOpen == true) setState(() {});
+      final auction = stream?.auction;
+      if (auction == null) return;
+      if (auction.needsFinalize) {
+        unawaited(
+          ref
+              .read(liveRepositoryProvider)
+              .finalizeAuctionIfNeeded(widget.streamId)
+              .then((s) {
+            if (!mounted || s == null) return;
+            setState(() => stream = s);
+            _startPoll();
+          }),
+        );
+      } else if (auction.isOpen) {
+        setState(() {});
+      }
     });
   }
 
@@ -194,20 +209,26 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         await _goHomeAfterEnd();
         return;
       }
+      LiveStream next = s;
+      if (s.auction?.needsFinalize == true) {
+        final finalized =
+            await repo.finalizeAuctionIfNeeded(widget.streamId);
+        if (finalized != null) next = finalized;
+      }
       Product? pin = pinned;
-      final pinId = s.pinnedProductId ?? s.auction?.productId;
+      final pinId = next.pinnedProductId ?? next.auction?.productId;
       if (pinId != null && pin?.id != pinId) {
         pin = await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
       final wasOpen = stream?.auction?.isOpen == true;
-      final isOpen = s.auction?.isOpen == true;
+      final isOpen = next.auction?.isOpen == true;
       setState(() {
-        stream = s;
+        stream = next;
         chat = messages;
         pinned = pin;
         _following = ref
             .read(catalogRepositoryProvider)
-            .isFollowingSeller(s.sellerId);
+            .isFollowingSeller(next.sellerId);
       });
       if (wasOpen != isOpen) _startPoll();
     } catch (_) {}
