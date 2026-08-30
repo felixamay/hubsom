@@ -652,7 +652,17 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text('Stock: ${product.stock}'),
+                    Text(
+                      product.stock <= 0
+                          ? 'Sold out'
+                          : '${product.stock} for sale',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: product.stock <= 0
+                            ? Theme.of(context).colorScheme.error
+                            : HubsomColors.forest,
+                      ),
+                    ),
                     const SizedBox(width: 12),
                     const Icon(Icons.star, size: 16, color: HubsomColors.gold),
                     const SizedBox(width: 4),
@@ -915,52 +925,56 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () async {
-                    await ref.read(cartProvider.notifier).add(
-                          CartItem(
-                            productId: product.id,
-                            quantity: 1,
-                            source: 'buy-now',
-                            name: product.name,
-                            priceGhs: product.effectivePrice,
-                            image: image,
-                            category: product.category,
-                          ),
-                        );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Added to cart')),
-                      );
-                    }
-                  },
-                  child: const Text('Add to cart'),
+                  onPressed: product.stock <= 0
+                      ? null
+                      : () async {
+                          await ref.read(cartProvider.notifier).add(
+                                CartItem(
+                                  productId: product.id,
+                                  quantity: 1,
+                                  source: 'buy-now',
+                                  name: product.name,
+                                  priceGhs: product.effectivePrice,
+                                  image: image,
+                                  category: product.category,
+                                ),
+                              );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Added to cart')),
+                            );
+                          }
+                        },
+                  child: Text(product.stock <= 0 ? 'Sold out' : 'Add to cart'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
-                  onPressed: () async {
-                    if (!ensureSignedIn(
-                      context,
-                      ref,
-                      message: 'Sign in to buy',
-                    )) {
-                      return;
-                    }
-                    await ref.read(cartProvider.notifier).add(
-                          CartItem(
-                            productId: product.id,
-                            quantity: 1,
-                            source: 'buy-now',
-                            name: product.name,
-                            priceGhs: product.effectivePrice,
-                            image: image,
-                            category: product.category,
-                          ),
-                        );
-                    if (context.mounted) context.push('/checkout');
-                  },
-                  child: const Text('Buy now'),
+                  onPressed: product.stock <= 0
+                      ? null
+                      : () async {
+                          if (!ensureSignedIn(
+                            context,
+                            ref,
+                            message: 'Sign in to buy',
+                          )) {
+                            return;
+                          }
+                          await ref.read(cartProvider.notifier).add(
+                                CartItem(
+                                  productId: product.id,
+                                  quantity: 1,
+                                  source: 'buy-now',
+                                  name: product.name,
+                                  priceGhs: product.effectivePrice,
+                                  image: image,
+                                  category: product.category,
+                                ),
+                              );
+                          if (context.mounted) context.push('/checkout');
+                        },
+                  child: Text(product.stock <= 0 ? 'Sold out' : 'Buy now'),
                 ),
               ),
             ],

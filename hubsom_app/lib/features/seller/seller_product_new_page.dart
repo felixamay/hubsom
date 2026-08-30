@@ -466,16 +466,62 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               validator: (v) =>
                   ((double.tryParse(v ?? '') ?? 0) <= 0) ? 'Enter a valid price' : null,
             ),
+            const SizedBox(height: 12),
+            Text(
+              'How many are you selling?',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: HubsomColors.forest,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Set the quantity available for this listing. Buyers see how many are left.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _stock,
-              decoration: const InputDecoration(labelText: 'Stock'),
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = int.tryParse(v ?? '');
-                if (n == null || n < 0) return 'Enter stock';
-                return null;
-              },
+            Row(
+              children: [
+                IconButton.filledTonal(
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          final n = int.tryParse(_stock.text.trim()) ?? 0;
+                          if (n <= 1) return;
+                          setState(() => _stock.text = '${n - 1}');
+                        },
+                  icon: const Icon(Icons.remove),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _stock,
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity for sale',
+                      hintText: 'e.g. 25',
+                    ),
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    validator: (v) {
+                      final n = int.tryParse(v ?? '');
+                      if (n == null || n < 1) {
+                        return 'Enter how many you are selling (at least 1)';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          final n = int.tryParse(_stock.text.trim()) ?? 0;
+                          setState(() => _stock.text = '${n + 1}');
+                        },
+                  icon: const Icon(Icons.add),
+                ),
+              ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

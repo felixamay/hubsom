@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
+import 'package:hubsom_app/core/repositories/auth_repository.dart';
 import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
@@ -72,9 +73,29 @@ void main() {
     expect(mine.any((p) => p.id == id && p.name == 'Wax print deluxe'), isTrue);
     expect(LocalCommerceStore.getProduct(id)?.stock, 8);
 
+    final qty = await repo.updateQuantity(id, 3);
+    expect(qty.stock, 3);
+    expect(LocalCommerceStore.getProduct(id)?.stock, 3);
+
     await repo.deleteProduct(id);
     expect(LocalCommerceStore.getProduct(id), isNull);
     final after = await repo.myProducts();
     expect(after.any((p) => p.id == id), isFalse);
+  });
+
+  test('create product requires quantity of at least 1', () async {
+    final repo = SellerRepository(ApiClient());
+    final tiny = _dataUrl(_jpeg());
+    expect(
+      () => repo.createProduct({
+        'name': 'Zero stock bag',
+        'description': 'Should not publish without quantity',
+        'category': 'fashion',
+        'priceGhs': 40,
+        'stock': 0,
+        'images': [tiny, tiny, tiny],
+      }),
+      throwsA(isA<AuthException>()),
+    );
   });
 }

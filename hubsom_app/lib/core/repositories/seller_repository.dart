@@ -134,6 +134,11 @@ class SellerRepository {
 
     final hasDemoVideo = demoVideoBytes != null && demoVideoBytes.isNotEmpty;
 
+    final stock = (body['stock'] as num?)?.toInt() ?? 0;
+    if (stock < 1) {
+      throw AuthException('Enter how many you are selling (at least 1)');
+    }
+
     // Always write the local catalog first so Go live can see the product even
     // when Firebase Hosting has no /api/products backend.
     Product product;
@@ -144,7 +149,7 @@ class SellerRepository {
         description: body['description'] as String? ?? '',
         category: body['category'] as String? ?? 'miscellaneous',
         priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? 0,
-        stock: (body['stock'] as num?)?.toInt() ?? 0,
+        stock: stock,
         images: images,
         supports: (body['supports'] as List?)?.cast<String>() ??
             const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
@@ -244,6 +249,13 @@ class SellerRepository {
       throw AuthException('Keep at least 3 product photos');
     }
 
+    final nextStock = body.containsKey('stock')
+        ? (body['stock'] as num?)?.toInt() ?? existing.stock
+        : existing.stock;
+    if (nextStock < 0) {
+      throw AuthException('Quantity cannot be negative');
+    }
+
     final hasNewVideo = demoVideoBytes != null && demoVideoBytes.isNotEmpty;
     final keepExistingVideo =
         !clearDemoVideo && !hasNewVideo && existing.hasDemoVideo;
@@ -260,7 +272,7 @@ class SellerRepository {
       description: body['description'] as String? ?? existing.description,
       category: body['category'] as String? ?? existing.category,
       priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs,
-      stock: (body['stock'] as num?)?.toInt() ?? existing.stock,
+      stock: nextStock,
       images: images,
       supports: (body['supports'] as List?)?.cast<String>() ?? existing.supports,
       hasDemoVideo: hasDemoVideo,
@@ -299,6 +311,31 @@ class SellerRepository {
     } catch (_) {}
 
     return updated.toJson();
+  }
+
+  /// Update how many units are for sale without a full product edit.
+  Future<Product> updateQuantity(String productId, int quantity) async {
+    if (quantity < 0) {
+      throw AuthException('Quantity cannot be negative');
+    }
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final seller = await LocalCommerceStore.ensureSellerForUser(user);
+    final existing = LocalCommerceStore.getProduct(productId);
+    if (existing == null || existing.sellerId != seller.id) {
+      throw AuthException('You can only update your own products');
+    }
+    final updated = existing.copyWith(stock: quantity);
+    await LocalCommerceStore.updateProduct(updated);
+    try {
+      await CloudStore.upsertDocs(CloudStore.products, [updated.toJson()]);
+    } catch (_) {}
+    try {
+      await _api.put('/api/products/$productId', data: {
+        'stock': quantity,
+      });
+    } catch (_) {}
+    return updated;
   }
 
   Future<void> deleteProduct(String productId) async {

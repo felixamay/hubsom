@@ -48,6 +48,68 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
     }
   }
 
+  Future<void> _editQuantity(Product product) async {
+    final ctrl = TextEditingController(text: '${product.stock}');
+    final next = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quantity for sale'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              product.name,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'How many are you selling?',
+                hintText: 'e.g. 12',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(ctrl.text.trim());
+              if (n == null || n < 0) return;
+              Navigator.pop(ctx, n);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (next == null || next == product.stock) return;
+    setState(() => _busyId = product.id);
+    try {
+      await ref.read(sellerRepositoryProvider).updateQuantity(product.id, next);
+      ref.invalidate(productsProvider((category: null, q: null)));
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Quantity set to $next')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Future<void> _confirmDelete(Product product) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -206,7 +268,7 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            '${formatGhs(p.effectivePrice)} · Stock ${p.stock}',
+                                            '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
                                             style: const TextStyle(
                                               color: HubsomColors.forest,
                                               fontWeight: FontWeight.w700,
@@ -231,6 +293,8 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                                               '/seller/products/${p.id}/edit',
                                             );
                                             if (mounted) _load();
+                                          } else if (value == 'quantity') {
+                                            await _editQuantity(p);
                                           } else if (value == 'delete') {
                                             await _confirmDelete(p);
                                           } else if (value == 'view') {
@@ -241,6 +305,10 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                                           PopupMenuItem(
                                             value: 'view',
                                             child: Text('View listing'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'quantity',
+                                            child: Text('Set quantity'),
                                           ),
                                           PopupMenuItem(
                                             value: 'edit',
