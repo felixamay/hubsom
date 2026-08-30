@@ -29,6 +29,16 @@ class ProductReview extends Equatable {
         createdAt: json['createdAt'] as String? ?? '',
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'userId': userId,
+        'userName': userName,
+        'rating': rating,
+        'comment': comment,
+        'createdAt': createdAt,
+      };
+
   @override
   List<Object?> get props => [id, productId, rating];
 }

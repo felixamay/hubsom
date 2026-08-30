@@ -38,6 +38,8 @@ class SellPage extends ConsumerWidget {
           _tile(context, Icons.dashboard, 'Seller hub', '/seller'),
           _tile(context, Icons.inventory_2_outlined, 'My products', '/seller/products'),
           _tile(context, Icons.add_box_outlined, 'New product', '/seller/products/new'),
+          _tile(context, Icons.movie_creation_outlined, 'Upload shop video', '/videos/upload'),
+          _tile(context, Icons.play_circle_outline, 'Shop videos', '/videos'),
           _tile(context, Icons.videocam, 'Go live', '/seller/go-live'),
           _tile(context, Icons.local_shipping_outlined, 'Orders & shipments', '/seller/orders'),
           _tile(context, Icons.store, 'Store settings', '/seller/store'),

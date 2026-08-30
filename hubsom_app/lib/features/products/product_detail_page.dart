@@ -12,8 +12,10 @@ import '../../models/cart.dart';
 import '../../models/message.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
+import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/product_card.dart';
 import '../../widgets/product_demo_video_player.dart';
 
 class ProductDetailPage extends ConsumerStatefulWidget {
@@ -28,6 +30,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   Product? _product;
   Seller? _seller;
   List<ProductComment> _comments = const [];
+  List<ProductReview> _reviews = const [];
+  List<Product> _suggested = const [];
   bool _loading = true;
   String? _error;
   bool _saved = false;
@@ -35,10 +39,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   int _likes = 0;
   bool _following = false;
   bool _followBusy = false;
-  bool _busy = false;
   int _mediaIndex = 0;
-  final _commentCtrl = TextEditingController();
-  final _commentsKey = GlobalKey();
+  int _reviewRating = 5;
+  final _reviewCtrl = TextEditingController();
+  bool _reviewBusy = false;
   final _pageCtrl = PageController();
 
   @override
@@ -49,8 +53,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   @override
   void dispose() {
-    _commentCtrl.dispose();
     _pageCtrl.dispose();
+    _reviewCtrl.dispose();
     super.dispose();
   }
 
@@ -71,6 +75,15 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
         return;
       }
       final comments = await catalog.listComments(product.id);
+      final reviews = await catalog.listReviews(product.id);
+      final suggestedRaw = await catalog.listProducts(
+        category: product.category,
+        limit: 12,
+      );
+      final suggested = suggestedRaw
+          .where((p) => p.id != product.id)
+          .take(6)
+          .toList();
       Seller? seller;
       try {
         seller = await catalog.getSeller(product.sellerId);
@@ -80,6 +93,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
         _product = product;
         _seller = seller;
         _comments = comments;
+        _reviews = reviews;
+        _suggested = suggested;
         _saved = catalog.isSaved(product.id);
         _liked = catalog.isLiked(product.id);
         _likes = catalog.likeCount(product.id);
@@ -151,14 +166,35 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     }
   }
 
-  void _scrollToComments() {
-    final ctx = _commentsKey.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
+  void _openComments() {
+    context.push('/products/${widget.productId}/comments');
+  }
+
+  Future<void> _submitReview() async {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to leave a review')) {
+      return;
+    }
+    setState(() => _reviewBusy = true);
+    try {
+      final review = await ref.read(catalogRepositoryProvider).submitReview(
+            widget.productId,
+            rating: _reviewRating,
+            comment: _reviewCtrl.text.trim(),
+          );
+      _reviewCtrl.clear();
+      if (!mounted) return;
+      setState(() {
+        _reviews = [review, ..._reviews.where((r) => r.id != review.id)];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review posted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
   }
 
   bool get _isOwner {
@@ -206,28 +242,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
-  }
-
-  Future<void> _submitComment() async {
-    if (!ensureSignedIn(context, ref, message: 'Sign in to comment')) return;
-    final text = _commentCtrl.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _busy = true);
-    try {
-      final comment = await ref
-          .read(catalogRepositoryProvider)
-          .addComment(widget.productId, text);
-      _commentCtrl.clear();
-      if (!mounted) return;
-      setState(() {
-        _comments = [comment, ..._comments];
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -687,7 +701,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                     saved: _saved,
                     onFollow: _toggleFollow,
                     onLike: _toggleLike,
-                    onComment: _scrollToComments,
+                    onComment: _openComments,
                     onShare: _shareSheet,
                     onSave: _toggleSave,
                   ),
@@ -708,68 +722,189 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       color: Colors.grey,
                     ),
                   ),
-                Text('Stock: ${product.stock}'),
-                const SizedBox(height: 10),
-                Text(product.description),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
+                Row(
                   children: [
-                    for (final t in product.tags)
-                      Chip(
-                        label: Text(t),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                    Text('Stock: ${product.stock}'),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.star, size: 16, color: HubsomColors.gold),
+                    const SizedBox(width: 4),
+                    Text(
+                      product.reviewCount > 0 || _reviews.isNotEmpty
+                          ? '${(product.rating > 0 ? product.rating : (_reviews.isEmpty ? 0 : _reviews.map((r) => r.rating).reduce((a, b) => a + b) / _reviews.length)).toStringAsFixed(1)} · ${_reviews.isNotEmpty ? _reviews.length : product.reviewCount} reviews'
+                          : 'No reviews yet',
+                    ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: _commentsKey,
-                  child: Text(
-                    'Comments',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
+                const SizedBox(height: 16),
+                Text(
+                  'Details',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  product.description.trim().isEmpty
+                      ? 'No extra details from the seller yet.'
+                      : product.description,
+                ),
+                if (product.tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final t in product.tags)
+                        Chip(
+                          label: Text(t),
+                          visualDensity: VisualDensity.compact,
                         ),
+                    ],
                   ),
+                ],
+                const SizedBox(height: 20),
+                _SectionCard(
+                  icon: Icons.local_shipping_outlined,
+                  title: 'Shipping',
+                  child: Text(
+                    _seller == null
+                        ? 'Delivered across Ghana with Hubsom Huber riders. Typical Accra delivery 1–2 days; other regions 2–5 days after dispatch.'
+                        : 'Ships from ${_seller!.city}, ${_seller!.region}. Hubsom Huber riders deliver across Ghana — Accra usually 1–2 days, other regions 2–5 days after the seller ships.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _SectionCard(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Guarantees',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text('• Hubsom buyer protection on paid orders'),
+                      SizedBox(height: 4),
+                      Text('• Contact the seller within 7 days for damaged or wrong items'),
+                      SizedBox(height: 4),
+                      Text('• Secure checkout — pay before Huber delivery starts'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Reviews',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
+                    for (var i = 1; i <= 5; i++)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _reviewBusy
+                            ? null
+                            : () => setState(() => _reviewRating = i),
+                        icon: Icon(
+                          i <= _reviewRating ? Icons.star : Icons.star_border,
+                          color: HubsomColors.gold,
+                        ),
+                      ),
+                  ],
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Expanded(
                       child: TextField(
-                        controller: _commentCtrl,
+                        controller: _reviewCtrl,
+                        enabled: !_reviewBusy,
                         decoration: const InputDecoration(
-                          hintText: 'Say something about this product…',
+                          hintText: 'Share your experience…',
                         ),
                         minLines: 1,
                         maxLines: 3,
-                        onSubmitted: (_) => _submitComment(),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _busy ? null : _submitComment,
-                      icon: const Icon(Icons.send),
+                    FilledButton(
+                      onPressed: _reviewBusy ? null : _submitReview,
+                      child: const Text('Post'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (_comments.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('No comments yet — be the first'),
-                  )
+                const SizedBox(height: 12),
+                if (_reviews.isEmpty)
+                  const Text('No reviews yet — be the first')
                 else
-                  ..._comments.map(
-                    (c) => ListTile(
+                  ..._reviews.take(8).map(
+                    (r) => ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        c.userName,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              r.userName,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          Text(
+                            '${r.rating}/5',
+                            style: const TextStyle(
+                              color: HubsomColors.gold,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                      subtitle: Text(c.text),
+                      subtitle: Text(
+                        r.comment.trim().isEmpty ? 'Rated this product' : r.comment,
+                      ),
                     ),
                   ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.mode_comment_outlined,
+                    color: HubsomColors.forest,
+                  ),
+                  title: Text(
+                    _comments.isEmpty
+                        ? 'Comments'
+                        : 'Comments (${_comments.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text(
+                    _comments.isEmpty
+                        ? 'Open the comment page to chat about this product'
+                        : _comments.first.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openComments,
+                ),
+                if (_suggested.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'Suggested products',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 240,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _suggested.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (_, i) => SizedBox(
+                        width: 160,
+                        child: ProductCard(product: _suggested[i]),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 100),
               ],
             ),
@@ -1009,6 +1144,47 @@ class _RailAction extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: HubsomColors.mint.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: HubsomColors.forest, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
       ),
     );
   }

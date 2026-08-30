@@ -34,7 +34,10 @@ import '../live/live_room_page.dart';
 import '../live/live_list_page.dart';
 import '../marketplace/marketplace_page.dart';
 import '../notifications/notifications_page.dart';
+import '../products/product_comments_page.dart';
 import '../products/product_detail_page.dart';
+import '../videos/upload_video_page.dart';
+import '../videos/video_feed_page.dart';
 import '../sell/sell_page.dart';
 import '../seller/seller_analytics_page.dart';
 import '../seller/seller_go_live_page.dart';
@@ -183,10 +186,32 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/timeline', builder: (_, __) => const TimelinePage()),
+      GoRoute(path: '/videos', builder: (_, __) => const VideoFeedPage()),
+      GoRoute(
+        path: '/videos/upload',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to upload a shop video',
+          child: UploadVideoPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/videos/:id',
+        builder: (_, state) => VideoFeedPage(
+          initialVideoId: state.pathParameters['id'],
+        ),
+      ),
       GoRoute(
         path: '/products/:id',
         builder: (_, state) =>
             ProductDetailPage(productId: state.pathParameters['id']!),
+        routes: [
+          GoRoute(
+            path: 'comments',
+            builder: (_, state) => ProductCommentsPage(
+              productId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/stores/:slug',

@@ -11,6 +11,7 @@ abstract final class AuthRoutes {
     '/auctions',
     '/live',
     '/timeline',
+    '/videos',
     '/cart',
     '/auth/sign-in',
     '/auth/sign-up',
@@ -21,6 +22,7 @@ abstract final class AuthRoutes {
     '/products/',
     '/stores/',
     '/live/',
+    '/videos/',
     '/auth/',
   ];
 

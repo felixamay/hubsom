@@ -5,7 +5,9 @@ import 'package:uuid/uuid.dart';
 import '../../models/order.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
+import '../../models/review.dart';
 import '../../models/seller.dart';
+import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
 import 'cloud_store.dart';
@@ -24,6 +26,8 @@ class LocalCommerceStore {
   static const _commentsKey = 'localProductComments';
   static const _likesKey = 'localProductLikes';
   static const _timelineKey = 'localTimelinePosts';
+  static const _reviewsKey = 'localProductReviews';
+  static const _shopVideosKey = 'localShopVideos';
   static const _uuid = Uuid();
 
   /// Wipe local commerce (keeps auth vault / cart / session).
@@ -937,6 +941,123 @@ class LocalCommerceStore {
         await LocalStore.setString(_likesKey, jsonEncode(map));
       }
     } catch (_) {}
+    try {
+      final reviews = await CloudStore.listDocs(CloudStore.productReviews);
+      if (reviews.isNotEmpty) {
+        final byId = <String, Map<String, dynamic>>{
+          for (final r in _readList(_reviewsKey))
+            if (r is Map) '${r['id']}': Map<String, dynamic>.from(r),
+        };
+        for (final r in reviews) {
+          byId['${r['id']}'] = r;
+        }
+        await _writeList(_reviewsKey, byId.values.toList());
+      }
+    } catch (_) {}
+    try {
+      final videos = await CloudStore.listDocs(CloudStore.shopVideos);
+      if (videos.isNotEmpty) {
+        final byId = <String, Map<String, dynamic>>{
+          for (final v in _readList(_shopVideosKey))
+            if (v is Map) '${v['id']}': Map<String, dynamic>.from(v),
+        };
+        for (final v in videos) {
+          byId['${v['id']}'] = v;
+        }
+        await _writeList(_shopVideosKey, byId.values.toList());
+      }
+    } catch (_) {}
+  }
+
+  static List<ProductReview> listReviews(String productId) {
+    final list = _readList(_reviewsKey)
+        .map((e) => ProductReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((r) => r.productId == productId)
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  static Future<ProductReview> addReview({
+    required String productId,
+    required HubsomUser user,
+    required int rating,
+    required String comment,
+  }) async {
+    final clamped = rating.clamp(1, 5);
+    final review = ProductReview(
+      id: 'rev-${_uuid.v4().substring(0, 8)}',
+      productId: productId,
+      userId: user.id,
+      userName: user.name,
+      rating: clamped,
+      comment: comment.trim(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final rows = _readList(_reviewsKey);
+    rows.insert(0, review.toJson());
+    await _writeList(_reviewsKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.productReviews, [review.toJson()]);
+    } catch (_) {}
+
+    // Refresh product rating aggregates locally.
+    final products = listProducts();
+    final idx = products.indexWhere((p) => p.id == productId);
+    if (idx >= 0) {
+      final all = listReviews(productId);
+      final avg = all.isEmpty
+          ? 0.0
+          : all.map((r) => r.rating).reduce((a, b) => a + b) / all.length;
+      final updated = products[idx].copyWith(
+        rating: double.parse(avg.toStringAsFixed(1)),
+        reviewCount: all.length,
+      );
+      await updateProduct(updated);
+    }
+    return review;
+  }
+
+  static List<ShopVideo> listShopVideos() {
+    final list = _readList(_shopVideosKey)
+        .map((e) => ShopVideo.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  static ShopVideo? getShopVideo(String id) {
+    for (final v in listShopVideos()) {
+      if (v.id == id) return v;
+    }
+    return null;
+  }
+
+  static Future<ShopVideo> createShopVideo({
+    required HubsomUser author,
+    required List<String> productIds,
+    String caption = '',
+    String mimeType = 'video/mp4',
+  }) async {
+    if (productIds.isEmpty) {
+      throw StateError('Add at least one product to this video');
+    }
+    final video = ShopVideo(
+      id: 'vid-${_uuid.v4().substring(0, 10)}',
+      authorId: author.id,
+      authorName: author.name,
+      caption: caption.trim(),
+      productIds: productIds,
+      mimeType: mimeType,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final rows = _readList(_shopVideosKey);
+    rows.insert(0, video.toJson());
+    await _writeList(_shopVideosKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+    } catch (_) {}
+    return video;
   }
 
   // --- helpers ---

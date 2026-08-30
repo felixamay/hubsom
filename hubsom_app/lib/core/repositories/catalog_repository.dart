@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
@@ -7,12 +8,14 @@ import '../../models/product_social.dart';
 import '../../models/promotion.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
+import '../../models/shop_video.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
+import '../services/product_demo_video_store.dart';
 
 class CatalogRepository {
   CatalogRepository(this._api);
@@ -223,21 +226,28 @@ class CatalogRepository {
   }
 
   Future<List<ProductReview>> listReviews(String productId) async {
+    await LocalCommerceStore.mergeCloudSocial();
     try {
       final res = await _api.get('/api/products/$productId/reviews');
       final data = ApiResponse.decode(res.data);
-      if (data == null) return const [];
-      final list = data is List
-          ? data
-          : (data is Map && data['reviews'] is List)
-              ? data['reviews'] as List
-              : <dynamic>[];
-      return list
-          .map((e) => ProductReview.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {
-      return const [];
-    }
+      if (data != null) {
+        final list = data is List
+            ? data
+            : (data is Map && data['reviews'] is List)
+                ? data['reviews'] as List
+                : <dynamic>[];
+        if (list.isNotEmpty) {
+          return list
+              .map(
+                (e) => ProductReview.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return LocalCommerceStore.listReviews(productId);
   }
 
   Future<ProductReview> submitReview(
@@ -245,13 +255,56 @@ class CatalogRepository {
     required int rating,
     required String comment,
   }) async {
-    final res = await _api.post(
-      '/api/products/$productId/reviews',
-      data: {'rating': rating, 'comment': comment},
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to leave a review');
+    try {
+      final res = await _api.post(
+        '/api/products/$productId/reviews',
+        data: {'rating': rating, 'comment': comment},
+      );
+      final data = ApiResponse.asMap(res.data);
+      if (data != null && data['id'] != null) {
+        return ProductReview.fromJson(data);
+      }
+    } catch (_) {}
+    return LocalCommerceStore.addReview(
+      productId: productId,
+      user: user,
+      rating: rating,
+      comment: comment,
     );
-    final data = ApiResponse.asMap(res.data);
-    if (data == null) throw StateError('Review submit failed');
-    return ProductReview.fromJson(data);
+  }
+
+  Future<List<ShopVideo>> listShopVideos() async {
+    await LocalCommerceStore.mergeCloudSocial();
+    return LocalCommerceStore.listShopVideos();
+  }
+
+  Future<ShopVideo?> getShopVideo(String id) async {
+    await LocalCommerceStore.mergeCloudSocial();
+    return LocalCommerceStore.getShopVideo(id);
+  }
+
+  Future<ShopVideo> createShopVideo({
+    required Uint8List bytes,
+    required String mimeType,
+    required List<String> productIds,
+    String caption = '',
+  }) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to upload a video');
+    final video = await LocalCommerceStore.createShopVideo(
+      author: user,
+      productIds: productIds,
+      caption: caption,
+      mimeType: mimeType,
+    );
+    await ProductDemoVideoStore.save(
+      productId: video.id,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    return video;
   }
 
   Future<List<TimelinePost>> listTimeline() async {
