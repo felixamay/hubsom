@@ -108,6 +108,11 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         _startPoll();
       }
 
+      if (!s.isLive) {
+        if (mounted) await _goHomeAfterEnd();
+        return;
+      }
+
       final messages = await repo.listChat(widget.streamId);
       final products = <Product>[];
       for (final id in s.productIds) {
@@ -168,6 +173,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
   }
 
+  Future<void> _goHomeAfterEnd() async {
+    _poll?.cancel();
+    _tick?.cancel();
+    await _agora?.leave();
+    ref.invalidate(streamsProvider);
+    if (!mounted) return;
+    context.go('/');
+  }
+
   Future<void> _refreshQuiet() async {
     if (!mounted || stream == null) return;
     try {
@@ -175,6 +189,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       final s = await repo.getStream(widget.streamId);
       final messages = await repo.listChat(widget.streamId);
       if (!mounted || s == null) return;
+      if (stream!.isLive && !s.isLive) {
+        await _goHomeAfterEnd();
+        return;
+      }
       Product? pin = pinned;
       final pinId = s.pinnedProductId ?? s.auction?.productId;
       if (pinId != null && pin?.id != pinId) {
@@ -290,15 +308,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     if (ok != true) return;
     setState(() => _ending = true);
     try {
-      final ended =
-          await ref.read(liveRepositoryProvider).endStream(widget.streamId);
-      await _agora?.leave();
-      ref.invalidate(streamsProvider);
+      await ref.read(liveRepositoryProvider).endStream(widget.streamId);
       if (!mounted) return;
-      setState(() {
-        stream = ended;
-        _ending = false;
-      });
+      await _goHomeAfterEnd();
     } catch (e) {
       if (mounted) {
         setState(() => _ending = false);
@@ -488,48 +500,12 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
     final s = stream!;
     if (!s.isLive) {
-      return Scaffold(
-        backgroundColor: HubsomColors.ink,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'SHOW ENDED',
-                  style: TextStyle(
-                    color: HubsomColors.gold,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  s.title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _isHost
-                      ? 'You ended this live show.'
-                      : 'The host ended this live show.',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () => context.go(_isHost ? '/seller' : '/live'),
-                  child: Text(_isHost ? 'Seller hub' : 'Browse live'),
-                ),
-              ],
-            ),
-          ),
-        ),
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_goHomeAfterEnd());
+      });
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
