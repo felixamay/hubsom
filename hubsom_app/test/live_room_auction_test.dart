@@ -94,8 +94,11 @@ void main() {
     );
     expect(first.currentBidGhs, greaterThan(80));
     expect(first.highestBidder, 'Kojo Bidder');
+    expect(first.highestBidderId, 'buyer-1');
     expect(first.recentBids, isNotEmpty);
     expect(first.recentBids.first.bidderName, 'Kojo Bidder');
+    expect(first.recentBids.first.amountGhs, first.currentBidGhs);
+    expect(first.bidderCount, 1);
     final left = first.timeLeft!;
     expect(left.inSeconds, greaterThanOrEqualTo(4));
 

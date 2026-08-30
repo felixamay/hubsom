@@ -810,7 +810,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               left: 12,
               right: MediaQuery.sizeOf(context).width * 0.28,
               bottom: s.auction != null
-                  ? (_isHost ? 200 : 210)
+                  ? (_isHost ? 320 : 210)
                   : (pinned != null ? 140 : 72),
               child: SizedBox(
                 height: 150,
@@ -1225,6 +1225,7 @@ class _LiveBottomDock extends StatelessWidget {
                 )
               else if (isHost && (open || awaiting))
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
                       width: double.infinity,
@@ -1252,6 +1253,8 @@ class _LiveBottomDock extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    _HostBidFeed(auction: a),
                     if (awaiting || (!a.askMet && open)) ...[
                       const SizedBox(height: 8),
                       SizedBox(
@@ -1407,6 +1410,137 @@ class _CountdownRing extends StatelessWidget {
           fontWeight: FontWeight.w900,
           fontSize: 22,
         ),
+      ),
+    );
+  }
+}
+
+class _HostBidFeed extends StatelessWidget {
+  const _HostBidFeed({required this.auction});
+
+  final LiveAuction auction;
+
+  @override
+  Widget build(BuildContext context) {
+    final bids = auction.recentBids;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.people_alt_outlined, color: Colors.white, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                bids.isEmpty
+                    ? 'Waiting for bids…'
+                    : 'Who’s bidding · ${auction.bidderCount}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              if (auction.highestBidder != null)
+                Text(
+                  'Lead · ${auction.highestBidder}',
+                  style: const TextStyle(
+                    color: HubsomColors.gold,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+            ],
+          ),
+          if (bids.isEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Shopper names appear here as soon as they bid.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 11,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 92,
+              child: ListView.separated(
+                itemCount: bids.length.clamp(0, 8),
+                separatorBuilder: (_, __) => Divider(
+                  height: 10,
+                  color: Colors.white.withValues(alpha: 0.12),
+                ),
+                itemBuilder: (context, i) {
+                  final bid = bids[i];
+                  final leading = i == 0;
+                  final initial = bid.bidderName.isNotEmpty
+                      ? bid.bidderName.substring(0, 1).toUpperCase()
+                      : '?';
+                  return Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 12,
+                        backgroundColor: leading
+                            ? HubsomColors.gold
+                            : HubsomColors.forest,
+                        child: Text(
+                          initial,
+                          style: TextStyle(
+                            color: leading ? HubsomColors.ink : Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          bid.bidderName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight:
+                                leading ? FontWeight.w800 : FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatGhs(bid.amountGhs),
+                        style: TextStyle(
+                          color: leading ? HubsomColors.gold : Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (leading) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          'LEAD',
+                          style: TextStyle(
+                            color: HubsomColors.gold,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
