@@ -100,10 +100,13 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
         'bio': _bio.text.trim(),
         'avatar': _avatar,
       });
+      await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
-      setState(() => _savedHint = 'Store profile saved');
+      setState(() => _savedHint = 'Store profile saved — synced to account');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Store profile saved')),
+        const SnackBar(
+          content: Text('Store profile saved — photo synced to account'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -132,7 +135,7 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'This photo shows on your store and live Follow chip.',
+            'Same photo as your account profile — change either and both stay in sync. Shows on your store and Follow chip.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 14),

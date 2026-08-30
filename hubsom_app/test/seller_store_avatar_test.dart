@@ -47,5 +47,8 @@ void main() {
     expect(updated.avatar, avatar);
     expect(updated.name, 'Accra Crafts');
     expect(LocalCommerceStore.getSeller(updated.id)?.avatar, avatar);
+
+    final user = jsonDecode(LocalStore.userJson!) as Map;
+    expect(user['image'], avatar);
   });
 }

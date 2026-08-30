@@ -297,7 +297,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   Future<void> _toggleFollow() async {
     final s = stream;
     if (s == null || _isHost || _followBusy) return;
-    if (!ensureSignedIn(context, ref, message: 'Sign in to follow this seller')) {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to follow this account')) {
       return;
     }
     setState(() => _followBusy = true);
@@ -1441,7 +1441,7 @@ class _HostBidFeed extends StatelessWidget {
               Text(
                 bids.isEmpty
                     ? 'Waiting for bids…'
-                    : 'Who’s bidding · ${auction.bidderCount}',
+                    : 'Who\'s bidding · ${auction.bidderCount}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,

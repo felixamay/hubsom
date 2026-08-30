@@ -389,12 +389,13 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
             );
             return;
           }
+          final messenger = ScaffoldMessenger.of(context);
           await ref
               .read(orderRepositoryProvider)
               .createShipment({'orderIds': paid});
           await _load();
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             const SnackBar(content: Text('Shipment created — offer to Hubers')),
           );
           _tabs.animateTo(1);

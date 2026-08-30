@@ -58,7 +58,7 @@ class DashboardPage extends ConsumerWidget {
             ),
             _stat(
               context,
-              label: 'Following',
+              label: 'Following accounts',
               value: '${user?.followingSellerIds.length ?? 0}',
               icon: Icons.storefront_outlined,
               onTap: () {

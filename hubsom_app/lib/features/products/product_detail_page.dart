@@ -134,7 +134,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   Future<void> _toggleFollow() async {
     final product = _product;
     if (product == null) return;
-    if (!ensureSignedIn(context, ref, message: 'Sign in to follow sellers')) {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to follow this account')) {
       return;
     }
     setState(() => _followBusy = true);

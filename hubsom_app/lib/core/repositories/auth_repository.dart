@@ -4,11 +4,13 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 
 import '../../models/huber.dart';
+import '../../models/seller.dart';
 import '../../models/user.dart';
 import '../auth/auth_routes.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
 
@@ -167,6 +169,7 @@ class AuthRepository {
       if (data != null && data['error'] == null && data['id'] != null) {
         final user = HubsomUser.fromJson(data);
         await LocalStore.setUserJson(jsonEncode(user.toJson()));
+        await _syncStoreAvatarFromUser(user);
         return user;
       }
     } catch (_) {
@@ -179,7 +182,9 @@ class AuthRepository {
       id: current.id,
       email: current.email,
       name: patch['name'] as String? ?? current.name,
-      image: current.image,
+      image: patch.containsKey('image')
+          ? patch['image'] as String?
+          : current.image,
       phone: patch['phone'] as String? ?? current.phone,
       city: patch['city'] as String? ?? current.city,
       region: current.region,
@@ -189,6 +194,7 @@ class AuthRepository {
       huberId: current.huberId,
       followingSellerIds: current.followingSellerIds,
       savedProductIds: current.savedProductIds,
+      likedProductIds: current.likedProductIds,
       addresses: current.addresses,
       emailVerified: current.emailVerified,
       walletBalanceGhs: current.walletBalanceGhs,
@@ -200,8 +206,50 @@ class AuthRepository {
       entry['userJson'] = updated.toJson();
       vault[current.email.toLowerCase()] = entry;
       await LocalStore.saveCredentialVault(vault);
+      try {
+        await CloudStore.putAccount(updated.email.toLowerCase(), {
+          'salt': entry['salt'],
+          'hash': entry['hash'],
+          'userJson': updated.toJson(),
+          'email': updated.email.toLowerCase(),
+        });
+      } catch (_) {}
     }
+    await _syncStoreAvatarFromUser(updated);
     return updated;
+  }
+
+  /// Keep seller store photo in sync with the account profile photo.
+  Future<void> _syncStoreAvatarFromUser(HubsomUser user) async {
+    final isSeller = user.role == 'seller' ||
+        user.role == 'both' ||
+        user.role == 'admin' ||
+        (user.sellerId != null && user.sellerId!.isNotEmpty);
+    if (!isSeller) return;
+    try {
+      final seller = await LocalCommerceStore.ensureSellerForUser(user);
+      final nextAvatar = user.image ?? '';
+      if (seller.avatar == nextAvatar) return;
+      final synced = Seller(
+        id: seller.id,
+        slug: seller.slug,
+        name: seller.name,
+        city: seller.city,
+        region: seller.region,
+        bio: seller.bio,
+        avatar: nextAvatar,
+        cover: seller.cover,
+        rating: seller.rating,
+        followers: seller.followers,
+        verified: seller.verified,
+        categories: seller.categories,
+        ownerUserId: seller.ownerUserId ?? user.id,
+      );
+      await LocalCommerceStore.upsertSeller(synced);
+      try {
+        await CloudStore.upsertDocs(CloudStore.sellers, [synced.toJson()]);
+      } catch (_) {}
+    } catch (_) {}
   }
 
   /// Attach Huber driving to the signed-in Hubsom account (same vault).

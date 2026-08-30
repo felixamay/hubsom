@@ -86,7 +86,37 @@ class SellerRepository {
     try {
       await CloudStore.upsertDocs(CloudStore.sellers, [saved.toJson()]);
     } catch (_) {}
+    await _syncAccountImageFromStore(saved);
     return saved;
+  }
+
+  /// Keep the signed-in account photo in sync with the store avatar.
+  Future<void> _syncAccountImageFromStore(Seller seller) async {
+    final user = _user;
+    if (user == null) return;
+    final ownsStore = user.sellerId == seller.id ||
+        seller.ownerUserId == user.id ||
+        user.role == 'seller' ||
+        user.role == 'both';
+    if (!ownsStore) return;
+    if ((user.image ?? '') == seller.avatar) return;
+    final patched = user.copyWith(image: seller.avatar);
+    await LocalStore.setUserJson(jsonEncode(patched.toJson()));
+    final vault = LocalStore.loadCredentialVault();
+    final entry = vault[patched.email.toLowerCase()];
+    if (entry is Map) {
+      entry['userJson'] = patched.toJson();
+      vault[patched.email.toLowerCase()] = entry;
+      await LocalStore.saveCredentialVault(vault);
+      try {
+        await CloudStore.putAccount(patched.email.toLowerCase(), {
+          'salt': entry['salt'],
+          'hash': entry['hash'],
+          'userJson': patched.toJson(),
+          'email': patched.email.toLowerCase(),
+        });
+      } catch (_) {}
+    }
   }
 
   Future<Map<String, dynamic>> createProduct(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
+import '../../widgets/hubsom_image.dart';
 
 class AccountPage extends ConsumerWidget {
   const AccountPage({super.key});
@@ -46,17 +47,46 @@ class AccountPage extends ConsumerWidget {
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(
                 backgroundColor: HubsomColors.mint,
-                child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
+                child: (user.image ?? '').trim().isEmpty
+                    ? Text(
+                        user.name.isNotEmpty
+                            ? user.name[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          color: HubsomColors.forest,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      )
+                    : ClipOval(
+                        child: HubsomImage(
+                          url: user.image!,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          placeholder: Container(
+                            width: 40,
+                            height: 40,
+                            color: HubsomColors.mint,
+                            alignment: Alignment.center,
+                            child: Text(
+                              user.name.isNotEmpty
+                                  ? user.name[0].toUpperCase()
+                                  : '?',
+                            ),
+                          ),
+                        ),
+                      ),
               ),
               title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text('${user.email}\nWallet ${formatGhs(user.walletBalanceGhs)}'),
               isThreeLine: true,
+              onTap: () => context.push('/account/profile'),
             ),
             const Divider(),
             _link(context, Icons.person_outline, 'Profile', '/account/profile'),
             _link(context, Icons.favorite_border, 'Saved products', '/account/saved'),
             _link(context, Icons.dynamic_feed_outlined, 'Timeline', '/timeline'),
-            _link(context, Icons.storefront_outlined, 'Following', '/account/following'),
+            _link(context, Icons.people_outline, 'Following accounts', '/account/following'),
             _link(context, Icons.location_on_outlined, 'Addresses', '/account/addresses'),
             _link(context, Icons.account_balance_wallet_outlined, 'Wallet', '/wallet'),
             _link(context, Icons.notifications_outlined, 'Notifications', '/notifications'),
