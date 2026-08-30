@@ -890,7 +890,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                           ),
                           subtitle: _isHost
                               ? const Text(
-                                  'Tap Add to bring a catalog item into this show',
+                                  'Add a real catalog product or create one now',
                                 )
                               : null,
                           trailing: IconButton(
@@ -898,6 +898,25 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                             icon: const Icon(Icons.close),
                           ),
                         ),
+                        if (_isHost)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () {
+                                  final returnTo = Uri.encodeComponent(
+                                    '/live/${widget.streamId}?host=1',
+                                  );
+                                  context.push(
+                                    '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
+                                  );
+                                },
+                                icon: const Icon(Icons.add_box_outlined),
+                                label: const Text('Create product for this live'),
+                              ),
+                            ),
+                          ),
                         Expanded(
                           child: ListView(
                             children: [
@@ -912,8 +931,25 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                 ),
                               ...bag.map((p) {
                                 return ListTile(
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: SizedBox(
+                                      width: 44,
+                                      height: 44,
+                                      child: HubsomImage(
+                                        url: p.images.isNotEmpty
+                                            ? p.images.first
+                                            : null,
+                                        width: 44,
+                                        height: 44,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
                                   title: Text(p.name),
-                                  subtitle: Text(formatGhs(p.effectivePrice)),
+                                  subtitle: Text(
+                                    '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
+                                  ),
                                   trailing: _isHost
                                       ? TextButton(
                                           onPressed: () => _pin(p),
@@ -924,8 +960,12 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                           ),
                                         )
                                       : FilledButton(
-                                          onPressed: () => _buy(p),
-                                          child: const Text('Buy'),
+                                          onPressed: p.stock <= 0
+                                              ? null
+                                              : () => _buy(p),
+                                          child: Text(
+                                            p.stock <= 0 ? 'Sold out' : 'Buy',
+                                          ),
                                         ),
                                 );
                               }),
@@ -946,10 +986,36 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                     .isEmpty)
                                   Padding(
                                     padding: const EdgeInsets.all(16),
-                                    child: Text(
-                                      _catalog.isEmpty
-                                          ? 'No products in your catalog yet. Create one from Seller hub, then Add here.'
-                                          : 'All your products are already in this live show.',
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _catalog.isEmpty
+                                              ? 'No products yet. Create a real product with photos and quantity, then it joins this live show.'
+                                              : 'All your products are already in this live show.',
+                                        ),
+                                        if (_catalog.isEmpty) ...[
+                                          const SizedBox(height: 12),
+                                          OutlinedButton.icon(
+                                            onPressed: () {
+                                              final returnTo =
+                                                  Uri.encodeComponent(
+                                                '/live/${widget.streamId}?host=1',
+                                              );
+                                              context.push(
+                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
+                                              );
+                                            },
+                                            icon: const Icon(
+                                              Icons.add_box_outlined,
+                                            ),
+                                            label: const Text(
+                                              'Create product now',
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   )
                                 else
@@ -977,7 +1043,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                           ),
                                           title: Text(p.name),
                                           subtitle: Text(
-                                            formatGhs(p.effectivePrice),
+                                            '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
                                           ),
                                           trailing: FilledButton(
                                             onPressed: () =>

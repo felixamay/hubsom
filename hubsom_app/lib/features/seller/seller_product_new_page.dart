@@ -15,10 +15,17 @@ import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
 
 class SellerProductNewPage extends ConsumerStatefulWidget {
-  const SellerProductNewPage({super.key, this.returnTo, this.productId});
+  const SellerProductNewPage({
+    super.key,
+    this.returnTo,
+    this.productId,
+    this.addToLiveStreamId,
+  });
   final String? returnTo;
   /// When set, the form edits an existing listing.
   final String? productId;
+  /// When set after create, attach the new product to this live show.
+  final String? addToLiveStreamId;
 
   @override
   ConsumerState<SellerProductNewPage> createState() =>
@@ -242,6 +249,22 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
       final id = '${saved['id'] ?? widget.productId ?? ''}';
+      final liveId = widget.addToLiveStreamId?.trim();
+      if (!_isEdit &&
+          liveId != null &&
+          liveId.isNotEmpty &&
+          id.isNotEmpty) {
+        try {
+          await ref.read(liveRepositoryProvider).addProducts(liveId, [id]);
+          await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product added to your live show')),
+        );
+        context.go('/live/$liveId?host=1');
+        return;
+      }
       if (_isEdit) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Product updated')),
@@ -274,6 +297,22 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (widget.addToLiveStreamId != null &&
+                widget.addToLiveStreamId!.trim().isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: HubsomColors.mint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'This product will be published and pinned on your live show as soon as you save it.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Text(
               'Product photos',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(

@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/repositories/catalog_repository.dart';
+import 'package:hubsom_app/core/repositories/live_repository.dart';
+import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
@@ -209,6 +211,30 @@ void main() {
     );
     expect(updated!.productIds, contains(stream.productIds.first));
     expect(updated.productIds, contains(extra.id));
+  });
+
+  test('host can create a real product and attach it to a live show', () async {
+    final stream = await goLive();
+    await LocalStore.setSessionToken('host-sess');
+    await LocalStore.setUserJson(jsonEncode(seller.toJson()));
+    final created = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Live drop sneakers',
+      description: 'Added while live with real stock',
+      category: 'fashion',
+      priceGhs: 220,
+      stock: 4,
+      images: const ['a', 'b', 'c'],
+    );
+    expect(created.stock, 4);
+
+    final live = LiveRepository(ApiClient());
+    final withProduct = await live.addProducts(stream.id, [created.id]);
+    final pinned = await live.pinProduct(stream.id, created.id);
+    expect(withProduct.productIds, contains(created.id));
+    expect(pinned.pinnedProductId, created.id);
+    // Seller repo still available for create path used by UI.
+    expect(SellerRepository(ApiClient()), isNotNull);
   });
 
   test('fresher cloud auction wins over stale host copy', () {
