@@ -383,20 +383,44 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       final updated = await ref
           .read(liveRepositoryProvider)
           .addProducts(widget.streamId, [product.id]);
+      // Also pin the newly added product so viewers see it right away.
+      final pinnedStream = await ref
+          .read(liveRepositoryProvider)
+          .pinProduct(widget.streamId, product.id);
       if (!mounted) return;
       setState(() {
-        stream = updated;
+        stream = pinnedStream.productIds.contains(product.id)
+            ? pinnedStream
+            : updated;
+        pinned = product;
         if (!bag.any((p) => p.id == product.id)) {
           bag = [...bag, product];
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added ${product.name} to live')),
+        SnackBar(content: Text('Added & pinned ${product.name}')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
     }
+  }
+
+  Future<void> _openShop() async {
+    if (_isHost) {
+      try {
+        final catalog = await ref.read(sellerRepositoryProvider).myProducts();
+        if (mounted) setState(() => _catalog = catalog);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _shopOpen = !_shopOpen);
   }
 
   Future<void> _extendAuction() async {
@@ -720,12 +744,35 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                         color: Colors.white,
                       ),
                     ),
+                  if (_isHost)
+                    TextButton(
+                      onPressed: _openShop,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: HubsomColors.gold,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Add products',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: HubsomColors.ink,
+                        ),
+                      ),
+                    ),
                   IconButton(
                     onPressed: _react,
                     icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
                   ),
                   IconButton(
-                    onPressed: () => setState(() => _shopOpen = !_shopOpen),
+                    tooltip: _isHost ? 'Live products' : 'Live bag',
+                    onPressed: _openShop,
                     icon: const Icon(
                       Icons.shopping_bag_outlined,
                       color: Colors.white,
@@ -739,103 +786,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 ],
               ),
             ),
-            if (_shopOpen)
+            if (!_shopOpen)
+              // Chat floats above the bottom auction / bid dock (TikTok-style).
               Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
-                  child: SizedBox(
-                    height: min(420, MediaQuery.sizeOf(context).height * 0.55),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          title: Text(
-                            _isHost ? 'Live products' : 'Live bag',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: _isHost
-                              ? const Text('Pin items or add more from your catalog')
-                              : null,
-                          trailing: IconButton(
-                            onPressed: () => setState(() => _shopOpen = false),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ),
-                        Expanded(
-                          child: ListView(
-                            children: [
-                              if (bag.isNotEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
-                                  child: Text(
-                                    'In this show',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                              ...bag.map((p) {
-                                return ListTile(
-                                  title: Text(p.name),
-                                  subtitle: Text(formatGhs(p.effectivePrice)),
-                                  trailing: _isHost
-                                      ? TextButton(
-                                          onPressed: () => _pin(p),
-                                          child: Text(
-                                            pinned?.id == p.id ? 'Pinned' : 'Pin',
-                                          ),
-                                        )
-                                      : FilledButton(
-                                          onPressed: () => _buy(p),
-                                          child: const Text('Buy'),
-                                        ),
-                                );
-                              }),
-                              if (_isHost) ...[
-                                const Divider(),
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
-                                  child: Text(
-                                    'Add from your catalog',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                                if (_catalog.isEmpty)
-                                  const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: Text('No other products yet.'),
-                                  )
-                                else
-                                  ..._catalog
-                                      .where(
-                                        (p) => !bag.any((b) => b.id == p.id),
-                                      )
-                                      .map(
-                                        (p) => ListTile(
-                                          title: Text(p.name),
-                                          subtitle:
-                                              Text(formatGhs(p.effectivePrice)),
-                                          trailing: FilledButton(
-                                            onPressed: () =>
-                                                _addProductToLive(p),
-                                            child: const Text('Add'),
-                                          ),
-                                        ),
-                                      ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            // Chat floats above the bottom auction / bid dock (TikTok-style).
-            Positioned(
               left: 12,
               right: MediaQuery.sizeOf(context).width * 0.28,
               bottom: s.auction != null
@@ -866,7 +819,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 ),
               ),
             ),
-            Positioned(
+            if (!_shopOpen)
+              Positioned(
               left: 0,
               right: 0,
               bottom: 0,
@@ -884,6 +838,145 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 onSendChat: _sendChat,
               ),
             ),
+            // Host/viewer product sheet sits above the dock so Add products works.
+            if (_shopOpen)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  onTap: () => setState(() => _shopOpen = false),
+                  child: Container(color: Colors.black54),
+                ),
+              ),
+            if (_shopOpen)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 12,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  child: SizedBox(
+                    height: min(480, MediaQuery.sizeOf(context).height * 0.65),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          title: Text(
+                            _isHost ? 'Add products to live' : 'Live bag',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: _isHost
+                              ? const Text(
+                                  'Tap Add to bring a catalog item into this show',
+                                )
+                              : null,
+                          trailing: IconButton(
+                            onPressed: () => setState(() => _shopOpen = false),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView(
+                            children: [
+                              if (bag.isNotEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                  child: Text(
+                                    'In this show',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ...bag.map((p) {
+                                return ListTile(
+                                  title: Text(p.name),
+                                  subtitle: Text(formatGhs(p.effectivePrice)),
+                                  trailing: _isHost
+                                      ? TextButton(
+                                          onPressed: () => _pin(p),
+                                          child: Text(
+                                            pinned?.id == p.id
+                                                ? 'Pinned'
+                                                : 'Pin',
+                                          ),
+                                        )
+                                      : FilledButton(
+                                          onPressed: () => _buy(p),
+                                          child: const Text('Buy'),
+                                        ),
+                                );
+                              }),
+                              if (_isHost) ...[
+                                const Divider(),
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                  child: Text(
+                                    'Your catalog',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                if (_catalog
+                                    .where(
+                                      (p) => !bag.any((b) => b.id == p.id),
+                                    )
+                                    .isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Text(
+                                      _catalog.isEmpty
+                                          ? 'No products in your catalog yet. Create one from Seller hub, then Add here.'
+                                          : 'All your products are already in this live show.',
+                                    ),
+                                  )
+                                else
+                                  ..._catalog
+                                      .where(
+                                        (p) => !bag.any((b) => b.id == p.id),
+                                      )
+                                      .map(
+                                        (p) => ListTile(
+                                          leading: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: SizedBox(
+                                              width: 44,
+                                              height: 44,
+                                              child: HubsomImage(
+                                                url: p.images.isNotEmpty
+                                                    ? p.images.first
+                                                    : null,
+                                                width: 44,
+                                                height: 44,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          ),
+                                          title: Text(p.name),
+                                          subtitle: Text(
+                                            formatGhs(p.effectivePrice),
+                                          ),
+                                          trailing: FilledButton(
+                                            onPressed: () =>
+                                                _addProductToLive(p),
+                                            child: const Text('Add'),
+                                          ),
+                                        ),
+                                      ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
