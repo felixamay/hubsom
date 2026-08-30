@@ -126,7 +126,7 @@ class CloudStore {
 
     if (lastError != null) {
       throw StateError(
-        'Could not reach the Hubsom account database. Check your connection.',
+        'Could not reach Hubsom right now. Check your connection.',
       );
     }
     return null;
@@ -183,7 +183,7 @@ class CloudStore {
     );
     if (res.statusCode == null || res.statusCode! < 200 || res.statusCode! >= 300) {
       throw StateError(
-        'Could not save account to the Hubsom database'
+        'Could not save your account'
         '${res.data != null ? ': ${res.data}' : ''}',
       );
     }
@@ -191,7 +191,7 @@ class CloudStore {
     final verify = await getAccount(id);
     if (verify == null || accountDocId('${verify['email']}') != id) {
       throw StateError(
-        'Account was not visible in the Hubsom database after save. Try again.',
+        'Could not verify your account was saved. Try again.',
       );
     }
   }
