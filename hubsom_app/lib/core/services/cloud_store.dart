@@ -54,34 +54,38 @@ class CloudStore {
 
   static String accountDocId(String email) => email.trim().toLowerCase();
 
+  /// Reads an account from the live Firestore REST API.
+  ///
+  /// The FlutterFire SDK is not used here: it can return a local IndexedDB
+  /// write that never reached the server, which is why a new browser then
+  /// looks like it has no account.
   static Future<Map<String, dynamic>?> getAccount(String email) async {
     if (!useNetwork) return null;
     final id = accountDocId(email);
-
-    final sdk = _db;
-    if (sdk != null) {
-      try {
-        final snap = await sdk.collection(accounts).doc(id).get();
-        if (snap.data() != null) return snap.data();
-      } catch (e) {
-        if (kDebugMode) debugPrint('CloudStore.getAccount sdk: $e');
-      }
-    }
-
     try {
       final res = await _rest.get<dynamic>(
         '$_root/$accounts/${Uri.encodeComponent(id)}',
         queryParameters: {'key': _apiKey},
       );
       if (res.statusCode == 404 || res.data == null) return null;
-      if (res.data is Map && res.data['error'] != null) return null;
-      return decodeDocument(res.data);
-    } catch (e) {
-      if (kDebugMode) debugPrint('CloudStore.getAccount rest: $e');
-      return null;
+      if (res.data is Map && res.data['error'] != null) {
+        final err = res.data['error'];
+        final code = err is Map ? err['code'] : null;
+        final status = err is Map ? '${err['status']}' : '';
+        if (code == 404 || status == 'NOT_FOUND') return null;
+        throw StateError('Could not read Hubsom account: ${res.data}');
+      }
+      final decoded = decodeDocument(res.data);
+      return decoded.isEmpty ? null : decoded;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      throw StateError(
+        'Could not reach the Hubsom account database. Check your connection.',
+      );
     }
   }
 
+  /// Writes an account and refuses to return until the server can read it back.
   static Future<void> putAccount(String email, Map<String, dynamic> data) async {
     if (!useNetwork) {
       throw StateError('Account database is disabled in this environment');
@@ -93,31 +97,24 @@ class CloudStore {
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     };
 
-    Object? sdkError;
-    final sdk = _db;
-    if (sdk != null) {
-      try {
-        await sdk.collection(accounts).doc(id).set(payload);
-        return;
-      } catch (e) {
-        sdkError = e;
-        if (kDebugMode) debugPrint('CloudStore.putAccount sdk: $e');
-      }
-    }
-
     final res = await _rest.patch<dynamic>(
       '$_root/$accounts/${Uri.encodeComponent(id)}',
       queryParameters: {'key': _apiKey},
       data: {'fields': encodeFields(payload)},
     );
-    if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300) {
-      return;
+    if (res.statusCode == null || res.statusCode! < 200 || res.statusCode! >= 300) {
+      throw StateError(
+        'Could not save account to the Hubsom database'
+        '${res.data != null ? ': ${res.data}' : ''}',
+      );
     }
-    throw StateError(
-      'Could not save account to the Hubsom database'
-      '${sdkError != null ? ' ($sdkError)' : ''}'
-      '${res.data != null ? ': ${res.data}' : ''}',
-    );
+
+    final verify = await getAccount(id);
+    if (verify == null || '${verify['email']}' != id) {
+      throw StateError(
+        'Account was not visible in the Hubsom database after save. Try again.',
+      );
+    }
   }
 
   static Future<void> upsertDocs(

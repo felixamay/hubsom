@@ -39,9 +39,4 @@ jobs:
       - name: Deploy Hosting
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: |
-          if [ -z "$FIREBASE_TOKEN" ]; then
-            echo "Missing GitHub secret FIREBASE_TOKEN. Create one with: firebase login:ci"
-            exit 1
-          fi
-          firebase deploy --only hosting --project hubsom-web --non-interactive --token "$FIREBASE_TOKEN"
+        run: ./scripts/deploy_hosting.sh

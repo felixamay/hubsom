@@ -1,0 +1,76 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hubsom_app/core/repositories/auth_repository.dart';
+import 'package:hubsom_app/core/services/api_client.dart';
+import 'package:hubsom_app/core/services/cloud_store.dart';
+import 'package:hubsom_app/core/services/local_store.dart';
+import 'package:hubsom_app/models/user.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    CloudStore.useNetwork = false;
+    SharedPreferences.setMockInitialValues({});
+    final dir = Directory.systemTemp.createTempSync('hubsom-auth');
+    Hive.init(dir.path);
+    await LocalStore.init();
+  });
+
+  test('sign-in without a database account asks to create one once', () async {
+    final repo = AuthRepository(ApiClient());
+    expect(
+      () => repo.signIn(email: 'nobody@hubsom.test', password: 'password1'),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('No Hubsom account for this email'),
+        ),
+      ),
+    );
+  });
+
+  test('same-browser vault can still sign in when the network is off', () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-2',
+      email: 'kojo@hubsom.test',
+      name: 'Kojo',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'kojo@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+
+    final signedIn = await AuthRepository(ApiClient()).signIn(
+      email: 'kojo@hubsom.test',
+      password: password,
+    );
+    expect(signedIn.email, 'kojo@hubsom.test');
+    expect(signedIn.name, 'Kojo');
+
+    expect(
+      () => AuthRepository(ApiClient()).signIn(
+        email: 'kojo@hubsom.test',
+        password: 'wrongpass',
+      ),
+      throwsA(isA<AuthException>()),
+    );
+  });
+}
+
+/// Same formula as AuthRepository: sha256('$salt::$password::hubsom').
+String _hash(String password, String salt) {
+  return sha256.convert(utf8.encode('$salt::$password::hubsom')).toString();
+}

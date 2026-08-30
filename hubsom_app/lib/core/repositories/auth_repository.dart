@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:dio/dio.dart';
 
 import '../../models/huber.dart';
 import '../../models/user.dart';
@@ -121,84 +120,31 @@ class AuthRepository {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password);
 
-    // Shared Firestore accounts first so sign-in works on any browser/device.
-    final cloudUser = await _cloudSignIn(email: normalized, password: password);
-    if (cloudUser != null) return cloudUser;
+    try {
+      final cloudUser = await _cloudSignIn(
+        email: normalized,
+        password: password,
+      );
+      if (cloudUser != null) return cloudUser;
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      final vault = LocalStore.loadCredentialVault();
+      if (!vault.containsKey(normalized)) {
+        throw AuthException(
+          'Could not reach the Hubsom account database. Check your connection and try again.',
+        );
+      }
+    }
 
     final vault = LocalStore.loadCredentialVault();
     if (vault.containsKey(normalized)) {
       return _localSignIn(email: normalized, password: password);
     }
 
-    try {
-      final csrf = await _api.get('/api/auth/csrf');
-      final csrfData = ApiResponse.asMap(csrf.data);
-      final csrfToken = csrfData?['csrfToken'] as String?;
-
-      final res = await _api.post(
-        '/api/auth/callback/credentials',
-        data: {
-          'email': normalized,
-          'password': password,
-          'redirect': false,
-          'json': true,
-          if (csrfToken != null) 'csrfToken': csrfToken,
-        },
-      );
-
-      final data = ApiResponse.asMap(res.data);
-      if (data != null) {
-        if (data['error'] != null) {
-          throw AuthException('${data['error']}');
-        }
-        final userMap = data['user'] as Map? ?? data['data'] as Map?;
-        if (userMap != null) {
-          final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
-          final token = data['token'] as String? ?? _issueLocalToken(user);
-          await _persist(user, token);
-          await _storeLocalCredentials(
-            email: normalized,
-            password: password,
-            user: user,
-          );
-          final profile = await fetchProfile();
-          return profile ?? user;
-        }
-      }
-
-      final profile = await fetchProfile();
-      if (profile != null) {
-        await _storeLocalCredentials(
-          email: normalized,
-          password: password,
-          user: profile,
-        );
-        return profile;
-      }
-
-      return await _localSignIn(email: normalized, password: password);
-    } on AuthException {
-      rethrow;
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
-        try {
-          return await _localSignIn(email: normalized, password: password);
-        } on AuthException {
-          throw AuthException('Invalid email or password');
-        }
-      }
-      try {
-        return await _localSignIn(email: normalized, password: password);
-      } on AuthException {
-        throw AuthException('Invalid email or password');
-      }
-    } catch (_) {
-      try {
-        return await _localSignIn(email: normalized, password: password);
-      } on AuthException {
-        throw AuthException('Invalid email or password');
-      }
-    }
+    throw AuthException(
+      'No Hubsom account for this email. Create one once — it is stored in the database, then any browser can sign in.',
+    );
   }
 
   Future<HubsomUser?> fetchProfile() async {
