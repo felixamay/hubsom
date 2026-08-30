@@ -11,29 +11,24 @@ class SellPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authStateProvider).valueOrNull;
+    final isSeller = user != null &&
+        (user.role == 'seller' || user.role == 'both' || user.role == 'admin');
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
-        Text('Sell on Hubsom', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+        Text(
+          'Sell on Hubsom',
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w900),
+        ),
         const SizedBox(height: 8),
-        const Text('List products, go live, run auctions, and dispatch Hubers — same seller workflows as web.'),
+        const Text(
+          'Products and videos are separate. List items to sell, or add a short video that links to those products.',
+        ),
         const SizedBox(height: 20),
-        if (user != null) ...[
-          Text(
-            'Shop videos',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Upload a short clip on its own and link products — watchers open the normal product page.',
-          ),
-          const SizedBox(height: 8),
-          _tile(context, Icons.movie_creation_outlined, 'Upload shop video', '/videos/upload'),
-          _tile(context, Icons.play_circle_outline, 'Watch shop videos', '/videos'),
-          const SizedBox(height: 16),
-        ],
         if (user == null) ...[
           FilledButton(
             onPressed: () => context.push('/auth/sign-up?callbackUrl=%2Fsell'),
@@ -43,21 +38,63 @@ class SellPage extends ConsumerWidget {
             onPressed: () => context.push('/auth/sign-in?callbackUrl=%2Fsell'),
             child: const Text('Sign in'),
           ),
-        ] else if (user.role != 'seller' && user.role != 'both' && user.role != 'admin') ...[
-          const Text('Your account is a buyer account. Create a seller (or buyer & seller) account to access seller tools.'),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () => context.push('/account/profile'),
-            child: const Text('Manage account'),
-          ),
         ] else ...[
-          _tile(context, Icons.dashboard, 'Seller hub', '/seller'),
-          _tile(context, Icons.inventory_2_outlined, 'My products', '/seller/products'),
-          _tile(context, Icons.add_box_outlined, 'New product', '/seller/products/new'),
-          _tile(context, Icons.videocam, 'Go live', '/seller/go-live'),
-          _tile(context, Icons.local_shipping_outlined, 'Orders & shipments', '/seller/orders'),
-          _tile(context, Icons.store, 'Store settings', '/seller/store'),
-          _tile(context, Icons.insights, 'Analytics', '/seller/analytics'),
+          _sectionTitle(context, 'Products'),
+          const Text(
+            'Create and manage real listings with photos, price, and quantity.',
+          ),
+          const SizedBox(height: 8),
+          if (isSeller) ...[
+            _tile(
+              context,
+              Icons.add_box_outlined,
+              'Add product',
+              '/seller/products/new',
+            ),
+            _tile(
+              context,
+              Icons.inventory_2_outlined,
+              'My products',
+              '/seller/products',
+            ),
+            _tile(context, Icons.dashboard, 'Seller hub', '/seller'),
+            _tile(context, Icons.videocam, 'Go live', '/seller/go-live'),
+            _tile(
+              context,
+              Icons.local_shipping_outlined,
+              'Orders & shipments',
+              '/seller/orders',
+            ),
+            _tile(context, Icons.store, 'Store settings', '/seller/store'),
+            _tile(context, Icons.insights, 'Analytics', '/seller/analytics'),
+          ] else ...[
+            const Text(
+              'Your account is a buyer account. Create a seller (or buyer & seller) account to list products.',
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => context.push('/account/profile'),
+              child: const Text('Manage account'),
+            ),
+          ],
+          const SizedBox(height: 24),
+          _sectionTitle(context, 'Videos'),
+          const Text(
+            'Add a video on its own — not a product listing. Link products so watchers open the product page.',
+          ),
+          const SizedBox(height: 8),
+          _tile(
+            context,
+            Icons.movie_creation_outlined,
+            'Add video',
+            '/videos/upload',
+          ),
+          _tile(
+            context,
+            Icons.play_circle_outline,
+            'Watch videos',
+            '/videos',
+          ),
         ],
         const SizedBox(height: 24),
         if (user != null && (user.isHuber || user.role == 'admin'))
@@ -65,9 +102,17 @@ class SellPage extends ConsumerWidget {
         else
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.two_wheeler_outlined, color: HubsomColors.huberNavy),
-            title: const Text('Drive with Huber', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Same Hubsom sign-up — receive seller delivery offers'),
+            leading: const Icon(
+              Icons.two_wheeler_outlined,
+              color: HubsomColors.huberNavy,
+            ),
+            title: const Text(
+              'Drive with Huber',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Same Hubsom sign-up — receive seller delivery offers',
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               if (user == null) {
@@ -85,9 +130,24 @@ class SellPage extends ConsumerWidget {
             color: HubsomColors.mint,
             borderRadius: BorderRadius.circular(14),
           ),
-          child: const Text('Hubsom sellers can sell via buy-now, live shopping, auctions, flash sales, and store listings.'),
+          child: const Text(
+            'Tip: Add product builds a listing. Add video posts a clip that can open those listings.',
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: HubsomColors.forest,
+            ),
+      ),
     );
   }
 

@@ -91,6 +91,10 @@ class HomePage extends ConsumerWidget {
                         child: const Text('Shop videos'),
                       ),
                       OutlinedButton(
+                        onPressed: () => context.push('/videos/upload'),
+                        child: const Text('Add video'),
+                      ),
+                      OutlinedButton(
                         onPressed: () => context.push('/auctions'),
                         child: const Text('Auctions'),
                       ),

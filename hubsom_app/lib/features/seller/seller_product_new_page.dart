@@ -391,7 +391,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               ),
             const SizedBox(height: 20),
             Text(
-              'Product demo video',
+              'Optional product clip',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: HubsomColors.forest,
@@ -399,8 +399,19 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Optional. Prefer not to go live? Add a short clip (up to $_maxVideoSeconds seconds) to show the product.',
+              'Optional only. This is still Add product (a listing). To post a standalone shop video, use Add video instead.',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => context.push('/videos/upload'),
+                icon: const Icon(Icons.movie_creation_outlined),
+                label: const Text('Open Add video instead'),
+              ),
             ),
             const SizedBox(height: 10),
             if (_demoVideo != null)
@@ -459,7 +470,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 label: Text(
                   _pickingVideo
                       ? 'Checking video…'
-                      : 'Add demo video (max ${_maxVideoSeconds}s)',
+                      : 'Add optional clip (max ${_maxVideoSeconds}s)',
                 ),
               ),
             const SizedBox(height: 16),
@@ -582,7 +593,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Tip: add a demo video if you are not going live, or go live later from Sell.',
+                'Tip: this screen adds a product listing. Use Add video (Sell tab) for a standalone clip that links to products.',
                   style: TextStyle(color: Colors.black54),
                 ),
               ),

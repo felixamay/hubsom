@@ -73,7 +73,7 @@ class _VideoFeedPageState extends ConsumerState<VideoFeedPage> {
         actions: [
           TextButton(
             onPressed: () => context.push('/videos/upload'),
-            child: const Text('Upload', style: TextStyle(color: Colors.white)),
+            child: const Text('Add video', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -106,7 +106,7 @@ class _VideoFeedPageState extends ConsumerState<VideoFeedPage> {
                         const SizedBox(height: 16),
                         FilledButton(
                           onPressed: () => context.push('/videos/upload'),
-                          child: const Text('Upload video'),
+                          child: const Text('Add video'),
                         ),
                       ],
                     ),

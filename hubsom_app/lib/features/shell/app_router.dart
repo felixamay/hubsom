@@ -189,10 +189,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/videos', builder: (_, __) => const VideoFeedPage()),
       GoRoute(
         path: '/videos/upload',
-        builder: (_, __) => const AuthGate(
-          message: 'Sign in to upload a shop video',
-          child: UploadVideoPage(),
-        ),
+        builder: (_, state) {
+          final raw = state.uri.queryParameters['productIds'] ?? '';
+          final ids = raw
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+          return AuthGate(
+            message: 'Sign in to add a video',
+            child: UploadVideoPage(preselectedProductIds: ids),
+          );
+        },
       ),
       GoRoute(
         path: '/videos/:id',

@@ -784,6 +784,33 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                         ),
                       ),
                     ),
+                  if (_isHost)
+                    TextButton(
+                      onPressed: () {
+                        final ids = bag.map((p) => p.id).join(',');
+                        final q = ids.isEmpty
+                            ? ''
+                            : '?productIds=${Uri.encodeComponent(ids)}';
+                        context.push('/videos/upload$q');
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white24,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Add video',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                   IconButton(
                     onPressed: _react,
                     icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
@@ -890,7 +917,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                           ),
                           subtitle: _isHost
                               ? const Text(
-                                  'Add a real catalog product or create one now',
+                                  'Products only — use Add video on the live bar for clips',
                                 )
                               : null,
                           trailing: IconButton(

@@ -11,9 +11,10 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
 
-/// Upload a short video independently, then attach product links.
+/// Add a short video independently (not a product listing), then link products.
 class UploadVideoPage extends ConsumerStatefulWidget {
-  const UploadVideoPage({super.key});
+  const UploadVideoPage({super.key, this.preselectedProductIds = const []});
+  final List<String> preselectedProductIds;
 
   @override
   ConsumerState<UploadVideoPage> createState() => _UploadVideoPageState();
@@ -32,6 +33,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   @override
   void initState() {
     super.initState();
+    _selected.addAll(widget.preselectedProductIds);
     _loadCatalog();
   }
 
@@ -111,21 +113,31 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Upload video')),
+      appBar: AppBar(title: const Text('Add video')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
               children: [
-                Text(
-                  'Share a short clip and tag products. Watchers open the normal product page from the video.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: HubsomColors.mint,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'This is not Add product. You are posting a video clip. Link existing products so watchers open the product page.',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _pickVideo,
                   icon: const Icon(Icons.video_library_outlined),
-                  label: Text(_bytes == null ? 'Pick video (≤15s)' : 'Change video'),
+                  label: Text(
+                    _bytes == null ? 'Pick video (≤15s)' : 'Change video',
+                  ),
                 ),
                 if (_bytes != null) ...[
                   const SizedBox(height: 8),
@@ -148,14 +160,14 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Link products',
+                  'Link products (optional openings)',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Select products this video should open.',
+                  'Pick products this video should open. Create products separately with Add product.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -213,7 +225,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _busy ? null : _publish,
-                  child: Text(_busy ? 'Publishing…' : 'Publish video'),
+                  child: Text(_busy ? 'Publishing video…' : 'Publish video'),
                 ),
               ],
             ),
