@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-/// Official Hubsom mark. Tapping navigates home unless [linkToHome] is false.
+/// Official Hubsom mark. Tapping always navigates home unless [linkToHome] is false.
 class HubsomLogo extends StatelessWidget {
   const HubsomLogo({
     super.key,
@@ -13,6 +13,12 @@ class HubsomLogo extends StatelessWidget {
   final double height;
   final bool showWordmark;
   final bool linkToHome;
+
+  void _goHome(BuildContext context) {
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return;
+    router.go('/');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,16 +53,22 @@ class HubsomLogo extends StatelessWidget {
 
     if (!linkToHome) return mark;
 
-    return Tooltip(
-      message: 'Home',
-      child: InkWell(
-        onTap: () {
-          final router = GoRouter.maybeOf(context);
-          if (router == null) return;
-          router.go('/');
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: mark,
+    return Semantics(
+      button: true,
+      label: 'Hubsom home',
+      child: Tooltip(
+        message: 'Home',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _goHome(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: mark,
+            ),
+          ),
+        ),
       ),
     );
   }
