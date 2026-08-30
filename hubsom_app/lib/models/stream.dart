@@ -83,6 +83,11 @@ class LiveAuction extends Equatable {
     return left == null || left > Duration.zero;
   }
 
+  bool get isSold => status == 'sold' || orderId != null;
+
+  /// Closed without a sale — product stays on Auctions (not history).
+  bool get remainsOnAuctions => !isSold;
+
   bool get needsFinalize =>
       orderId == null &&
       status == 'open' &&

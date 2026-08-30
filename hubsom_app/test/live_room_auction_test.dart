@@ -255,4 +255,28 @@ void main() {
     expect(ended.isOpen, isFalse);
     expect(ended.needsFinalize, isFalse); // no highest bidder
   });
+
+
+  test('closed unsold auctions stay on Auctions; sold do not (no history dump)', () async {
+    final stream = await goLive();
+    final open = stream.auction!;
+    expect(open.remainsOnAuctions, isTrue);
+
+    final closed = open.copyWith(status: 'closed');
+    expect(closed.isSold, isFalse);
+    expect(closed.remainsOnAuctions, isTrue);
+
+    final reserve = open.copyWith(status: 'reserve_not_met');
+    expect(reserve.remainsOnAuctions, isTrue);
+
+    final sold = open.copyWith(status: 'sold', orderId: 'ord_1');
+    expect(sold.isSold, isTrue);
+    expect(sold.remainsOnAuctions, isFalse);
+
+    await LocalCommerceStore.updateStream(stream.id, end: true);
+    final endedShow = LocalCommerceStore.getStream(stream.id)!;
+    expect(endedShow.auction?.status, 'closed');
+    expect(endedShow.auction?.remainsOnAuctions, isTrue);
+    expect(LocalCommerceStore.getProduct(open.productId), isNotNull);
+  });
 }
