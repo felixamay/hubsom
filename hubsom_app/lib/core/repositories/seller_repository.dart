@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../models/product.dart';
 import '../../models/seller.dart';
@@ -8,6 +9,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
+import '../services/product_demo_video_store.dart';
 import 'auth_repository.dart';
 
 class SellerRepository {
@@ -76,7 +78,11 @@ class SellerRepository {
     return LocalCommerceStore.upsertSeller(updated);
   }
 
-  Future<Map<String, dynamic>> createProduct(Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> createProduct(
+    Map<String, dynamic> body, {
+    Uint8List? demoVideoBytes,
+    String? demoVideoMimeType,
+  }) async {
     final images = (body['images'] as List?)?.cast<String>() ?? const <String>[];
     if (images.length < 3) {
       throw AuthException('Upload at least 3 product photos before publishing');
@@ -84,6 +90,8 @@ class SellerRepository {
 
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+
+    final hasDemoVideo = demoVideoBytes != null && demoVideoBytes.isNotEmpty;
 
     // Always write the local catalog first so Go live can see the product even
     // when Firebase Hosting has no /api/products backend.
@@ -99,6 +107,7 @@ class SellerRepository {
         images: images,
         supports: (body['supports'] as List?)?.cast<String>() ??
             const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
+        hasDemoVideo: hasDemoVideo,
       );
     } catch (e) {
       final message = '$e';
@@ -108,6 +117,14 @@ class SellerRepository {
         );
       }
       rethrow;
+    }
+
+    if (hasDemoVideo) {
+      await ProductDemoVideoStore.save(
+        productId: product.id,
+        bytes: demoVideoBytes,
+        mimeType: demoVideoMimeType ?? 'video/mp4',
+      );
     }
 
     if (user.sellerId == null ||

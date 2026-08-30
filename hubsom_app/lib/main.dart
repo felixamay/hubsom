@@ -10,6 +10,7 @@ import 'core/services/firebase_bootstrap.dart';
 import 'core/services/cloud_store.dart';
 import 'core/services/local_commerce_store.dart';
 import 'core/services/local_store.dart';
+import 'core/services/product_demo_video_store.dart';
 import 'core/theme/hubsom_theme.dart';
 import 'features/shell/app_router.dart';
 
@@ -21,6 +22,7 @@ Future<void> main() async {
   AppConfig.load();
   await Hive.initFlutter();
   await LocalStore.init();
+  await ProductDemoVideoStore.init();
   await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();
   await CloudStore.hydrateLocalCache();

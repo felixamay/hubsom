@@ -72,6 +72,33 @@ class ProductCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (product.showsDemoVideo)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.play_circle_fill, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Demo',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (onSave != null)
                     Positioned(
                       right: 4,

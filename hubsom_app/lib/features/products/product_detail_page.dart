@@ -10,6 +10,7 @@ import '../../models/cart.dart';
 import '../../models/product.dart';
 import '../../models/review.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/product_demo_video_player.dart';
 
 class ProductDetailPage extends ConsumerWidget {
   const ProductDetailPage({super.key, required this.productId});
@@ -83,6 +84,20 @@ class ProductDetailPage extends ConsumerWidget {
                       ),
                     ),
                   ),
+                ),
+              ],
+              if (product.showsDemoVideo) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Product demo',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                ProductDemoVideoPlayer(
+                  productId: product.id,
+                  remoteUrl: product.demoVideoUrl,
                 ),
               ],
               const SizedBox(height: 16),

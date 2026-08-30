@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_demo_video_picker.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -28,14 +29,16 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
   final _images = <String>[];
+  ProductDemoVideo? _demoVideo;
   String _category = hubsomCategories.first.slug;
   bool _busy = false;
   bool _picking = false;
+  bool _pickingVideo = false;
   String? _error;
 
   static const _minImages = 3;
   static const _maxImages = 8;
-  /// After compression; raw camera files are resized first.
+  static const _maxVideoSeconds = 15;
   static const _maxStoredBytes = 700_000;
 
   @override
@@ -56,7 +59,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     }
     final q = GoRouterState.of(context).uri.queryParameters['returnTo'];
     if (q != null && q.startsWith('/') && !q.startsWith('//')) return q;
-    return '/seller/go-live';
+    return '/seller';
   }
 
   Future<void> _pickImages() async {
@@ -108,6 +111,26 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     }
   }
 
+  Future<void> _pickVideo() async {
+    if (_pickingVideo) return;
+    setState(() {
+      _error = null;
+      _pickingVideo = true;
+    });
+    try {
+      final video = await pickProductDemoVideo(maxSeconds: _maxVideoSeconds);
+      if (!mounted) return;
+      setState(() => _demoVideo = video);
+    } catch (e) {
+      final message = '$e'
+          .replaceFirst('Bad state: ', '')
+          .replaceFirst('Exception: ', '');
+      setState(() => _error = message);
+    } finally {
+      if (mounted) setState(() => _pickingVideo = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_images.length < _minImages) {
@@ -122,24 +145,33 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _error = null;
     });
     try {
-      await ref.read(sellerRepositoryProvider).createProduct({
-        'name': _name.text.trim(),
-        'description': _description.text.trim(),
-        'category': _category,
-        'priceGhs': double.tryParse(_price.text) ?? 0,
-        'stock': int.tryParse(_stock.text) ?? 0,
-        'images': List<String>.from(_images),
-        'supports': [
-          'buy-now',
-          'store-listing',
-          'live-selling',
-          'live-auction',
-        ],
-      });
+      final created = await ref.read(sellerRepositoryProvider).createProduct(
+            {
+              'name': _name.text.trim(),
+              'description': _description.text.trim(),
+              'category': _category,
+              'priceGhs': double.tryParse(_price.text) ?? 0,
+              'stock': int.tryParse(_stock.text) ?? 0,
+              'images': List<String>.from(_images),
+              'supports': [
+                'buy-now',
+                'store-listing',
+                'live-selling',
+                'live-auction',
+              ],
+            },
+            demoVideoBytes: _demoVideo?.bytes,
+            demoVideoMimeType: _demoVideo?.mimeType,
+          );
       ref.invalidate(productsProvider((category: null, q: null)));
       await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
-      context.go(_returnTo);
+      final id = '${created['id'] ?? ''}';
+      if (_returnTo == '/seller' && id.isNotEmpty) {
+        context.go('/products/$id');
+      } else {
+        context.go(_returnTo);
+      }
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -232,6 +264,52 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   ),
                 ),
               ),
+            const SizedBox(height: 20),
+            Text(
+              'Product demo video',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: HubsomColors.forest,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Optional. Prefer not to go live? Add a short clip (up to $_maxVideoSeconds seconds) to show the product.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            if (_demoVideo != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.videocam, color: HubsomColors.forest),
+                title: Text(_demoVideo!.name),
+                subtitle: Text(
+                  '${_demoVideo!.durationSeconds.toStringAsFixed(1)}s · ${(_demoVideo!.bytes.lengthInBytes / 1024).round()} KB',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Remove video',
+                  onPressed: _busy || _pickingVideo
+                      ? null
+                      : () => setState(() => _demoVideo = null),
+                  icon: const Icon(Icons.close),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _busy || _pickingVideo ? null : _pickVideo,
+                icon: _pickingVideo
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.video_call_outlined),
+                label: Text(
+                  _pickingVideo
+                      ? 'Checking video…'
+                      : 'Add demo video (max ${_maxVideoSeconds}s)',
+                ),
+              ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _name,
@@ -272,11 +350,8 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               controller: _price,
               decoration: const InputDecoration(labelText: 'Price (GHS)'),
               keyboardType: TextInputType.number,
-              validator: (v) {
-                final n = double.tryParse(v ?? '');
-                if (n == null || n <= 0) return 'Enter a valid price';
-                return null;
-              },
+              validator: (v) =>
+                  ((double.tryParse(v ?? '') ?? 0) <= 0) ? 'Enter a valid price' : null,
             ),
             const SizedBox(height: 8),
             TextFormField(
@@ -298,14 +373,14 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _busy || _picking ? null : _submit,
+              onPressed: _busy || _picking || _pickingVideo ? null : _submit,
               child: Text(_busy ? 'Publishing…' : 'Publish product'),
             ),
             if (kIsWeb)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Tip: after publishing you return to Go live to start your show.',
+                  'Tip: add a demo video if you are not going live, or go live later from Sell.',
                   style: TextStyle(color: Colors.black54),
                 ),
               ),

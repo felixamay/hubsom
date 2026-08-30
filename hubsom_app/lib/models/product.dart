@@ -32,6 +32,8 @@ class Product extends Equatable {
     this.tags = const [],
     this.flashSale,
     this.supports = const [],
+    this.hasDemoVideo = false,
+    this.demoVideoUrl,
   });
 
   final String id;
@@ -50,11 +52,18 @@ class Product extends Equatable {
   final List<String> tags;
   final FlashSale? flashSale;
   final List<String> supports;
+  /// Short product demo (≤15s) for sellers who are not going live.
+  final bool hasDemoVideo;
+  /// Remote/demo URL when not stored locally in Hive.
+  final String? demoVideoUrl;
 
   double get effectivePrice {
     if (flashSale == null) return priceGhs;
     return priceGhs * (1 - flashSale!.discountPct / 100);
   }
+
+  bool get showsDemoVideo =>
+      hasDemoVideo || (demoVideoUrl != null && demoVideoUrl!.trim().isNotEmpty);
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
@@ -75,6 +84,8 @@ class Product extends Equatable {
             ? FlashSale.fromJson(Map<String, dynamic>.from(json['flashSale'] as Map))
             : null,
         supports: (json['supports'] as List?)?.cast<String>() ?? const [],
+        hasDemoVideo: json['hasDemoVideo'] as bool? ?? false,
+        demoVideoUrl: json['demoVideoUrl'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -98,8 +109,11 @@ class Product extends Equatable {
             'discountPct': flashSale!.discountPct,
           },
         'supports': supports,
+        'hasDemoVideo': hasDemoVideo,
+        if (demoVideoUrl != null) 'demoVideoUrl': demoVideoUrl,
       };
 
   @override
-  List<Object?> get props => [id, slug, name, priceGhs, sellerId, stock];
+  List<Object?> get props =>
+      [id, slug, name, priceGhs, sellerId, stock, hasDemoVideo, demoVideoUrl];
 }

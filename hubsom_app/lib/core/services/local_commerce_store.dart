@@ -145,6 +145,8 @@ class LocalCommerceStore {
       'live-selling',
       'live-auction',
     ],
+    bool hasDemoVideo = false,
+    String? demoVideoUrl,
   }) async {
     if (images.length < 3) {
       throw StateError('Upload at least 3 product photos before publishing');
@@ -166,6 +168,8 @@ class LocalCommerceStore {
       sellerId: seller.id,
       stock: stock,
       supports: supports,
+      hasDemoVideo: hasDemoVideo,
+      demoVideoUrl: demoVideoUrl,
     );
     final products = listProducts();
     products.insert(0, product);
