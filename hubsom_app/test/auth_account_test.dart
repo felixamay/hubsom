@@ -24,7 +24,7 @@ void main() {
     await LocalStore.init();
   });
 
-  test('sign-in without a database account asks to create one once', () async {
+  test('sign-in without an account asks to create one', () async {
     final repo = AuthRepository(ApiClient());
     expect(
       () => repo.signIn(email: 'nobody@hubsom.test', password: 'password1'),
@@ -32,7 +32,7 @@ void main() {
         isA<AuthException>().having(
           (e) => e.message,
           'message',
-          contains('No Hubsom account for'),
+          contains('No account found'),
         ),
       ),
     );

@@ -132,7 +132,7 @@ class AuthRepository {
       final vault = LocalStore.loadCredentialVault();
       if (!vault.containsKey(normalized)) {
         throw AuthException(
-          'Could not reach the Hubsom account database. Check your connection and try again.',
+          'Could not sign in right now. Check your connection and try again.',
         );
       }
     }
@@ -143,7 +143,7 @@ class AuthRepository {
     }
 
     throw AuthException(
-      'No Hubsom account for $normalized. Use the exact email from sign-up, or create the account once on this site.',
+      'No account found for that email. Check the email or create an account.',
     );
   }
 
@@ -308,13 +308,13 @@ class AuthRepository {
     }
     final userJson = remote['userJson'];
     if (userJson is! Map) {
-      throw AuthException('This Hubsom account is incomplete. Create the account again.');
+      throw AuthException('Could not sign in. Please create your account again.');
     }
     final HubsomUser user;
     try {
       user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
     } catch (_) {
-      throw AuthException('This Hubsom account is incomplete. Create the account again.');
+      throw AuthException('Could not sign in. Please create your account again.');
     }
     final vault = LocalStore.loadCredentialVault();
     vault[email] = {
@@ -386,7 +386,7 @@ class AuthRepository {
       await CloudStore.putAccount(email, record);
     } catch (e) {
       throw AuthException(
-        'Could not save your account to the Hubsom database. Check your connection and try again.',
+        'Could not create your account. Check your connection and try again.',
       );
     }
 
