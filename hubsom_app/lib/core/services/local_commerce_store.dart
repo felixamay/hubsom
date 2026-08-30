@@ -184,6 +184,43 @@ class LocalCommerceStore {
     return product;
   }
 
+  static Future<Product> updateProduct(Product product) async {
+    if (product.images.length < 3) {
+      throw StateError('Keep at least 3 product photos');
+    }
+    final products = listProducts();
+    final idx = products.indexWhere((p) => p.id == product.id);
+    if (idx < 0) {
+      throw StateError('Product not found');
+    }
+    products[idx] = product;
+    await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
+    return product;
+  }
+
+  static Future<void> deleteProduct(String productId) async {
+    final products = listProducts();
+    products.removeWhere((p) => p.id == productId);
+    await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
+
+    final streams = listStreams();
+    var streamsChanged = false;
+    for (var i = 0; i < streams.length; i++) {
+      final s = streams[i];
+      final hadProduct = s.productIds.contains(productId);
+      final wasPinned = s.pinnedProductId == productId;
+      if (!hadProduct && !wasPinned) continue;
+      streams[i] = s.copyWith(
+        productIds: s.productIds.where((id) => id != productId).toList(),
+        clearPinned: wasPinned,
+      );
+      streamsChanged = true;
+    }
+    if (streamsChanged) {
+      await _saveStreams(streams);
+    }
+  }
+
   // --- streams ---
 
   static List<LiveStream> listStreams({String? status}) {

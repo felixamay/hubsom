@@ -11,11 +11,14 @@ import '../../core/services/product_demo_video_picker.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
+import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
 
 class SellerProductNewPage extends ConsumerStatefulWidget {
-  const SellerProductNewPage({super.key, this.returnTo});
+  const SellerProductNewPage({super.key, this.returnTo, this.productId});
   final String? returnTo;
+  /// When set, the form edits an existing listing.
+  final String? productId;
 
   @override
   ConsumerState<SellerProductNewPage> createState() =>
@@ -34,12 +37,27 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   bool _busy = false;
   bool _picking = false;
   bool _pickingVideo = false;
+  bool _loadingEdit = false;
+  bool _existingHasVideo = false;
+  bool _clearedVideo = false;
   String? _error;
+
+  bool get _isEdit =>
+      widget.productId != null && widget.productId!.trim().isNotEmpty;
 
   static const _minImages = 3;
   static const _maxImages = 8;
   static const _maxVideoSeconds = 15;
   static const _maxStoredBytes = 700_000;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isEdit) {
+      _loadingEdit = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadExisting());
+    }
+  }
 
   @override
   void dispose() {
@@ -48,6 +66,51 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     _price.dispose();
     _stock.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadExisting() async {
+    final id = widget.productId!.trim();
+    try {
+      final mine = await ref.read(sellerRepositoryProvider).myProducts();
+      Product? product;
+      for (final p in mine) {
+        if (p.id == id) {
+          product = p;
+          break;
+        }
+      }
+      product ??= await ref.read(catalogRepositoryProvider).getProduct(id);
+      if (!mounted) return;
+      if (product == null) {
+        setState(() {
+          _loadingEdit = false;
+          _error = 'Product not found';
+        });
+        return;
+      }
+      _name.text = product.name;
+      _description.text = product.description;
+      _price.text = product.priceGhs.toStringAsFixed(
+        product.priceGhs == product.priceGhs.roundToDouble() ? 0 : 2,
+      );
+      _stock.text = '${product.stock}';
+      setState(() {
+        _images
+          ..clear()
+          ..addAll(product!.images);
+        _category = product.category;
+        _existingHasVideo = product.hasDemoVideo || product.showsDemoVideo;
+        _clearedVideo = false;
+        _demoVideo = null;
+        _loadingEdit = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingEdit = false;
+        _error = '$e';
+      });
+    }
   }
 
   String get _returnTo {
@@ -145,29 +208,46 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _error = null;
     });
     try {
-      final created = await ref.read(sellerRepositoryProvider).createProduct(
-            {
-              'name': _name.text.trim(),
-              'description': _description.text.trim(),
-              'category': _category,
-              'priceGhs': double.tryParse(_price.text) ?? 0,
-              'stock': int.tryParse(_stock.text) ?? 0,
-              'images': List<String>.from(_images),
-              'supports': [
-                'buy-now',
-                'store-listing',
-                'live-selling',
-                'live-auction',
-              ],
-            },
-            demoVideoBytes: _demoVideo?.bytes,
-            demoVideoMimeType: _demoVideo?.mimeType,
-          );
+      final body = {
+        'name': _name.text.trim(),
+        'description': _description.text.trim(),
+        'category': _category,
+        'priceGhs': double.tryParse(_price.text) ?? 0,
+        'stock': int.tryParse(_stock.text) ?? 0,
+        'images': List<String>.from(_images),
+        'supports': [
+          'buy-now',
+          'store-listing',
+          'live-selling',
+          'live-auction',
+        ],
+      };
+      final Map<String, dynamic> saved;
+      if (_isEdit) {
+        saved = await ref.read(sellerRepositoryProvider).updateProduct(
+              widget.productId!.trim(),
+              body,
+              demoVideoBytes: _demoVideo?.bytes,
+              demoVideoMimeType: _demoVideo?.mimeType,
+              clearDemoVideo: _clearedVideo && _demoVideo == null,
+            );
+      } else {
+        saved = await ref.read(sellerRepositoryProvider).createProduct(
+              body,
+              demoVideoBytes: _demoVideo?.bytes,
+              demoVideoMimeType: _demoVideo?.mimeType,
+            );
+      }
       ref.invalidate(productsProvider((category: null, q: null)));
       await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
-      final id = '${created['id'] ?? ''}';
-      if (_returnTo == '/seller' && id.isNotEmpty) {
+      final id = '${saved['id'] ?? widget.productId ?? ''}';
+      if (_isEdit) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product updated')),
+        );
+        context.go(id.isNotEmpty ? '/products/$id' : _returnTo);
+      } else if (_returnTo == '/seller' && id.isNotEmpty) {
         context.go('/products/$id');
       } else {
         context.go(_returnTo);
@@ -181,8 +261,14 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingEdit) {
+      return Scaffold(
+        appBar: AppBar(title: Text(_isEdit ? 'Edit product' : 'New product')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('New product')),
+      appBar: AppBar(title: Text(_isEdit ? 'Edit product' : 'New product')),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -290,13 +376,40 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   tooltip: 'Remove video',
                   onPressed: _busy || _pickingVideo
                       ? null
-                      : () => setState(() => _demoVideo = null),
+                      : () => setState(() {
+                            _demoVideo = null;
+                            _clearedVideo = true;
+                          }),
+                  icon: const Icon(Icons.close),
+                ),
+              )
+            else if (_existingHasVideo && !_clearedVideo)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.videocam, color: HubsomColors.forest),
+                title: const Text('Current demo video'),
+                subtitle: const Text('Kept on this listing'),
+                trailing: IconButton(
+                  tooltip: 'Remove video',
+                  onPressed: _busy || _pickingVideo
+                      ? null
+                      : () => setState(() {
+                            _clearedVideo = true;
+                            _demoVideo = null;
+                          }),
                   icon: const Icon(Icons.close),
                 ),
               )
             else
               OutlinedButton.icon(
-                onPressed: _busy || _pickingVideo ? null : _pickVideo,
+                onPressed: _busy || _pickingVideo
+                    ? null
+                    : () async {
+                        await _pickVideo();
+                        if (_demoVideo != null) {
+                          setState(() => _clearedVideo = false);
+                        }
+                      },
                 icon: _pickingVideo
                     ? const SizedBox(
                         width: 18,
@@ -374,7 +487,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _busy || _picking || _pickingVideo ? null : _submit,
-              child: Text(_busy ? 'Publishing…' : 'Publish product'),
+              child: Text(
+                _busy
+                    ? (_isEdit ? 'Saving…' : 'Publishing…')
+                    : (_isEdit ? 'Save changes' : 'Publish product'),
+              ),
             ),
             if (kIsWeb)
               const Padding(

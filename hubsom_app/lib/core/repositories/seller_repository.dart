@@ -182,6 +182,103 @@ class SellerRepository {
     return product.toJson();
   }
 
+  Future<Map<String, dynamic>> updateProduct(
+    String productId,
+    Map<String, dynamic> body, {
+    Uint8List? demoVideoBytes,
+    String? demoVideoMimeType,
+    bool clearDemoVideo = false,
+  }) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final seller = await LocalCommerceStore.ensureSellerForUser(user);
+    final existing = LocalCommerceStore.getProduct(productId);
+    if (existing == null || existing.sellerId != seller.id) {
+      throw AuthException('You can only edit your own products');
+    }
+
+    final images =
+        (body['images'] as List?)?.cast<String>() ?? existing.images;
+    if (images.length < 3) {
+      throw AuthException('Keep at least 3 product photos');
+    }
+
+    final hasNewVideo = demoVideoBytes != null && demoVideoBytes.isNotEmpty;
+    final keepExistingVideo =
+        !clearDemoVideo && !hasNewVideo && existing.hasDemoVideo;
+    final hasDemoVideo = hasNewVideo || keepExistingVideo;
+
+    final name = body['name'] as String? ?? existing.name;
+    final slug = name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+
+    final updated = existing.copyWith(
+      name: name,
+      description: body['description'] as String? ?? existing.description,
+      category: body['category'] as String? ?? existing.category,
+      priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs,
+      stock: (body['stock'] as num?)?.toInt() ?? existing.stock,
+      images: images,
+      supports: (body['supports'] as List?)?.cast<String>() ?? existing.supports,
+      hasDemoVideo: hasDemoVideo,
+      clearDemoVideoUrl: clearDemoVideo && !hasNewVideo,
+      slug: slug.isEmpty ? existing.slug : slug,
+    );
+
+    try {
+      await LocalCommerceStore.updateProduct(updated);
+    } catch (e) {
+      final message = '$e';
+      if (message.toLowerCase().contains('quota')) {
+        throw AuthException(
+          'This browser is out of storage space for product photos. Use fewer/smaller photos, then try again.',
+        );
+      }
+      rethrow;
+    }
+
+    if (hasNewVideo) {
+      await ProductDemoVideoStore.save(
+        productId: updated.id,
+        bytes: demoVideoBytes,
+        mimeType: demoVideoMimeType ?? 'video/mp4',
+      );
+    } else if (clearDemoVideo) {
+      await ProductDemoVideoStore.remove(updated.id);
+    }
+
+    try {
+      await CloudStore.upsertDocs(CloudStore.products, [updated.toJson()]);
+    } catch (_) {}
+
+    try {
+      await _api.put('/api/products/$productId', data: updated.toJson());
+    } catch (_) {}
+
+    return updated.toJson();
+  }
+
+  Future<void> deleteProduct(String productId) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final seller = await LocalCommerceStore.ensureSellerForUser(user);
+    final existing = LocalCommerceStore.getProduct(productId);
+    if (existing == null || existing.sellerId != seller.id) {
+      throw AuthException('You can only delete your own products');
+    }
+
+    await LocalCommerceStore.deleteProduct(productId);
+    await ProductDemoVideoStore.remove(productId);
+    try {
+      await CloudStore.deleteDoc(CloudStore.products, productId);
+    } catch (_) {}
+    try {
+      await _api.delete('/api/products/$productId');
+    } catch (_) {}
+  }
+
   Future<List<Product>> myProducts() async {
     final user = _user;
     if (user == null) return const [];

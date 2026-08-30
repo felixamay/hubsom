@@ -36,6 +36,7 @@ class SellPage extends ConsumerWidget {
           ),
         ] else ...[
           _tile(context, Icons.dashboard, 'Seller hub', '/seller'),
+          _tile(context, Icons.inventory_2_outlined, 'My products', '/seller/products'),
           _tile(context, Icons.add_box_outlined, 'New product', '/seller/products/new'),
           _tile(context, Icons.videocam, 'Go live', '/seller/go-live'),
           _tile(context, Icons.local_shipping_outlined, 'Orders & shipments', '/seller/orders'),

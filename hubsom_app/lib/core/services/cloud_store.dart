@@ -236,6 +236,27 @@ class CloudStore {
     }
   }
 
+  static Future<void> deleteDoc(String collection, String id) async {
+    if (!useNetwork || id.isEmpty) return;
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        await sdk.collection(collection).doc(id).delete();
+        return;
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.deleteDoc sdk: $e');
+      }
+    }
+    try {
+      await _rest.delete<dynamic>(
+        '$_root/$collection/${Uri.encodeComponent(id)}',
+        queryParameters: {'key': _apiKey},
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudStore.deleteDoc rest: $e');
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> listDocs(String collection) async {
     if (!useNetwork) return const [];
     final sdk = _db;

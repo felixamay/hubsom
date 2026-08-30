@@ -41,6 +41,7 @@ import '../seller/seller_go_live_page.dart';
 import '../seller/seller_hub_page.dart';
 import '../seller/seller_orders_page.dart';
 import '../seller/seller_product_new_page.dart';
+import '../seller/seller_products_page.dart';
 import '../seller/seller_store_page.dart';
 import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
@@ -258,10 +259,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             const AuthGate(requireSeller: true, child: SellerGoLivePage()),
       ),
       GoRoute(
+        path: '/seller/products',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerProductsPage()),
+      ),
+      GoRoute(
         path: '/seller/products/new',
         builder: (_, state) => AuthGate(
           requireSeller: true,
           child: SellerProductNewPage(
+            returnTo: state.uri.queryParameters['returnTo'],
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/seller/products/:productId/edit',
+        builder: (_, state) => AuthGate(
+          requireSeller: true,
+          child: SellerProductNewPage(
+            productId: state.pathParameters['productId'],
             returnTo: state.uri.queryParameters['returnTo'],
           ),
         ),

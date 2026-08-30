@@ -161,6 +161,54 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     );
   }
 
+  bool get _isOwner {
+    final user = ref.read(authStateProvider).valueOrNull;
+    final product = _product;
+    if (user == null || product == null) return false;
+    if (user.sellerId != null && user.sellerId == product.sellerId) return true;
+    return _seller?.ownerUserId == user.id;
+  }
+
+  Future<void> _confirmDeleteProduct() async {
+    final product = _product;
+    if (product == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete product?'),
+        content: Text(
+          '“${product.name}” will be removed from your store and catalog.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(sellerRepositoryProvider).deleteProduct(product.id);
+      ref.invalidate(productsProvider((category: null, q: null)));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted ${product.name}')),
+      );
+      context.go('/seller/products');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   Future<void> _submitComment() async {
     if (!ensureSignedIn(context, ref, message: 'Sign in to comment')) return;
     final text = _commentCtrl.text.trim();
@@ -526,6 +574,33 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                             ),
                           ),
                           const Spacer(),
+                          if (_isOwner)
+                            PopupMenuButton<String>(
+                              icon: const Icon(
+                                Icons.more_vert,
+                                color: Colors.white,
+                              ),
+                              onSelected: (value) async {
+                                if (value == 'edit') {
+                                  await context.push(
+                                    '/seller/products/${product.id}/edit',
+                                  );
+                                  if (mounted) _load();
+                                } else if (value == 'delete') {
+                                  await _confirmDeleteProduct();
+                                }
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: Text('Edit product'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Delete product'),
+                                ),
+                              ],
+                            ),
                           if (slides.length > 1)
                             Padding(
                               padding: const EdgeInsets.only(right: 16),

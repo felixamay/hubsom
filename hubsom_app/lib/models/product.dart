@@ -116,4 +116,42 @@ class Product extends Equatable {
   @override
   List<Object?> get props =>
       [id, slug, name, priceGhs, sellerId, stock, hasDemoVideo, demoVideoUrl];
+
+  Product copyWith({
+    String? name,
+    String? description,
+    String? category,
+    double? priceGhs,
+    double? compareAtGhs,
+    List<String>? images,
+    int? stock,
+    List<String>? tags,
+    List<String>? supports,
+    bool? hasDemoVideo,
+    String? demoVideoUrl,
+    bool clearDemoVideoUrl = false,
+    String? slug,
+  }) {
+    return Product(
+      id: id,
+      slug: slug ?? this.slug,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      priceGhs: priceGhs ?? this.priceGhs,
+      compareAtGhs: compareAtGhs ?? this.compareAtGhs,
+      currency: currency,
+      images: images ?? this.images,
+      sellerId: sellerId,
+      stock: stock ?? this.stock,
+      rating: rating,
+      reviewCount: reviewCount,
+      tags: tags ?? this.tags,
+      flashSale: flashSale,
+      supports: supports ?? this.supports,
+      hasDemoVideo: hasDemoVideo ?? this.hasDemoVideo,
+      demoVideoUrl:
+          clearDemoVideoUrl ? null : (demoVideoUrl ?? this.demoVideoUrl),
+    );
+  }
 }

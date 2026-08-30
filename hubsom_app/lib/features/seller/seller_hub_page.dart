@@ -10,6 +10,7 @@ class SellerHubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final links = [
       ('Store', '/seller/store', Icons.store),
+      ('My products', '/seller/products', Icons.inventory_2_outlined),
       ('New product', '/seller/products/new', Icons.add_box_outlined),
       ('Orders & shipments', '/seller/orders', Icons.local_shipping_outlined),
       ('Go live', '/seller/go-live', Icons.videocam),
