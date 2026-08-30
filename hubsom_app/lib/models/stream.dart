@@ -46,6 +46,7 @@ class LiveAuction extends Equatable {
     required this.status,
     this.recentBids = const [],
     this.orderId,
+    this.askingPriceGhs,
   });
 
   final String id;
@@ -62,8 +63,19 @@ class LiveAuction extends Equatable {
   final List<AuctionBid> recentBids;
   /// Set when the winning bid is converted into a seller order.
   final String? orderId;
+  /// Seller-only reserve / asking price (hidden from viewers).
+  final double? askingPriceGhs;
 
   double get nextMinBidGhs => currentBidGhs + minIncrementGhs;
+
+  bool get hasAskingPrice =>
+      askingPriceGhs != null && askingPriceGhs! > 0;
+
+  /// True when current high bid meets the seller's asking price (or none set).
+  bool get askMet {
+    if (!hasAskingPrice) return true;
+    return currentBidGhs + 0.001 >= askingPriceGhs!;
+  }
 
   bool get isOpen {
     if (status != 'open') return false;
@@ -75,7 +87,16 @@ class LiveAuction extends Equatable {
       orderId == null &&
       status == 'open' &&
       !isOpen &&
-      (highestBidderId != null || highestBidder != null);
+      (highestBidderId != null || highestBidder != null) &&
+      askMet;
+
+  /// Timer ended but ask not met — seller can extend.
+  bool get awaitingExtend =>
+      orderId == null &&
+      !isOpen &&
+      status != 'sold' &&
+      status != 'closed' &&
+      !askMet;
 
   Duration? get timeLeft {
     try {
@@ -104,6 +125,7 @@ class LiveAuction extends Equatable {
                 .toList() ??
             const [],
         orderId: json['orderId'] as String?,
+        askingPriceGhs: (json['askingPriceGhs'] as num?)?.toDouble(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -120,6 +142,7 @@ class LiveAuction extends Equatable {
         'status': status,
         'recentBids': recentBids.map((b) => b.toJson()).toList(),
         if (orderId != null) 'orderId': orderId,
+        if (askingPriceGhs != null) 'askingPriceGhs': askingPriceGhs,
       };
 
   LiveAuction copyWith({
@@ -132,6 +155,7 @@ class LiveAuction extends Equatable {
     String? endsAt,
     List<AuctionBid>? recentBids,
     String? orderId,
+    double? askingPriceGhs,
   }) =>
       LiveAuction(
         id: id,
@@ -147,11 +171,12 @@ class LiveAuction extends Equatable {
         status: status ?? this.status,
         recentBids: recentBids ?? this.recentBids,
         orderId: orderId ?? this.orderId,
+        askingPriceGhs: askingPriceGhs ?? this.askingPriceGhs,
       );
 
   @override
   List<Object?> get props =>
-      [id, productId, currentBidGhs, status, endsAt, bidderCount, orderId];
+      [id, productId, currentBidGhs, status, endsAt, bidderCount, orderId, askingPriceGhs];
 }
 
 class AuctionBid extends Equatable {

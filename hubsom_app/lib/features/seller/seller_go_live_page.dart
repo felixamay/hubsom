@@ -18,6 +18,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   final _title = TextEditingController();
   final _description = TextEditingController();
   final _startingBid = TextEditingController(text: '50');
+  final _askingPrice = TextEditingController();
   final _selected = <String>{};
   String? _auctionProductId;
   bool _auction = false;
@@ -50,6 +51,8 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
             ..clear()
             ..add(_products.first.id);
           _auctionProductId = _products.first.id;
+          _askingPrice.text =
+              _products.first.effectivePrice.toStringAsFixed(0);
         }
       });
     } catch (e) {
@@ -67,6 +70,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     _title.dispose();
     _description.dispose();
     _startingBid.dispose();
+    _askingPrice.dispose();
     super.dispose();
   }
 
@@ -93,6 +97,8 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         if (_auction) 'auctionProductId': _auctionProductId ?? _selected.first,
         if (_auction)
           'startingBidGhs': double.tryParse(_startingBid.text.trim()) ?? 50,
+        if (_auction)
+          'askingPriceGhs': double.tryParse(_askingPrice.text.trim()),
         if (_auction) 'auctionDurationSeconds': _auctionSeconds.clamp(1, 30),
       });
 
@@ -256,7 +262,19 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                           ),
                         ),
                     ],
-                    onChanged: (v) => setState(() => _auctionProductId = v),
+                    onChanged: (v) {
+                      setState(() {
+                        _auctionProductId = v;
+                        if (v == null) return;
+                        for (final p in _products) {
+                          if (p.id == v) {
+                            _askingPrice.text =
+                                p.effectivePrice.toStringAsFixed(0);
+                            break;
+                          }
+                        }
+                      });
+                    },
                     decoration:
                         const InputDecoration(labelText: 'Auction product'),
                   ),
@@ -265,6 +283,17 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                     controller: _startingBid,
                     decoration: const InputDecoration(
                       labelText: 'Starting bid (GHS)',
+                      helperText: 'Opening price viewers can bid from',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _askingPrice,
+                    decoration: const InputDecoration(
+                      labelText: 'Asking / sale price (GHS)',
+                      helperText:
+                          'Only you see this. Auction won’t sell below it — you can extend live if unmet.',
                     ),
                     keyboardType: TextInputType.number,
                   ),
@@ -285,7 +314,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         setState(() => _auctionSeconds = v.round()),
                   ),
                   Text(
-                    'Countdown starts when you go live. Late bids can add a few seconds.',
+                    'Countdown starts when you go live. You can extend if asking price isn’t met.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: HubsomColors.ink.withValues(alpha: 0.65),
                         ),

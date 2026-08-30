@@ -151,6 +151,7 @@ class LiveRepository {
       pinnedProductId: body['pinnedProductId'] as String?,
       auctionProductId: body['auctionProductId'] as String?,
       startingBidGhs: (body['startingBidGhs'] as num?)?.toDouble() ?? 50,
+      askingPriceGhs: (body['askingPriceGhs'] as num?)?.toDouble(),
       auctionDurationSeconds:
           (body['auctionDurationSeconds'] as num?)?.toInt() ?? 30,
       multiHost: body['multiHost'] as bool? ?? false,
@@ -197,6 +198,29 @@ class LiveRepository {
     if (updated == null) throw StateError('Stream not found');
     await _syncStream(updated);
     return updated;
+  }
+
+  Future<LiveStream> addProducts(String streamId, List<String> productIds) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final updated = await LocalCommerceStore.addProductsToStream(
+      streamId: streamId,
+      user: user,
+      productIds: productIds,
+    );
+    if (updated == null) throw StateError('Stream not found');
+    await _syncStream(updated);
+    return updated;
+  }
+
+  Future<LiveAuction> extendAuction(String streamId, {int seconds = 30}) async {
+    final next = await LocalCommerceStore.extendAuction(
+      streamId: streamId,
+      seconds: seconds,
+    );
+    final stream = LocalCommerceStore.getStream(streamId);
+    if (stream != null) await _syncStream(stream);
+    return next;
   }
 
   Future<List<ChatMessage>> listChat(String streamId) async {

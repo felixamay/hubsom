@@ -222,6 +222,10 @@ class LocalCommerceStore {
     if (b == null) return a;
     if (b.orderId != null && a.orderId == null) return b;
     if (a.orderId != null && b.orderId == null) return a;
+    if (b.status == 'sold' && a.status != 'sold') return b;
+    if (a.status == 'sold' && b.status != 'sold') return a;
+    if (b.status == 'open' && a.status == 'reserve_not_met') return b;
+    if (a.status == 'open' && b.status == 'reserve_not_met') return a;
     if (b.currentBidGhs > a.currentBidGhs + 0.001) return b;
     if (a.currentBidGhs > b.currentBidGhs + 0.001) return a;
     if (b.bidderCount > a.bidderCount) return b;
@@ -238,12 +242,14 @@ class LocalCommerceStore {
     final viewers = remote.viewerCount > local.viewerCount
         ? remote.viewerCount
         : local.viewerCount;
+    final products = <String>{...local.productIds, ...remote.productIds}.toList();
     return local.copyWith(
       status: preferRemoteEnded ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
       viewerCount: viewers,
       peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
+      productIds: products,
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
@@ -268,6 +274,7 @@ class LocalCommerceStore {
     String? pinnedProductId,
     String? auctionProductId,
     double startingBidGhs = 50,
+    double? askingPriceGhs,
     int auctionDurationSeconds = 30,
     bool multiHost = false,
   }) async {
@@ -292,6 +299,9 @@ class LocalCommerceStore {
     if (auctionProductId != null && owned.contains(auctionProductId)) {
       final product = getProduct(auctionProductId)!;
       final start = startingBidGhs > 0 ? startingBidGhs : product.priceGhs * 0.5;
+      final ask = askingPriceGhs != null && askingPriceGhs > 0
+          ? askingPriceGhs
+          : product.priceGhs;
       auction = LiveAuction(
         id: 'auction-${_uuid.v4().substring(0, 8)}',
         productId: auctionProductId,
@@ -303,6 +313,7 @@ class LocalCommerceStore {
             .toUtc()
             .toIso8601String(),
         status: 'open',
+        askingPriceGhs: ask,
       );
     }
 
@@ -374,6 +385,7 @@ class LocalCommerceStore {
     String? status,
     int? viewerCount,
     LiveAuction? auction,
+    List<String>? productIds,
     bool end = false,
   }) async {
     final streams = listStreams();
@@ -395,11 +407,61 @@ class LocalCommerceStore {
         viewerCount: viewers,
         peakViewers: viewers > s.peakViewers ? viewers : s.peakViewers,
         auction: auction,
+        productIds: productIds,
       );
     }
     streams[idx] = s;
     await _saveStreams(streams);
     return s;
+  }
+
+  static Future<LiveStream?> addProductsToStream({
+    required String streamId,
+    required HubsomUser user,
+    required List<String> productIds,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null || !stream.isLive) {
+      throw StateError('Live show not found');
+    }
+    final seller = await ensureSellerForUser(user);
+    if (stream.sellerId != seller.id) {
+      throw StateError('Only the host can add products');
+    }
+    final owned = productIds
+        .where((id) => getProduct(id)?.sellerId == seller.id)
+        .toList();
+    if (owned.isEmpty) {
+      throw StateError('Select products from your catalog');
+    }
+    final merged = <String>{...stream.productIds, ...owned}.toList();
+    return updateStream(streamId, productIds: merged);
+  }
+
+  /// Restart the auction clock (e.g. when asking price was not met).
+  static Future<LiveAuction> extendAuction({
+    required String streamId,
+    int seconds = 30,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null || stream.auction == null) {
+      throw StateError('Auction not found');
+    }
+    if (!stream.isLive) throw StateError('Show has ended');
+    final auction = stream.auction!;
+    if (auction.orderId != null || auction.status == 'sold') {
+      throw StateError('Auction already sold');
+    }
+    final secs = seconds.clamp(5, 30);
+    final next = auction.copyWith(
+      status: 'open',
+      endsAt: DateTime.now()
+          .add(Duration(seconds: secs))
+          .toUtc()
+          .toIso8601String(),
+    );
+    await updateStream(streamId, auction: next);
+    return next;
   }
 
   static Future<LiveStream?> joinViewer(String id) async {
@@ -482,6 +544,17 @@ class LocalCommerceStore {
 
     // Still counting down.
     if (auction.status == 'open' && auction.isOpen) return null;
+
+    // Asking price not met — mark for seller to extend (no order yet).
+    if (!auction.askMet) {
+      if (auction.status != 'reserve_not_met') {
+        await updateStream(
+          streamId,
+          auction: auction.copyWith(status: 'reserve_not_met'),
+        );
+      }
+      return null;
+    }
 
     // No winning bidder — just mark closed.
     if (auction.highestBidder == null && auction.highestBidderId == null) {

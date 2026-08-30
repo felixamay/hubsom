@@ -60,6 +60,7 @@ void main() {
       pinnedProductId: product.id,
       auctionProductId: product.id,
       startingBidGhs: 80,
+      askingPriceGhs: 150,
       auctionDurationSeconds: 30,
     );
   }
@@ -119,10 +120,12 @@ void main() {
   test('winning bid creates a seller order when auction ends', () async {
     final stream = await goLive();
     final auction = stream.auction!;
+    expect(auction.askingPriceGhs, 150);
 
+    // Meet the asking price.
     await LocalCommerceStore.placeBid(
       auctionId: auction.id,
-      amountGhs: auction.nextMinBidGhs,
+      amountGhs: 150,
       bidder: bidder,
     );
 
@@ -150,6 +153,59 @@ void main() {
     // Idempotent.
     final again = await LocalCommerceStore.finalizeAuction(stream.id);
     expect(again?.id, order.id);
+  });
+
+  test('unmet asking price does not sell — seller can extend', () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: auction.nextMinBidGhs, // below ask 150
+      bidder: bidder,
+    );
+
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNull);
+    final reserved = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(reserved.status, 'reserve_not_met');
+    expect(reserved.awaitingExtend, isTrue);
+
+    final extended = await LocalCommerceStore.extendAuction(
+      streamId: stream.id,
+      seconds: 20,
+    );
+    expect(extended.isOpen, isTrue);
+    expect(extended.status, 'open');
+    expect(extended.timeLeft!.inSeconds, greaterThan(15));
+  });
+
+  test('host can add more products mid-live', () async {
+    final stream = await goLive();
+    final extra = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Beaded bag',
+      description: 'Extra lot',
+      category: 'fashion',
+      priceGhs: 90,
+      stock: 2,
+      images: const ['a', 'b', 'c'],
+    );
+    final updated = await LocalCommerceStore.addProductsToStream(
+      streamId: stream.id,
+      user: seller,
+      productIds: [extra.id],
+    );
+    expect(updated!.productIds, contains(stream.productIds.first));
+    expect(updated.productIds, contains(extra.id));
   });
 
   test('fresher cloud auction wins over stale host copy', () {

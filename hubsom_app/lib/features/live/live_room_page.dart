@@ -32,6 +32,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   LiveStream? stream;
   List<ChatMessage> chat = [];
   List<Product> bag = [];
+  List<Product> _catalog = const [];
   Product? pinned;
   final _chatCtrl = TextEditingController();
   String? error;
@@ -43,6 +44,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _following = false;
   bool _followBusy = false;
   bool _bidBusy = false;
+  bool _extendBusy = false;
   final _floating = <_FloatRx>[];
   Timer? _poll;
   Timer? _tick;
@@ -88,7 +90,19 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
             _startPoll();
           }),
         );
-      } else if (auction.isOpen) {
+      } else if (auction.isOpen || auction.awaitingExtend) {
+        // Mark reserve_not_met for host UI when the clock hits zero.
+        if (auction.awaitingExtend && auction.status == 'open') {
+          unawaited(
+            ref
+                .read(liveRepositoryProvider)
+                .finalizeAuctionIfNeeded(widget.streamId)
+                .then((s) {
+              if (!mounted || s == null) return;
+              setState(() => stream = s);
+            }),
+          );
+        }
         setState(() {});
       }
     });
@@ -147,11 +161,19 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         pin ??= await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
 
+      List<Product> catalog = _catalog;
+      if (_isHost || widget.hostMode) {
+        try {
+          catalog = await ref.read(sellerRepositoryProvider).myProducts();
+        } catch (_) {}
+      }
+
       if (!mounted) return;
       setState(() {
         chat = messages;
         bag = products;
         pinned = pin;
+        _catalog = catalog;
       });
 
       if (join) {
@@ -349,8 +371,61 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     setState(() {
       stream = updated;
       pinned = product;
+      if (!bag.any((p) => p.id == product.id)) {
+        bag = [...bag, product];
+      }
       _shopOpen = false;
     });
+  }
+
+  Future<void> _addProductToLive(Product product) async {
+    try {
+      final updated = await ref
+          .read(liveRepositoryProvider)
+          .addProducts(widget.streamId, [product.id]);
+      if (!mounted) return;
+      setState(() {
+        stream = updated;
+        if (!bag.any((p) => p.id == product.id)) {
+          bag = [...bag, product];
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Added ${product.name} to live')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _extendAuction() async {
+    if (_extendBusy || stream?.auction == null) return;
+    setState(() => _extendBusy = true);
+    try {
+      final auction = await ref
+          .read(liveRepositoryProvider)
+          .extendAuction(widget.streamId, seconds: 30);
+      if (!mounted) return;
+      setState(() {
+        stream = stream!.copyWith(auction: auction);
+      });
+      _startPoll();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Auction extended +30 seconds')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _extendBusy = false);
+    }
   }
 
   Future<void> _buy(Product product) async {
@@ -675,40 +750,83 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                     top: Radius.circular(16),
                   ),
                   child: SizedBox(
-                    height: min(360, MediaQuery.sizeOf(context).height * 0.45),
+                    height: min(420, MediaQuery.sizeOf(context).height * 0.55),
                     child: Column(
                       children: [
                         ListTile(
                           title: Text(
-                            _isHost ? 'Pin a product' : 'Live bag',
+                            _isHost ? 'Live products' : 'Live bag',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
+                          subtitle: _isHost
+                              ? const Text('Pin items or add more from your catalog')
+                              : null,
                           trailing: IconButton(
                             onPressed: () => setState(() => _shopOpen = false),
                             icon: const Icon(Icons.close),
                           ),
                         ),
                         Expanded(
-                          child: ListView.builder(
-                            itemCount: bag.length,
-                            itemBuilder: (_, i) {
-                              final p = bag[i];
-                              return ListTile(
-                                title: Text(p.name),
-                                subtitle: Text(formatGhs(p.effectivePrice)),
-                                trailing: _isHost
-                                    ? TextButton(
-                                        onPressed: () => _pin(p),
-                                        child: Text(
-                                          pinned?.id == p.id ? 'Pinned' : 'Pin',
+                          child: ListView(
+                            children: [
+                              if (bag.isNotEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                  child: Text(
+                                    'In this show',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ...bag.map((p) {
+                                return ListTile(
+                                  title: Text(p.name),
+                                  subtitle: Text(formatGhs(p.effectivePrice)),
+                                  trailing: _isHost
+                                      ? TextButton(
+                                          onPressed: () => _pin(p),
+                                          child: Text(
+                                            pinned?.id == p.id ? 'Pinned' : 'Pin',
+                                          ),
+                                        )
+                                      : FilledButton(
+                                          onPressed: () => _buy(p),
+                                          child: const Text('Buy'),
                                         ),
+                                );
+                              }),
+                              if (_isHost) ...[
+                                const Divider(),
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                  child: Text(
+                                    'Add from your catalog',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                if (_catalog.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Text('No other products yet.'),
+                                  )
+                                else
+                                  ..._catalog
+                                      .where(
+                                        (p) => !bag.any((b) => b.id == p.id),
                                       )
-                                    : FilledButton(
-                                        onPressed: () => _buy(p),
-                                        child: const Text('Buy'),
+                                      .map(
+                                        (p) => ListTile(
+                                          title: Text(p.name),
+                                          subtitle:
+                                              Text(formatGhs(p.effectivePrice)),
+                                          trailing: FilledButton(
+                                            onPressed: () =>
+                                                _addProductToLive(p),
+                                            child: const Text('Add'),
+                                          ),
+                                        ),
                                       ),
-                              );
-                            },
+                              ],
+                            ],
                           ),
                         ),
                       ],
@@ -721,7 +839,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               left: 12,
               right: MediaQuery.sizeOf(context).width * 0.28,
               bottom: s.auction != null
-                  ? (_isHost ? 168 : 210)
+                  ? (_isHost ? 200 : 210)
                   : (pinned != null ? 140 : 72),
               child: SizedBox(
                 height: 150,
@@ -757,9 +875,11 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 pinned: pinned,
                 isHost: _isHost,
                 bidBusy: _bidBusy,
+                extendBusy: _extendBusy,
                 chatCtrl: _chatCtrl,
                 onQuickBid: _bidQuick,
                 onCustomBid: _bidCustom,
+                onExtend: _extendAuction,
                 onBuyPinned: pinned == null ? null : () => _buy(pinned!),
                 onSendChat: _sendChat,
               ),
@@ -907,9 +1027,11 @@ class _LiveBottomDock extends StatelessWidget {
     required this.pinned,
     required this.isHost,
     required this.bidBusy,
+    required this.extendBusy,
     required this.chatCtrl,
     required this.onQuickBid,
     required this.onCustomBid,
+    required this.onExtend,
     required this.onBuyPinned,
     required this.onSendChat,
   });
@@ -918,9 +1040,11 @@ class _LiveBottomDock extends StatelessWidget {
   final Product? pinned;
   final bool isHost;
   final bool bidBusy;
+  final bool extendBusy;
   final TextEditingController chatCtrl;
   final VoidCallback onQuickBid;
   final VoidCallback onCustomBid;
+  final VoidCallback onExtend;
   final VoidCallback? onBuyPinned;
   final VoidCallback onSendChat;
 
@@ -930,6 +1054,7 @@ class _LiveBottomDock extends StatelessWidget {
     final left = a?.timeLeft ?? Duration.zero;
     final secsLeft = left.inSeconds.clamp(0, 30);
     final open = a?.isOpen == true;
+    final awaiting = a?.awaitingExtend == true;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1006,6 +1131,21 @@ class _LiveBottomDock extends StatelessWidget {
                             fontSize: 11,
                           ),
                         ),
+                        if (isHost && a.hasAskingPrice)
+                          Text(
+                            a.askMet
+                                ? 'Ask met · ${formatGhs(a.askingPriceGhs!)}'
+                                : 'Your ask · ${formatGhs(a.askingPriceGhs!)} (hidden)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: a.askMet
+                                  ? const Color(0xFF81C784)
+                                  : HubsomColors.live,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1063,25 +1203,58 @@ class _LiveBottomDock extends StatelessWidget {
                     ),
                   ],
                 )
-              else if (open && isHost)
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    open
-                        ? '$secsLeft s left · call out ${formatGhs(a.currentBidGhs)}'
-                        : 'Auction ended',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+              else if (isHost && (open || awaiting))
+                Column(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        awaiting
+                            ? (a.hasAskingPrice
+                                ? 'Ask ${formatGhs(a.askingPriceGhs!)} not met · extend to keep bargaining'
+                                : 'Time up · extend to keep bargaining')
+                            : (a.askMet
+                                ? '$secsLeft s left · ask met at ${formatGhs(a.currentBidGhs)}'
+                                : '$secsLeft s left · need ${formatGhs(a.askingPriceGhs ?? a.currentBidGhs)}'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (awaiting || (!a.askMet && open)) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: HubsomColors.gold,
+                            foregroundColor: HubsomColors.ink,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: extendBusy ? null : onExtend,
+                          icon: const Icon(Icons.more_time),
+                          label: Text(
+                            extendBusy ? 'Extending…' : 'Extend auction +30s',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 )
               else
                 Container(
@@ -1093,9 +1266,15 @@ class _LiveBottomDock extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    a.highestBidder == null
-                        ? 'Auction ended · ${formatGhs(a.currentBidGhs)}'
-                        : 'Sold vibe · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}',
+                    a.status == 'sold'
+                        ? (a.highestBidder == null
+                            ? 'Sold · ${formatGhs(a.currentBidGhs)}'
+                            : 'Sold · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}')
+                        : a.awaitingExtend
+                            ? 'Waiting for host to extend'
+                            : (a.highestBidder == null
+                                ? 'Auction ended · ${formatGhs(a.currentBidGhs)}'
+                                : 'Ended · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
