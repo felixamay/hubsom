@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/repositories/auth_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
@@ -15,6 +16,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
+    AppConfig.load();
     CloudStore.useNetwork = false;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-auth');
