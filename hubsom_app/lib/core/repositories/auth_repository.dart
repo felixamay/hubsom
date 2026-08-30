@@ -4,9 +4,13 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
+import '../../models/huber.dart';
 import '../../models/user.dart';
+import '../auth/auth_routes.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_store.dart';
+import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
 
 class AuthException implements Exception {
@@ -39,11 +43,21 @@ class AuthRepository {
     required String password,
     required String name,
     String role = 'buyer',
+    HuberSignUpDetails? huber,
   }) async {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password, name: name);
+    if (AuthRoutes.isHuberRole(role) &&
+        (huber == null || huber.phone.trim().isEmpty)) {
+      throw AuthException('Phone number is required for a Huber driver account');
+    }
 
-    // If this email already has a local account, do not create a second one.
+    final cloudExisting = await CloudStore.getAccount(normalized);
+    if (cloudExisting != null) {
+      throw AuthException(
+        'An account with this email already exists. Please sign in.',
+      );
+    }
     final existing = LocalStore.loadCredentialVault()[normalized];
     if (existing is Map) {
       throw AuthException(
@@ -76,6 +90,7 @@ class AuthRepository {
           password: password,
           user: user,
         );
+        await _ensureHuberProfile(user, huber);
         return user;
       }
       // HTML / empty from Firebase Hosting SPA rewrite → local vault.
@@ -84,6 +99,7 @@ class AuthRepository {
         password: password,
         name: name.trim(),
         role: role,
+        huber: huber,
       );
     } on AuthException {
       rethrow;
@@ -93,6 +109,7 @@ class AuthRepository {
         password: password,
         name: name.trim(),
         role: role,
+        huber: huber,
       );
     }
   }
@@ -104,8 +121,10 @@ class AuthRepository {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password);
 
-    // Local vault first — Firebase Hosting has no Auth.js, and this is what
-    // "Create account" writes. Remote HTML must not hide a valid local login.
+    // Shared Firestore accounts first so sign-in works on any browser/device.
+    final cloudUser = await _cloudSignIn(email: normalized, password: password);
+    if (cloudUser != null) return cloudUser;
+
     final vault = LocalStore.loadCredentialVault();
     if (vault.containsKey(normalized)) {
       return _localSignIn(email: normalized, password: password);
@@ -221,6 +240,7 @@ class AuthRepository {
       bio: patch['bio'] as String? ?? current.bio,
       role: current.role,
       sellerId: current.sellerId,
+      huberId: current.huberId,
       followingSellerIds: current.followingSellerIds,
       savedProductIds: current.savedProductIds,
       addresses: current.addresses,
@@ -234,6 +254,54 @@ class AuthRepository {
       entry['userJson'] = updated.toJson();
       vault[current.email.toLowerCase()] = entry;
       await LocalStore.saveCredentialVault(vault);
+    }
+    return updated;
+  }
+
+  /// Attach Huber driving to the signed-in Hubsom account (same vault).
+  Future<HubsomUser> enableHuber({HuberSignUpDetails? details}) async {
+    final current = currentUser();
+    if (current == null) throw AuthException('Sign in required');
+    if (current.isHuber) {
+      await LocalHuberStore.ensureProfileForUser(current, details: details);
+      return current;
+    }
+    final updated = HubsomUser(
+      id: current.id,
+      email: current.email,
+      name: current.name,
+      image: current.image,
+      phone: details?.phone ?? current.phone,
+      city: details?.city ?? current.city,
+      region: details?.region ?? current.region,
+      bio: current.bio,
+      role: current.role == 'buyer' ? 'huber' : current.role,
+      sellerId: current.sellerId,
+      huberId: 'huber-${current.id}',
+      followingSellerIds: current.followingSellerIds,
+      savedProductIds: current.savedProductIds,
+      addresses: current.addresses,
+      emailVerified: current.emailVerified,
+      walletBalanceGhs: current.walletBalanceGhs,
+    );
+    await LocalStore.setUserJson(jsonEncode(updated.toJson()));
+    final vault = LocalStore.loadCredentialVault();
+    final entry = vault[updated.email.toLowerCase()];
+    if (entry is Map) {
+      entry['userJson'] = updated.toJson();
+      vault[updated.email.toLowerCase()] = entry;
+      await LocalStore.saveCredentialVault(vault);
+    }
+    await LocalHuberStore.ensureProfileForUser(updated, details: details);
+    if (entry is Map) {
+      try {
+        await CloudStore.putAccount(updated.email.toLowerCase(), {
+          'salt': entry['salt'],
+          'hash': entry['hash'],
+          'userJson': updated.toJson(),
+          'email': updated.email.toLowerCase(),
+        });
+      } catch (_) {}
     }
     return updated;
   }
@@ -252,20 +320,69 @@ class AuthRepository {
     required String password,
     required String name,
     required String role,
+    HuberSignUpDetails? huber,
   }) async {
     final vault = LocalStore.loadCredentialVault();
     if (vault.containsKey(email)) {
       throw AuthException('An account with this email already exists. Please sign in.');
     }
+    if (AuthRoutes.isHuberRole(role) &&
+        (huber == null || huber.phone.trim().isEmpty)) {
+      throw AuthException('Phone number is required for a Huber driver account');
+    }
+    final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
+    final isHuber = AuthRoutes.isHuberRole(role);
     final user = HubsomUser(
-      id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+      id: id,
       email: email,
       name: name,
-      role: role,
+      phone: huber?.phone,
+      city: huber?.city,
+      region: huber?.region,
+      role: isHuber ? 'huber' : role,
+      huberId: isHuber ? 'huber-$id' : null,
     );
     await _storeLocalCredentials(email: email, password: password, user: user);
     await _persist(user, _issueLocalToken(user));
+    await _ensureHuberProfile(user, huber);
+    await CloudStore.hydrateLocalCache();
     return user;
+  }
+
+  Future<HubsomUser?> _cloudSignIn({
+    required String email,
+    required String password,
+  }) async {
+    final remote = await CloudStore.getAccount(email);
+    if (remote == null) return null;
+    final salt = remote['salt'] as String? ?? '';
+    final hash = remote['hash'] as String? ?? '';
+    if (salt.isEmpty || hash.isEmpty || !_verifyPassword(password, salt, hash)) {
+      throw AuthException('Invalid email or password');
+    }
+    final userJson = remote['userJson'];
+    if (userJson is! Map) {
+      throw AuthException('Invalid email or password');
+    }
+    final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    final vault = LocalStore.loadCredentialVault();
+    vault[email] = {
+      'salt': salt,
+      'hash': hash,
+      'userJson': user.toJson(),
+    };
+    await LocalStore.saveCredentialVault(vault);
+    await _persist(user, _issueLocalToken(user));
+    await CloudStore.hydrateLocalCache();
+    if (user.isHuber) {
+      await LocalHuberStore.ensureProfileForUser(user);
+    }
+    return user;
+  }
+
+  Future<void> _ensureHuberProfile(HubsomUser user, HuberSignUpDetails? huber) async {
+    if (!AuthRoutes.isHuberRole(user.role)) return;
+    await LocalHuberStore.ensureProfileForUser(user, details: huber);
   }
 
   Future<HubsomUser> _localSignIn({
@@ -285,6 +402,9 @@ class AuthRepository {
     final userJson = entry['userJson'];
     final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
     await _persist(user, _issueLocalToken(user));
+    if (AuthRoutes.isHuberRole(user.role)) {
+      await LocalHuberStore.ensureProfileForUser(user);
+    }
     return user;
   }
 
@@ -301,6 +421,20 @@ class AuthRepository {
       'userJson': user.toJson(),
     };
     await LocalStore.saveCredentialVault(vault);
+    try {
+      await CloudStore.putAccount(email, {
+        'salt': vault[email]['salt'],
+        'hash': vault[email]['hash'],
+        'userJson': user.toJson(),
+        'email': email,
+      });
+    } catch (_) {
+      if (CloudStore.available) {
+        throw AuthException(
+          'Account saved on this device, but the shared database could not be reached. Try again on a stable connection.',
+        );
+      }
+    }
   }
 
   void _validateCredentials(String email, String password, {String? name}) {

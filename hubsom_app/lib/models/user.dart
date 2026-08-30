@@ -100,6 +100,7 @@ class HubsomUser extends Equatable {
     this.bio,
     required this.role,
     this.sellerId,
+    this.huberId,
     this.followingSellerIds = const [],
     this.savedProductIds = const [],
     this.addresses = const [],
@@ -115,8 +116,9 @@ class HubsomUser extends Equatable {
   final String? city;
   final String? region;
   final String? bio;
-  final String role; // buyer | seller | both
+  final String role; // buyer | seller | both | huber | admin
   final String? sellerId;
+  final String? huberId;
   final List<String> followingSellerIds;
   final List<String> savedProductIds;
   final List<UserAddress> addresses;
@@ -134,6 +136,7 @@ class HubsomUser extends Equatable {
         bio: json['bio'] as String?,
         role: json['role'] as String? ?? 'buyer',
         sellerId: json['sellerId'] as String?,
+        huberId: json['huberId'] as String?,
         followingSellerIds: (json['followingSellerIds'] as List?)?.cast<String>() ?? const [],
         savedProductIds: (json['savedProductIds'] as List?)?.cast<String>() ?? const [],
         addresses: (json['addresses'] as List?)
@@ -155,6 +158,7 @@ class HubsomUser extends Equatable {
         if (bio != null) 'bio': bio,
         'role': role,
         if (sellerId != null) 'sellerId': sellerId,
+        if (huberId != null) 'huberId': huberId,
         'followingSellerIds': followingSellerIds,
         'savedProductIds': savedProductIds,
         'addresses': addresses.map((a) => a.toJson()).toList(),
@@ -162,6 +166,12 @@ class HubsomUser extends Equatable {
         'walletBalanceGhs': walletBalanceGhs,
       };
 
+  bool get isHuber =>
+      role == 'huber' ||
+      role == 'driver' ||
+      (huberId != null && huberId!.isNotEmpty);
+
   @override
-  List<Object?> get props => [id, email, name, role, sellerId, savedProductIds, walletBalanceGhs];
+  List<Object?> get props =>
+      [id, email, name, role, sellerId, huberId, savedProductIds, walletBalanceGhs];
 }

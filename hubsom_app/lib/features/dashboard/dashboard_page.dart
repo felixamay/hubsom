@@ -51,6 +51,13 @@ class DashboardPage extends ConsumerWidget {
             title: const Text('Seller hub'),
             onTap: () => context.push('/seller'),
           ),
+        if (user != null && user.isHuber)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.two_wheeler, color: HubsomColors.huberNavy),
+            title: const Text('Huber driver hub'),
+            onTap: () => context.go('/huber'),
+          ),
       ],
     );
   }

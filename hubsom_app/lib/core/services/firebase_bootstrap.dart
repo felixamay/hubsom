@@ -2,10 +2,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
+import '../config/firebase_options.dart';
 
-/// Initializes Firebase when enabled via `--dart-define=FIREBASE_ENABLED=true`.
-/// Hubsom REST APIs remain the primary data source; Firebase Auth / Firestore /
-/// Storage / Messaging are available for production without recreating collections.
+/// Initializes Firebase for Hubsom Hosting / Firestore (`hubsom-web`).
 class FirebaseBootstrap {
   FirebaseBootstrap._();
 
@@ -16,7 +15,7 @@ class FirebaseBootstrap {
 
     try {
       if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp();
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
       }
       ready = true;
       if (kDebugMode) debugPrint('Firebase initialized');

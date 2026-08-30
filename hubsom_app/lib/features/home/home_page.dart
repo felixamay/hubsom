@@ -90,6 +90,10 @@ class HomePage extends ConsumerWidget {
                         onPressed: () => context.push('/auctions'),
                         child: const Text('Auctions'),
                       ),
+                      OutlinedButton(
+                        onPressed: () => context.push('/huber'),
+                        child: const Text('Huber drivers'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),

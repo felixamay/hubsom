@@ -21,6 +21,13 @@ import '../chat/messages_page.dart';
 import '../checkout/checkout_page.dart';
 import '../dashboard/dashboard_page.dart';
 import '../driver/delivery_map_page.dart';
+import '../huber/huber_delivery_page.dart';
+import '../huber/huber_earnings_page.dart';
+import '../huber/huber_home_page.dart';
+import '../huber/huber_hub_now_page.dart';
+import '../huber/huber_shell.dart';
+import '../huber/huber_verify_page.dart';
+import '../huber/huber_wallet_page.dart';
 import '../flash_sales/flash_sales_page.dart';
 import '../home/home_page.dart';
 import '../live/live_room_page.dart';
@@ -68,12 +75,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (AuthRoutes.isAuthPage(path)) {
         if (loggedIn) {
           final callback = state.uri.queryParameters['callbackUrl'];
-          if (callback != null &&
-              callback.startsWith('/') &&
-              !callback.startsWith('//')) {
-            return callback;
-          }
-          return '/account';
+          return AuthRoutes.homeForUser(
+            user.role,
+            callback: callback,
+            huberId: user.huberId,
+          );
         }
         return null;
       }
@@ -85,6 +91,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       if (loggedIn && AuthRoutes.requiresSeller(path)) {
         if (!AuthRoutes.isSellerRole(user.role)) {
+          return '/account';
+        }
+      }
+
+      if (loggedIn && AuthRoutes.requiresHuber(path)) {
+        if (!user.isHuber && user.role != 'admin') {
           return '/account';
         }
       }
@@ -257,6 +269,62 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => AuthGate(
           requireSeller: true,
           message: 'Sign in as a seller to track deliveries',
+          child: DeliveryMapPage(shipmentId: state.pathParameters['shipmentId']!),
+        ),
+      ),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => AuthGate(
+          requireHuber: true,
+          message: 'Sign in with your Huber driver account',
+          child: HuberShell(navigationShell: navigationShell),
+        ),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/huber', builder: (_, __) => const HuberHomePage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/huber/hub', builder: (_, __) => const HuberHubNowPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/huber/earnings',
+                builder: (_, __) => const HuberEarningsPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/huber/wallet',
+                builder: (_, __) => const HuberWalletPage(),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/huber/verify',
+        builder: (_, __) => const AuthGate(
+          requireHuber: true,
+          child: HuberVerifyPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/huber/delivery/:id',
+        builder: (_, state) => AuthGate(
+          requireHuber: true,
+          child: HuberDeliveryPage(deliveryId: state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(
+        path: '/huber/track/:shipmentId',
+        builder: (_, state) => AuthGate(
+          requireHuber: true,
           child: DeliveryMapPage(shipmentId: state.pathParameters['shipmentId']!),
         ),
       ),

@@ -15,4 +15,10 @@ abstract final class HubsomColors {
   static const blue = Color(0xFF0054A6);
   static const cyan = Color(0xFF00AEEF);
   static const orange = Color(0xFFF36F21);
+
+  /// Huber driver brand (from the Huber Android / web preview app).
+  static const huberNavy = Color(0xFF1B3A9C);
+  static const huberNavyDark = Color(0xFF12286E);
+  static const huberOnline = Color(0xFF1B9C5C);
+  static const huberOffline = Color(0xFF6B7280);
 }

@@ -61,8 +61,22 @@ class AccountPage extends ConsumerWidget {
             _link(context, Icons.notifications_outlined, 'Notifications', '/notifications'),
             _link(context, Icons.chat_bubble_outline, 'Messages', '/messages'),
             _link(context, Icons.settings_outlined, 'Settings', '/settings'),
-            if (user.role == 'seller' || user.role == 'both')
+            if (user.role == 'seller' || user.role == 'both' || user.role == 'admin')
               _link(context, Icons.dashboard_outlined, 'Seller hub', '/seller'),
+            if (user.isHuber || user.role == 'admin')
+              _link(context, Icons.two_wheeler_outlined, 'Huber driver hub', '/huber'),
+            if (!user.isHuber && user.role != 'admin')
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.two_wheeler_outlined, color: HubsomColors.forest),
+                title: const Text('Become a Huber driver'),
+                subtitle: const Text('Use this same Hubsom account'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await ref.read(authStateProvider.notifier).enableHuber();
+                  if (context.mounted) context.go('/huber/verify');
+                },
+              ),
             const SizedBox(height: 12),
             OutlinedButton(
               onPressed: () => ref.read(authStateProvider.notifier).signOut(),

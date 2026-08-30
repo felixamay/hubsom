@@ -159,6 +159,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           | "buyer"
           | "seller"
           | "both"
+          | "huber"
           | undefined;
         session.user.phone =
           typeof token.phone === "string" ? token.phone : undefined;

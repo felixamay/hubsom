@@ -70,8 +70,9 @@ flutter run -d ios
 | Messaging | `/messages`, `/messages/:userId` | `/api/messages` |
 | Seller hub | `/seller/*` | store, products, orders, shipments, Hubers |
 | Delivery map | `/driver/track/:shipmentId` | OSM + ORS/OSRM |
+| Huber driver | `/huber`, `/huber/hub`, `/huber/earnings`, `/huber/wallet` | Same Hubsom sign-up/sign-in (`role=huber`) |
 | Account / wallet | `/account/*`, `/wallet` | profile, addresses, wallet |
-| Auth | `/auth/sign-in`, `/auth/sign-up` | Auth.js + signup |
+| Auth | `/auth/sign-in`, `/auth/sign-up` | Auth.js + local vault (buyer, seller, Huber) |
 
 Admin Portal continues to use existing `/api/admin/*` endpoints; Flutter sellers/buyers consume the same public APIs.
 

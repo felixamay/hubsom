@@ -86,12 +86,28 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage> with Single
                         trailing: Wrap(spacing: 4, children: [
                           TextButton(
                             onPressed: () async {
-                              await ref.read(orderRepositoryProvider).offerToHubers(s.id);
-                              await _load();
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Hubers offers sent')),
-                                );
+                              try {
+                                await ref.read(orderRepositoryProvider).offerToHubers(s.id);
+                                await _load();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Hubers offers sent to signed-up drivers',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        e.toString().replaceFirst('Bad state: ', ''),
+                                      ),
+                                    ),
+                                  );
+                                }
                               }
                             },
                             child: const Text('Hubers'),

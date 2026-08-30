@@ -30,7 +30,8 @@ export interface HubsomUser {
   city?: string;
   region?: string;
   bio?: string;
-  role: "buyer" | "seller" | "both";
+  role: "buyer" | "seller" | "both" | "huber";
+  huberId?: string;
   sellerId?: string;
   /** Sellers this user follows */
   followingSellerIds: string[];

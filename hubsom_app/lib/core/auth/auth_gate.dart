@@ -12,11 +12,13 @@ class AuthGate extends ConsumerWidget {
     super.key,
     required this.child,
     this.requireSeller = false,
+    this.requireHuber = false,
     this.message = 'Sign in to continue',
   });
 
   final Widget child;
   final bool requireSeller;
+  final bool requireHuber;
   final String message;
 
   @override
@@ -70,6 +72,18 @@ class AuthGate extends ConsumerWidget {
             onPrimary: () => context.go('/account'),
             secondaryLabel: 'Home',
             onSecondary: () => context.go('/'),
+          );
+        }
+
+        if (requireHuber && !user.isHuber && user.role != 'admin') {
+          return _LockedScaffold(
+            title: 'Huber driver access required',
+            message:
+                'This area is for Huber riders. Create a Huber driver account to receive Hubsom delivery offers.',
+            primaryLabel: 'Create Huber account',
+            onPrimary: () => context.go('/auth/sign-up?role=huber&callbackUrl=%2Fhuber'),
+            secondaryLabel: 'Account',
+            onSecondary: () => context.go('/account'),
           );
         }
 

@@ -8,7 +8,7 @@ void main() {
   test('AppConfig loads defaults', () {
     AppConfig.load();
     expect(AppConfig.apiBaseUrl, isNotEmpty);
-    expect(AppConfig.firebaseEnabled, isFalse);
+    expect(AppConfig.firebaseEnabled, isTrue);
   });
 
   test('Product effective price applies flash sale', () {

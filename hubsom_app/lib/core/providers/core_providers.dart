@@ -1,15 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/cart.dart';
+import '../../models/huber.dart';
 import '../../models/user.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
+import '../repositories/huber_repository.dart';
 import '../repositories/live_repository.dart';
 import '../repositories/message_repository.dart';
 import '../repositories/order_repository.dart';
 import '../repositories/seller_repository.dart';
 import '../services/agora_service.dart';
 import '../services/api_client.dart';
+import '../services/cloud_store.dart';
 import '../services/local_store.dart';
 import '../services/maps_service.dart';
 import '../services/notification_service.dart';
@@ -47,6 +50,10 @@ final messageRepositoryProvider = Provider<MessageRepository>(
 
 final sellerRepositoryProvider = Provider<SellerRepository>(
   (ref) => SellerRepository(ref.watch(apiClientProvider)),
+);
+
+final huberRepositoryProvider = Provider<HuberRepository>(
+  (ref) => HuberRepository(),
 );
 
 final agoraServiceProvider = Provider<AgoraService>(
@@ -88,8 +95,8 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
   Future<void> _hydrate() async {
     final local = _repo.currentUser();
     state = AsyncValue.data(local);
+    await CloudStore.hydrateLocalCache();
     if (local != null) {
-      // Validate / refresh profile in background.
       final fresh = await _repo.fetchProfile();
       if (fresh != null) {
         state = AsyncValue.data(fresh);
@@ -114,6 +121,7 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     required String password,
     required String name,
     String role = 'buyer',
+    HuberSignUpDetails? huber,
   }) async {
     state = const AsyncValue.loading();
     try {
@@ -122,12 +130,18 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
         password: password,
         name: name,
         role: role,
+        huber: huber,
       );
       state = AsyncValue.data(user);
     } catch (e, st) {
       state = const AsyncValue.data(null);
       Error.throwWithStackTrace(e, st);
     }
+  }
+
+  Future<void> enableHuber({HuberSignUpDetails? details}) async {
+    final user = await _repo.enableHuber(details: details);
+    state = AsyncValue.data(user);
   }
 
   Future<void> signOut() async {

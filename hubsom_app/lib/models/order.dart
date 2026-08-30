@@ -157,6 +157,23 @@ class Order extends Equatable {
         createdAt: json['createdAt'] as String? ?? '',
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'currency': currency,
+        'subtotalGhs': subtotalGhs,
+        'status': status,
+        if (userId != null) 'userId': userId,
+        if (buyerName != null) 'buyerName': buyerName,
+        if (buyerEmail != null) 'buyerEmail': buyerEmail,
+        if (streamId != null) 'streamId': streamId,
+        'oneTap': oneTap,
+        'lines': lines.map((e) => e.toJson()).toList(),
+        if (shipping != null) 'shipping': shipping!.toJson(),
+        'paymentMethods': paymentMethods,
+        'deliveryEstimate': deliveryEstimate,
+        'createdAt': createdAt,
+      };
+
   @override
   List<Object?> get props => [id, status, subtotalGhs, lines];
 }

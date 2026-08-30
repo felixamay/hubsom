@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared Hubsom account vault (password stored as salt+sha256, never plaintext).
+    match /accounts/{email} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /hubers/{id} {
+      allow read, write: if true;
+    }
+    match /huberOffers/{id} {
+      allow read, write: if true;
+    }
+    match /huberDeliveries/{id} {
+      allow read, write: if true;
+    }
+    match /orders/{id} {
+      allow read, write: if true;
+    }
+    match /shipments/{id} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -43,6 +43,25 @@ class SellPage extends ConsumerWidget {
           _tile(context, Icons.insights, 'Analytics', '/seller/analytics'),
         ],
         const SizedBox(height: 24),
+        if (user != null && (user.isHuber || user.role == 'admin'))
+          _tile(context, Icons.two_wheeler, 'Huber driver hub', '/huber')
+        else
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.two_wheeler_outlined, color: HubsomColors.huberNavy),
+            title: const Text('Drive with Huber', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Same Hubsom sign-up — receive seller delivery offers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              if (user == null) {
+                context.push('/auth/sign-up?role=huber&callbackUrl=%2Fhuber');
+                return;
+              }
+              await ref.read(authStateProvider.notifier).enableHuber();
+              if (context.mounted) context.go('/huber/verify');
+            },
+          ),
+        const SizedBox(height: 24),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

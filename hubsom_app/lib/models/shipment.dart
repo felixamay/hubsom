@@ -28,6 +28,15 @@ class ShipmentItem extends Equatable {
         lineTotalGhs: (json['lineTotalGhs'] as num?)?.toDouble() ?? 0,
       );
 
+  Map<String, dynamic> toJson() => {
+        'orderId': orderId,
+        'productId': productId,
+        'name': name,
+        'quantity': quantity,
+        if (image != null) 'image': image,
+        'lineTotalGhs': lineTotalGhs,
+      };
+
   @override
   List<Object?> get props => [orderId, productId, quantity];
 }
@@ -66,6 +75,18 @@ class DeliveryOffer extends Equatable {
         createdAt: json['createdAt'] as String? ?? '',
         expiresAt: json['expiresAt'] as String? ?? '',
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'shipmentId': shipmentId,
+        'huberId': huberId,
+        'huberName': huberName,
+        'status': status,
+        if (offeredFeeGhs != null) 'offeredFeeGhs': offeredFeeGhs,
+        if (providerReference != null) 'providerReference': providerReference,
+        'createdAt': createdAt,
+        'expiresAt': expiresAt,
+      };
 
   @override
   List<Object?> get props => [id, huberId, status];
@@ -125,6 +146,45 @@ class Shipment extends Equatable {
         createdAt: json['createdAt'] as String? ?? '',
         updatedAt: json['updatedAt'] as String? ?? '',
       );
+
+  Shipment copyWith({
+    String? status,
+    String? assignedHuberId,
+    String? assignedHuberName,
+    List<DeliveryOffer>? offers,
+    String? updatedAt,
+  }) =>
+      Shipment(
+        id: id,
+        sellerId: sellerId,
+        createdByUserId: createdByUserId,
+        orderIds: orderIds,
+        items: items,
+        destination: destination,
+        status: status ?? this.status,
+        assignedHuberId: assignedHuberId ?? this.assignedHuberId,
+        assignedHuberName: assignedHuberName ?? this.assignedHuberName,
+        offers: offers ?? this.offers,
+        notes: notes,
+        createdAt: createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'sellerId': sellerId,
+        'createdByUserId': createdByUserId,
+        'orderIds': orderIds,
+        'items': items.map((e) => e.toJson()).toList(),
+        'destination': destination.toJson(),
+        'status': status,
+        if (assignedHuberId != null) 'assignedHuberId': assignedHuberId,
+        if (assignedHuberName != null) 'assignedHuberName': assignedHuberName,
+        'offers': offers.map((e) => e.toJson()).toList(),
+        if (notes != null) 'notes': notes,
+        'createdAt': createdAt,
+        'updatedAt': updatedAt,
+      };
 
   @override
   List<Object?> get props => [id, sellerId, status, assignedHuberId];

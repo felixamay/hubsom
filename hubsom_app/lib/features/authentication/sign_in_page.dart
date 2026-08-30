@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_routes.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/repositories/auth_repository.dart';
 import '../../widgets/hubsom_logo.dart';
@@ -44,7 +45,16 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             _email.text.trim(),
             _password.text,
           );
-      if (mounted) context.go(_callback);
+      final user = ref.read(authStateProvider).valueOrNull;
+      if (mounted) {
+        context.go(
+          AuthRoutes.homeForUser(
+            user?.role,
+            callback: _callback,
+            huberId: user?.huberId,
+          ),
+        );
+      }
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
@@ -69,7 +79,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 const HubsomLogo(height: 56, showWordmark: true),
                 const SizedBox(height: 12),
                 Text(
-                  'Use the same email and password you used when you created the account on this browser.',
+                  'Use the same Hubsom email and password on any browser. Buyers, sellers, and Huber drivers share this sign-in. Your account is stored in the Hubsom database, not only on this device.',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -114,6 +124,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     '/auth/sign-up?callbackUrl=${Uri.encodeComponent(_callback)}',
                   ),
                   child: const Text('Create account'),
+                ),
+                TextButton(
+                  onPressed: () => context.push(
+                    '/auth/sign-up?role=huber&callbackUrl=${Uri.encodeComponent('/huber')}',
+                  ),
+                  child: const Text('Create Huber driver account'),
                 ),
               ],
             ),

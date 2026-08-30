@@ -6,6 +6,9 @@ export async function POST(request: Request) {
     name?: string;
     email?: string;
     password?: string;
+    role?: "buyer" | "seller" | "both" | "huber";
+    phone?: string;
+    city?: string;
   };
 
   try {
@@ -13,6 +16,9 @@ export async function POST(request: Request) {
       name: body.name?.trim() || "",
       email: body.email ?? "",
       password: body.password ?? "",
+      role: body.role,
+      phone: body.phone,
+      city: body.city,
     });
     return NextResponse.json({ user: toPublicUser(user) }, { status: 201 });
   } catch (error) {

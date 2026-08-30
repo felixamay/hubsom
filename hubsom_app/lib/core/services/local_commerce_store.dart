@@ -302,6 +302,7 @@ class LocalCommerceStore {
         bio: user.bio,
         role: user.role == 'buyer' ? 'both' : user.role,
         sellerId: seller.id,
+        huberId: user.huberId,
         followingSellerIds: user.followingSellerIds,
         savedProductIds: user.savedProductIds,
         addresses: user.addresses,

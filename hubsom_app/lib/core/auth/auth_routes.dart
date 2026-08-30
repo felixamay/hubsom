@@ -1,7 +1,7 @@
 /// Route access policy for Hubsom Flutter.
 ///
 /// Public routes are browse-only. All account, commerce, messaging, seller,
-/// wallet, and dispatch features require an authenticated session.
+/// wallet, Huber driver, and dispatch features require an authenticated session.
 abstract final class AuthRoutes {
   static const publicExact = <String>{
     '/',
@@ -48,6 +48,35 @@ abstract final class AuthRoutes {
     return path == '/seller' || path.startsWith('/seller/');
   }
 
+  static bool requiresHuber(String location) {
+    final path = location.split('?').first;
+    return path == '/huber' || path.startsWith('/huber/');
+  }
+
   static bool isSellerRole(String? role) =>
       role == 'seller' || role == 'both' || role == 'admin';
+
+  static bool isHuberRole(String? role, {String? huberId}) =>
+      role == 'huber' ||
+      role == 'driver' ||
+      role == 'admin' ||
+      (huberId != null && huberId.isNotEmpty);
+
+  /// After sign-in / sign-up: Huber accounts land in the driver hub unless
+  /// they were sent to a specific non-account page (checkout, etc.).
+  static String homeForUser(
+    String? role, {
+    String? callback,
+    String? huberId,
+  }) {
+    final driver = isHuberRole(role, huberId: huberId);
+    final cb = callback;
+    if (cb != null && cb.startsWith('/') && !cb.startsWith('//')) {
+      if (driver && (cb == '/account' || cb == '/' || cb.isEmpty)) {
+        return '/huber';
+      }
+      return cb;
+    }
+    return driver ? '/huber' : '/account';
+  }
 }

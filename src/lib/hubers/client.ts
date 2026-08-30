@@ -27,65 +27,10 @@ export interface HuberRider {
 
 type Store = { hubers: HuberRider[] };
 
-const SEED: HuberRider[] = [
-  {
-    id: "huber-ama",
-    name: "Ama Mensah",
-    phone: "0241001001",
-    city: "Accra",
-    region: "Greater Accra",
-    approvalStatus: "approved",
-    availability: "available",
-    rating: 4.9,
-    vehicle: "Motorbike",
-    lastLocation: {
-      latitude: 5.6037,
-      longitude: -0.187,
-      source: "gps",
-      capturedAt: new Date().toISOString(),
-    },
-  },
-  {
-    id: "huber-kwesi",
-    name: "Kwesi Boateng",
-    phone: "0242002002",
-    city: "Accra",
-    region: "Greater Accra",
-    approvalStatus: "approved",
-    availability: "available",
-    rating: 4.7,
-    vehicle: "Motorbike",
-  },
-  {
-    id: "huber-efua",
-    name: "Efua Addo",
-    phone: "0243003003",
-    city: "Tema",
-    region: "Greater Accra",
-    approvalStatus: "approved",
-    availability: "busy",
-    rating: 4.8,
-    vehicle: "Scooter",
-  },
-  {
-    id: "huber-pending",
-    name: "Pending Rider",
-    phone: "0244004004",
-    city: "Kumasi",
-    region: "Ashanti",
-    approvalStatus: "pending",
-    availability: "offline",
-    rating: 0,
-  },
-];
+const SEED: HuberRider[] = [];
 
 async function load(): Promise<Store> {
-  const store = await readJsonFile<Store>(FILE, { hubers: [] });
-  if (!store.hubers.length) {
-    store.hubers = SEED;
-    await writeJsonFile(FILE, store);
-  }
-  return store;
+  return readJsonFile<Store>(FILE, { hubers: SEED });
 }
 
 export async function listApprovedAvailableHubers(): Promise<HuberRider[]> {

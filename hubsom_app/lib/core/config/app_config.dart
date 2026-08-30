@@ -21,6 +21,6 @@ class AppConfig {
     openRouteServiceKey =
         const String.fromEnvironment('OPENROUTESERVICE_KEY', defaultValue: '');
     firebaseEnabled =
-        const bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: false);
+        const bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: true);
   }
 }

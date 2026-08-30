@@ -2,6 +2,8 @@
 
 Use this document to wire **Huber** (delivery / riders) to **Hubsom** (live commerce checkout + seller dispatch).
 
+The Huber driver experience now lives in the Hubsom Flutter app (`hubsom_app/`) under `/huber`. Drivers **create an account and sign in with the same Hubsom authentication** (account type **Huber driver**). There is no separate Huber login.
+
 ## Hubsom repository (share with the Huber agent)
 
 | Field | Value |
