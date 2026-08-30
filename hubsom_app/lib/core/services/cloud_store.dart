@@ -1,12 +1,18 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config/firebase_options.dart';
 import 'firebase_bootstrap.dart';
 import 'local_store.dart';
 
-/// Firestore-backed Hubsom data so accounts and Huber jobs work across browsers.
+/// Firestore-backed Hubsom data so accounts work on any browser/device.
+///
+/// Uses the FlutterFire SDK when it is ready, and always falls back to the
+/// public Firestore REST API. Sign-up must succeed against this database —
+/// the on-device vault is only a cache.
 class CloudStore {
   CloudStore._();
 
@@ -17,6 +23,24 @@ class CloudStore {
   static const orders = 'orders';
   static const shipments = 'shipments';
 
+  /// Tests set this to false so they do not write to production Firestore.
+  static bool useNetwork = true;
+
+  static final Dio _rest = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 12),
+      receiveTimeout: const Duration(seconds: 12),
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      validateStatus: (s) => s != null && s < 500,
+    ),
+  );
+
+  static String get _projectId => DefaultFirebaseOptions.web.projectId;
+  static String get _apiKey => DefaultFirebaseOptions.web.apiKey;
+
+  static String get _root =>
+      'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents';
+
   static FirebaseFirestore? get _db {
     if (!FirebaseBootstrap.ready) return null;
     try {
@@ -26,63 +50,144 @@ class CloudStore {
     }
   }
 
-  static bool get available => _db != null;
+  static bool get available => useNetwork;
+
+  static String accountDocId(String email) => email.trim().toLowerCase();
 
   static Future<Map<String, dynamic>?> getAccount(String email) async {
-    final db = _db;
-    if (db == null) return null;
+    if (!useNetwork) return null;
+    final id = accountDocId(email);
+
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        final snap = await sdk.collection(accounts).doc(id).get();
+        if (snap.data() != null) return snap.data();
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.getAccount sdk: $e');
+      }
+    }
+
     try {
-      final snap = await db.collection(accounts).doc(email).get();
-      return snap.data();
+      final res = await _rest.get<dynamic>(
+        '$_root/$accounts/${Uri.encodeComponent(id)}',
+        queryParameters: {'key': _apiKey},
+      );
+      if (res.statusCode == 404 || res.data == null) return null;
+      if (res.data is Map && res.data['error'] != null) return null;
+      return decodeDocument(res.data);
     } catch (e) {
-      if (kDebugMode) debugPrint('CloudStore.getAccount: $e');
+      if (kDebugMode) debugPrint('CloudStore.getAccount rest: $e');
       return null;
     }
   }
 
   static Future<void> putAccount(String email, Map<String, dynamic> data) async {
-    final db = _db;
-    if (db == null) return;
-    await db.collection(accounts).doc(email).set({
+    if (!useNetwork) {
+      throw StateError('Account database is disabled in this environment');
+    }
+    final id = accountDocId(email);
+    final payload = {
       ...data,
+      'email': id,
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
-    });
+    };
+
+    Object? sdkError;
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        await sdk.collection(accounts).doc(id).set(payload);
+        return;
+      } catch (e) {
+        sdkError = e;
+        if (kDebugMode) debugPrint('CloudStore.putAccount sdk: $e');
+      }
+    }
+
+    final res = await _rest.patch<dynamic>(
+      '$_root/$accounts/${Uri.encodeComponent(id)}',
+      queryParameters: {'key': _apiKey},
+      data: {'fields': encodeFields(payload)},
+    );
+    if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 300) {
+      return;
+    }
+    throw StateError(
+      'Could not save account to the Hubsom database'
+      '${sdkError != null ? ' ($sdkError)' : ''}'
+      '${res.data != null ? ': ${res.data}' : ''}',
+    );
   }
 
   static Future<void> upsertDocs(
     String collection,
     List<Map<String, dynamic>> rows,
   ) async {
-    final db = _db;
-    if (db == null || rows.isEmpty) return;
-    try {
-      final batch = db.batch();
-      for (final row in rows) {
-        final id = '${row['id'] ?? ''}';
-        if (id.isEmpty) continue;
-        batch.set(db.collection(collection).doc(id), row, SetOptions(merge: true));
+    if (!useNetwork || rows.isEmpty) return;
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        final batch = sdk.batch();
+        for (final row in rows) {
+          final id = '${row['id'] ?? ''}';
+          if (id.isEmpty) continue;
+          batch.set(sdk.collection(collection).doc(id), row, SetOptions(merge: true));
+        }
+        await batch.commit();
+        return;
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.upsertDocs sdk: $e');
       }
-      await batch.commit();
-    } catch (e) {
-      if (kDebugMode) debugPrint('CloudStore.upsertDocs($collection): $e');
+    }
+    for (final row in rows) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      try {
+        await _rest.patch<dynamic>(
+          '$_root/$collection/${Uri.encodeComponent(id)}',
+          queryParameters: {'key': _apiKey},
+          data: {'fields': encodeFields(row)},
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.upsertDocs rest: $e');
+      }
     }
   }
 
   static Future<List<Map<String, dynamic>>> listDocs(String collection) async {
-    final db = _db;
-    if (db == null) return const [];
+    if (!useNetwork) return const [];
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        final snap = await sdk.collection(collection).get();
+        return snap.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.listDocs sdk: $e');
+      }
+    }
     try {
-      final snap = await db.collection(collection).get();
-      return snap.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
+      final res = await _rest.get<dynamic>(
+        '$_root/$collection',
+        queryParameters: {'key': _apiKey, 'pageSize': 100},
+      );
+      final data = res.data;
+      if (data is! Map) return const [];
+      final docs = data['documents'];
+      if (docs is! List) return const [];
+      return docs
+          .whereType<Map>()
+          .map((d) => decodeDocument(d))
+          .where((d) => d.isNotEmpty)
+          .toList();
     } catch (e) {
-      if (kDebugMode) debugPrint('CloudStore.listDocs($collection): $e');
+      if (kDebugMode) debugPrint('CloudStore.listDocs rest: $e');
       return const [];
     }
   }
 
-  /// Pull shared Huber / commerce collections into the local cache.
   static Future<void> hydrateLocalCache() async {
-    if (!available) return;
+    if (!useNetwork) return;
     final mapping = <String, String>{
       'huberProfiles': hubers,
       'huberOffers': offers,
@@ -95,5 +200,77 @@ class CloudStore {
       if (rows.isEmpty) continue;
       await LocalStore.setString(entry.key, jsonEncode(rows));
     }
+  }
+
+  static Map<String, dynamic> encodeFields(Map<String, dynamic> data) {
+    return {
+      for (final e in data.entries)
+        if (e.value != null) e.key: encodeValue(e.value),
+    };
+  }
+
+  static Map<String, dynamic> encodeValue(Object? value) {
+    if (value == null) return {'nullValue': null};
+    if (value is bool) return {'booleanValue': value};
+    if (value is int) return {'integerValue': '$value'};
+    if (value is double) return {'doubleValue': value};
+    if (value is String) return {'stringValue': value};
+    if (value is Map) {
+      return {
+        'mapValue': {
+          'fields': encodeFields(Map<String, dynamic>.from(value)),
+        },
+      };
+    }
+    if (value is List) {
+      return {
+        'arrayValue': {
+          'values': [for (final item in value) encodeValue(item)],
+        },
+      };
+    }
+    return {'stringValue': '$value'};
+  }
+
+  static Map<String, dynamic> decodeDocument(dynamic raw) {
+    if (raw is! Map) return {};
+    final fields = raw['fields'];
+    if (fields is! Map) return {};
+    return decodeFields(Map<String, dynamic>.from(fields));
+  }
+
+  static Map<String, dynamic> decodeFields(Map<String, dynamic> fields) {
+    return {
+      for (final e in fields.entries) e.key: decodeValue(e.value),
+    };
+  }
+
+  static dynamic decodeValue(dynamic value) {
+    if (value is! Map) return value;
+    final map = Map<String, dynamic>.from(value);
+    if (map.containsKey('stringValue')) return map['stringValue'];
+    if (map.containsKey('booleanValue')) return map['booleanValue'];
+    if (map.containsKey('doubleValue')) {
+      return (map['doubleValue'] as num).toDouble();
+    }
+    if (map.containsKey('integerValue')) {
+      return int.tryParse('${map['integerValue']}') ?? map['integerValue'];
+    }
+    if (map.containsKey('nullValue')) return null;
+    if (map['mapValue'] is Map) {
+      final inner = Map<String, dynamic>.from(map['mapValue'] as Map);
+      final fields = inner['fields'];
+      if (fields is Map) {
+        return decodeFields(Map<String, dynamic>.from(fields));
+      }
+      return <String, dynamic>{};
+    }
+    if (map['arrayValue'] is Map) {
+      final inner = Map<String, dynamic>.from(map['arrayValue'] as Map);
+      final values = inner['values'];
+      if (values is List) return values.map(decodeValue).toList();
+      return const [];
+    }
+    return map;
   }
 }

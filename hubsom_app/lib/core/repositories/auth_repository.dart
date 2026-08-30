@@ -402,6 +402,12 @@ class AuthRepository {
     final userJson = entry['userJson'];
     final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
     await _persist(user, _issueLocalToken(user));
+    await _backfillCloudAccount(
+      email: email,
+      salt: salt,
+      hash: hash,
+      user: user,
+    );
     if (AuthRoutes.isHuberRole(user.role)) {
       await LocalHuberStore.ensureProfileForUser(user);
     }
@@ -413,28 +419,47 @@ class AuthRepository {
     required String password,
     required HubsomUser user,
   }) async {
-    final vault = LocalStore.loadCredentialVault();
     final salt = _randomSalt();
-    vault[email] = {
+    final hash = _hashPassword(password, salt);
+    final record = {
       'salt': salt,
-      'hash': _hashPassword(password, salt),
+      'hash': hash,
       'userJson': user.toJson(),
+      'email': email,
+      'name': user.name,
+      'role': user.role,
     };
+
+    // Database first — do not create a browser-only account.
+    try {
+      await CloudStore.putAccount(email, record);
+    } catch (e) {
+      throw AuthException(
+        'Could not save your account to the Hubsom database. Check your connection and try again.',
+      );
+    }
+
+    final vault = LocalStore.loadCredentialVault();
+    vault[email] = record;
     await LocalStore.saveCredentialVault(vault);
+  }
+
+  Future<void> _backfillCloudAccount({
+    required String email,
+    required String salt,
+    required String hash,
+    required HubsomUser user,
+  }) async {
     try {
       await CloudStore.putAccount(email, {
-        'salt': vault[email]['salt'],
-        'hash': vault[email]['hash'],
+        'salt': salt,
+        'hash': hash,
         'userJson': user.toJson(),
         'email': email,
+        'name': user.name,
+        'role': user.role,
       });
-    } catch (_) {
-      if (CloudStore.available) {
-        throw AuthException(
-          'Account saved on this device, but the shared database could not be reached. Try again on a stable connection.',
-        );
-      }
-    }
+    } catch (_) {}
   }
 
   void _validateCredentials(String email, String password, {String? name}) {

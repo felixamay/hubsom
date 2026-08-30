@@ -126,8 +126,8 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 const SizedBox(height: 12),
                 Text(
                   _isHuber
-                      ? 'Create a Huber driver account with the same Hubsom sign-up. You’ll receive seller delivery offers in Hub Now.'
-                      : 'One Hubsom account for shopping, selling, and Huber driving.',
+                      ? 'Create a Huber driver account. It is stored in the Hubsom database so you can sign in on any device.'
+                      : 'One Hubsom account for shopping, selling, and Huber driving. Saved in the Hubsom database — not only this browser.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),

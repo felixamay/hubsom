@@ -79,7 +79,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 const HubsomLogo(height: 56, showWordmark: true),
                 const SizedBox(height: 12),
                 Text(
-                  'Use the same Hubsom email and password on any browser. Buyers, sellers, and Huber drivers share this sign-in. Your account is stored in the Hubsom database, not only on this device.',
+                  'Sign in with the email and password you created. Your account lives in the Hubsom database, so it works on this browser and any other device.',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
