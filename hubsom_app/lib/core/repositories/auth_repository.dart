@@ -43,6 +43,14 @@ class AuthRepository {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password, name: name);
 
+    // If this email already has a local account, do not create a second one.
+    final existing = LocalStore.loadCredentialVault()[normalized];
+    if (existing is Map) {
+      throw AuthException(
+        'An account with this email already exists. Please sign in.',
+      );
+    }
+
     // Prefer remote Auth.js API when it returns real JSON.
     try {
       final res = await _api.post(
@@ -71,7 +79,7 @@ class AuthRepository {
         return user;
       }
       // HTML / empty from Firebase Hosting SPA rewrite → local vault.
-      return _localSignUp(
+      return await _localSignUp(
         email: normalized,
         password: password,
         name: name.trim(),
@@ -80,7 +88,7 @@ class AuthRepository {
     } on AuthException {
       rethrow;
     } catch (_) {
-      return _localSignUp(
+      return await _localSignUp(
         email: normalized,
         password: password,
         name: name.trim(),
@@ -95,6 +103,13 @@ class AuthRepository {
   }) async {
     final normalized = email.trim().toLowerCase();
     _validateCredentials(normalized, password);
+
+    // Local vault first — Firebase Hosting has no Auth.js, and this is what
+    // "Create account" writes. Remote HTML must not hide a valid local login.
+    final vault = LocalStore.loadCredentialVault();
+    if (vault.containsKey(normalized)) {
+      return _localSignIn(email: normalized, password: password);
+    }
 
     try {
       final csrf = await _api.get('/api/auth/csrf');
@@ -142,26 +157,25 @@ class AuthRepository {
         return profile;
       }
 
-      return _localSignIn(email: normalized, password: password);
+      return await _localSignIn(email: normalized, password: password);
     } on AuthException {
       rethrow;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
-        // Still allow local vault accounts.
         try {
-          return _localSignIn(email: normalized, password: password);
+          return await _localSignIn(email: normalized, password: password);
         } on AuthException {
           throw AuthException('Invalid email or password');
         }
       }
       try {
-        return _localSignIn(email: normalized, password: password);
+        return await _localSignIn(email: normalized, password: password);
       } on AuthException {
         throw AuthException('Invalid email or password');
       }
     } catch (_) {
       try {
-        return _localSignIn(email: normalized, password: password);
+        return await _localSignIn(email: normalized, password: password);
       } on AuthException {
         throw AuthException('Invalid email or password');
       }
@@ -174,7 +188,7 @@ class AuthRepository {
       final data = ApiResponse.asMap(res.data);
       if (data == null || data['error'] != null) return currentUser();
       final user = HubsomUser.fromJson(data);
-      LocalStore.userJson = jsonEncode(user.toJson());
+      await LocalStore.setUserJson(jsonEncode(user.toJson()));
       return user;
     } catch (_) {
       return currentUser();
@@ -187,7 +201,7 @@ class AuthRepository {
       final data = ApiResponse.asMap(res.data);
       if (data != null && data['error'] == null && data['id'] != null) {
         final user = HubsomUser.fromJson(data);
-        LocalStore.userJson = jsonEncode(user.toJson());
+        await LocalStore.setUserJson(jsonEncode(user.toJson()));
         return user;
       }
     } catch (_) {
@@ -213,7 +227,7 @@ class AuthRepository {
       emailVerified: current.emailVerified,
       walletBalanceGhs: current.walletBalanceGhs,
     );
-    LocalStore.userJson = jsonEncode(updated.toJson());
+    await LocalStore.setUserJson(jsonEncode(updated.toJson()));
     final vault = LocalStore.loadCredentialVault();
     final entry = vault[current.email.toLowerCase()];
     if (entry is Map) {
@@ -302,8 +316,8 @@ class AuthRepository {
   }
 
   Future<void> _persist(HubsomUser user, String token) async {
-    LocalStore.sessionToken = token;
-    LocalStore.userJson = jsonEncode(user.toJson());
+    await LocalStore.setSessionToken(token);
+    await LocalStore.setUserJson(jsonEncode(user.toJson()));
   }
 
   String _issueLocalToken(HubsomUser user) {

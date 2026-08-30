@@ -69,7 +69,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 const HubsomLogo(height: 56, showWordmark: true),
                 const SizedBox(height: 12),
                 Text(
-                  'Secure access to checkout, wallet, messages, seller tools, and more.',
+                  'Use the same email and password you used when you created the account on this browser.',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),

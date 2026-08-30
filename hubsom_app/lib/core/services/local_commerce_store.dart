@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/product.dart';
@@ -13,7 +12,6 @@ import 'local_store.dart';
 class LocalCommerceStore {
   LocalCommerceStore._();
 
-  static const _boxName = 'hubsom';
   static const _productsKey = 'localProducts';
   static const _sellersKey = 'localSellers';
   static const _streamsKey = 'localStreams';
@@ -21,24 +19,22 @@ class LocalCommerceStore {
   static const _reactionsKey = 'localReactions';
   static const _uuid = Uuid();
 
-  static Box get _box => Hive.box(_boxName);
-
   /// Wipe local commerce (keeps auth vault / cart / session).
   static Future<void> clearDemoAndCommerce() async {
-    await _box.delete(_productsKey);
-    await _box.delete(_sellersKey);
-    await _box.delete(_streamsKey);
-    await _box.delete(_chatKey);
-    await _box.delete(_reactionsKey);
-    await _box.delete('cache_products');
+    await LocalStore.remove(_productsKey);
+    await LocalStore.remove(_sellersKey);
+    await LocalStore.remove(_streamsKey);
+    await LocalStore.remove(_chatKey);
+    await LocalStore.remove(_reactionsKey);
+    await LocalStore.remove('cache_products');
   }
 
   /// One-time wipe of previously seeded demo catalog / live shows.
   static Future<void> migrateClearDemoOnce() async {
     const flag = 'commerce_cleared_v2';
-    if (_box.get(flag) == true) return;
+    if (LocalStore.getBool(flag)) return;
     await clearDemoAndCommerce();
-    await _box.put(flag, true);
+    await LocalStore.setBool(flag, true);
   }
 
   // --- sellers ---
@@ -312,7 +308,7 @@ class LocalCommerceStore {
         emailVerified: user.emailVerified,
         walletBalanceGhs: user.walletBalanceGhs,
       );
-      LocalStore.userJson = jsonEncode(patched.toJson());
+      await LocalStore.setUserJson(jsonEncode(patched.toJson()));
     }
     return stream;
   }
@@ -390,7 +386,7 @@ class LocalCommerceStore {
   // --- chat ---
 
   static Map<String, List<ChatMessage>> _chatMap() {
-    final raw = _box.get(_chatKey) as String?;
+    final raw = LocalStore.getString(_chatKey);
     if (raw == null || raw.isEmpty) return {};
     try {
       final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -409,7 +405,7 @@ class LocalCommerceStore {
     final encoded = map.map(
       (k, v) => MapEntry(k, v.map((m) => m.toJson()).toList()),
     );
-    await _box.put(_chatKey, jsonEncode(encoded));
+    await LocalStore.setString(_chatKey, jsonEncode(encoded));
   }
 
   static List<ChatMessage> listChat(String streamId) {
@@ -452,7 +448,7 @@ class LocalCommerceStore {
       x: 0.55 + (DateTime.now().millisecond % 300) / 1000,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
-    final raw = _box.get(_reactionsKey) as String?;
+    final raw = LocalStore.getString(_reactionsKey);
     final map = raw == null || raw.isEmpty
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -466,12 +462,12 @@ class LocalCommerceStore {
     });
     // Keep last 40
     map[streamId] = list.length > 40 ? list.sublist(list.length - 40) : list;
-    await _box.put(_reactionsKey, jsonEncode(map));
+    await LocalStore.setString(_reactionsKey, jsonEncode(map));
     return reaction;
   }
 
   static List<LiveReaction> recentReactions(String streamId) {
-    final raw = _box.get(_reactionsKey) as String?;
+    final raw = LocalStore.getString(_reactionsKey);
     if (raw == null || raw.isEmpty) return const [];
     try {
       final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -487,7 +483,7 @@ class LocalCommerceStore {
   // --- helpers ---
 
   static List<dynamic> _readList(String key) {
-    final raw = _box.get(key) as String?;
+    final raw = LocalStore.getString(key);
     if (raw == null || raw.isEmpty) return [];
     try {
       return List<dynamic>.from(jsonDecode(raw) as List);
@@ -497,6 +493,6 @@ class LocalCommerceStore {
   }
 
   static Future<void> _writeList(String key, List<dynamic> list) async {
-    await _box.put(key, jsonEncode(list));
+    await LocalStore.setString(key, jsonEncode(list));
   }
 }

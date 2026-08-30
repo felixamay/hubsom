@@ -122,7 +122,7 @@ class SellerRepository {
           emailVerified: user.emailVerified,
           walletBalanceGhs: user.walletBalanceGhs,
         );
-        LocalStore.userJson = jsonEncode(patched.toJson());
+        await LocalStore.setUserJson(jsonEncode(patched.toJson()));
       }
     }
     return product.toJson();
