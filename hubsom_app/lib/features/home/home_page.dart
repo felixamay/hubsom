@@ -87,6 +87,10 @@ class HomePage extends ConsumerWidget {
                         child: const Text('Watch live'),
                       ),
                       OutlinedButton(
+                        onPressed: () => context.push('/videos'),
+                        child: const Text('Shop videos'),
+                      ),
+                      OutlinedButton(
                         onPressed: () => context.push('/auctions'),
                         child: const Text('Auctions'),
                       ),

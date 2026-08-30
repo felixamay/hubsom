@@ -499,10 +499,39 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final image = product.images.isNotEmpty ? product.images.first : null;
     final slides = _slidesFor(product);
     final mediaHeight =
-        (MediaQuery.sizeOf(context).height * 0.62).clamp(360.0, 640.0);
+        (MediaQuery.sizeOf(context).width * 0.95).clamp(260.0, 420.0);
 
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: Text(
+          product.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          if (_isOwner)
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'edit') {
+                  await context.push('/seller/products/${product.id}/edit');
+                  if (mounted) _load();
+                } else if (value == 'delete') {
+                  await _confirmDeleteProduct();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Edit product')),
+                PopupMenuItem(value: 'delete', child: Text('Delete product')),
+              ],
+            ),
+          IconButton(
+            tooltip: 'Share',
+            onPressed: _shareSheet,
+            icon: const Icon(Icons.ios_share_outlined),
+          ),
+        ],
+      ),
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
@@ -525,13 +554,13 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                             productId: product.id,
                             remoteUrl: product.demoVideoUrl,
                             expand: true,
-                            autoplay: true,
+                            autoplay: false,
                             borderRadius: 0,
                           ),
                         );
                       case _MediaKind.image:
                         return ColoredBox(
-                          color: const Color(0xFF0B1F17),
+                          color: HubsomColors.mist,
                           child: HubsomImage(
                             url: slide.url,
                             fit: BoxFit.cover,
@@ -540,172 +569,53 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                               child: const Icon(
                                 Icons.image,
                                 size: 64,
-                                color: Colors.white54,
+                                color: Colors.black26,
                               ),
                             ),
                           ),
                         );
                       case _MediaKind.placeholder:
                         return Container(
-                          color: const Color(0xFF0B1F17),
+                          color: HubsomColors.mist,
                           alignment: Alignment.center,
                           child: const Icon(
                             Icons.image,
                             size: 64,
-                            color: Colors.white54,
+                            color: Colors.black26,
                           ),
                         );
                     }
                   },
                 ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: DecoratedBox(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x99000000), Color(0x00000000)],
-                      ),
-                    ),
-                    child: SafeArea(
-                      bottom: false,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                context.go('/');
-                              }
-                            },
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (_isOwner)
-                            PopupMenuButton<String>(
-                              icon: const Icon(
-                                Icons.more_vert,
-                                color: Colors.white,
-                              ),
-                              onSelected: (value) async {
-                                if (value == 'edit') {
-                                  await context.push(
-                                    '/seller/products/${product.id}/edit',
-                                  );
-                                  if (mounted) _load();
-                                } else if (value == 'delete') {
-                                  await _confirmDeleteProduct();
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('Edit product'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Delete product'),
+                if (slides.length > 1)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < slides.length; i++)
+                          Container(
+                            width: i == _mediaIndex ? 16 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: BoxDecoration(
+                              color: i == _mediaIndex
+                                  ? HubsomColors.forest
+                                  : Colors.white70,
+                              borderRadius: BorderRadius.circular(99),
+                              boxShadow: const [
+                                BoxShadow(
+                                  blurRadius: 2,
+                                  color: Colors.black26,
                                 ),
                               ],
                             ),
-                          if (slides.length > 1)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16),
-                              child: Text(
-                                '${_mediaIndex + 1}/${slides.length}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
-                ),
-                Positioned(
-                  left: 16,
-                  right: 78,
-                  bottom: 18,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (slides.length > 1)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            children: [
-                              for (var i = 0; i < slides.length; i++)
-                                Container(
-                                  width: i == _mediaIndex ? 16 : 6,
-                                  height: 6,
-                                  margin: const EdgeInsets.only(right: 4),
-                                  decoration: BoxDecoration(
-                                    color: i == _mediaIndex
-                                        ? Colors.white
-                                        : Colors.white38,
-                                    borderRadius: BorderRadius.circular(99),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      Text(
-                        product.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                          height: 1.15,
-                          shadows: [
-                            Shadow(blurRadius: 8, color: Colors.black54),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        formatGhs(product.effectivePrice),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                          shadows: [
-                            Shadow(blurRadius: 8, color: Colors.black54),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  right: 8,
-                  bottom: 24,
-                  child: _ActionRail(
-                    seller: _seller,
-                    following: _following,
-                    followBusy: _followBusy,
-                    liked: _liked,
-                    likes: _likes,
-                    comments: _comments.length,
-                    saved: _saved,
-                    onFollow: _toggleFollow,
-                    onLike: _toggleLike,
-                    onComment: _openComments,
-                    onShare: _shareSheet,
-                    onSave: _toggleSave,
-                  ),
-                ),
               ],
             ),
           ),
@@ -714,7 +624,23 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (product.compareAtGhs != null)
+                Text(
+                  product.name,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  formatGhs(product.effectivePrice),
+                  style: const TextStyle(
+                    color: HubsomColors.forest,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                  ),
+                ),
+                if (product.compareAtGhs != null) ...[
+                  const SizedBox(height: 2),
                   Text(
                     formatGhs(product.compareAtGhs!),
                     style: const TextStyle(
@@ -722,20 +648,90 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       color: Colors.grey,
                     ),
                   ),
+                ],
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Text('Stock: ${product.stock}'),
                     const SizedBox(width: 12),
                     const Icon(Icons.star, size: 16, color: HubsomColors.gold),
                     const SizedBox(width: 4),
-                    Text(
-                      product.reviewCount > 0 || _reviews.isNotEmpty
-                          ? '${(product.rating > 0 ? product.rating : (_reviews.isEmpty ? 0 : _reviews.map((r) => r.rating).reduce((a, b) => a + b) / _reviews.length)).toStringAsFixed(1)} · ${_reviews.isNotEmpty ? _reviews.length : product.reviewCount} reviews'
-                          : 'No reviews yet',
+                    Expanded(
+                      child: Text(
+                        product.reviewCount > 0 || _reviews.isNotEmpty
+                            ? '${(product.rating > 0 ? product.rating : (_reviews.isEmpty ? 0 : _reviews.map((r) => r.rating).reduce((a, b) => a + b) / _reviews.length)).toStringAsFixed(1)} · ${_reviews.isNotEmpty ? _reviews.length : product.reviewCount} reviews'
+                            : 'No reviews yet',
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                if (_seller != null) ...[
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: HubsomColors.mint,
+                      child: Text(
+                        _seller!.name.isNotEmpty
+                            ? _seller!.name[0].toUpperCase()
+                            : 'S',
+                        style: const TextStyle(
+                          color: HubsomColors.forest,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      _seller!.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text('${_seller!.city}, ${_seller!.region}'),
+                    trailing: FilledButton.tonal(
+                      onPressed: _followBusy ? null : _toggleFollow,
+                      child: Text(_following ? 'Following' : 'Follow'),
+                    ),
+                    onTap: () => context.push('/stores/${_seller!.slug}'),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ActionChip(
+                      avatar: Icon(
+                        _liked ? Icons.favorite : Icons.favorite_border,
+                        size: 18,
+                        color: _liked ? HubsomColors.live : null,
+                      ),
+                      label: Text(_likes > 0 ? '$_likes' : 'Like'),
+                      onPressed: _toggleLike,
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.mode_comment_outlined, size: 18),
+                      label: Text(
+                        _comments.isEmpty
+                            ? 'Comments'
+                            : 'Comments (${_comments.length})',
+                      ),
+                      onPressed: _openComments,
+                    ),
+                    ActionChip(
+                      avatar: Icon(
+                        _saved ? Icons.bookmark : Icons.bookmark_border,
+                        size: 18,
+                      ),
+                      label: Text(_saved ? 'Saved' : 'Save'),
+                      onPressed: _toggleSave,
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.ios_share_outlined, size: 18),
+                      label: const Text('Share'),
+                      onPressed: _shareSheet,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
                 Text(
                   'Details',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -780,9 +776,13 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                     children: const [
                       Text('• Hubsom buyer protection on paid orders'),
                       SizedBox(height: 4),
-                      Text('• Contact the seller within 7 days for damaged or wrong items'),
+                      Text(
+                        '• Contact the seller within 7 days for damaged or wrong items',
+                      ),
                       SizedBox(height: 4),
-                      Text('• Secure checkout — pay before Huber delivery starts'),
+                      Text(
+                        '• Secure checkout — pay before Huber delivery starts',
+                      ),
                     ],
                   ),
                 ),
@@ -842,8 +842,9 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                           Expanded(
                             child: Text(
                               r.userName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                           Text(
@@ -856,11 +857,13 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         ],
                       ),
                       subtitle: Text(
-                        r.comment.trim().isEmpty ? 'Rated this product' : r.comment,
+                        r.comment.trim().isEmpty
+                            ? 'Rated this product'
+                            : r.comment,
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(
@@ -873,13 +876,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         : 'Comments (${_comments.length})',
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  subtitle: Text(
-                    _comments.isEmpty
-                        ? 'Open the comment page to chat about this product'
-                        : _comments.first.text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  subtitle: const Text('Open the comment page'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _openComments,
                 ),
@@ -984,169 +981,6 @@ class _MediaSlide {
 
   final _MediaKind kind;
   final String? url;
-}
-
-class _ActionRail extends StatelessWidget {
-  const _ActionRail({
-    required this.seller,
-    required this.following,
-    required this.followBusy,
-    required this.liked,
-    required this.likes,
-    required this.comments,
-    required this.saved,
-    required this.onFollow,
-    required this.onLike,
-    required this.onComment,
-    required this.onShare,
-    required this.onSave,
-  });
-
-  final Seller? seller;
-  final bool following;
-  final bool followBusy;
-  final bool liked;
-  final int likes;
-  final int comments;
-  final bool saved;
-  final VoidCallback onFollow;
-  final VoidCallback onLike;
-  final VoidCallback onComment;
-  final VoidCallback onShare;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = (seller?.name.isNotEmpty == true)
-        ? seller!.name.substring(0, 1).toUpperCase()
-        : 'S';
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.bottomCenter,
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: HubsomColors.forest,
-                  backgroundImage: (seller?.avatar.isNotEmpty == true)
-                      ? NetworkImage(seller!.avatar)
-                      : null,
-                  child: (seller?.avatar.isNotEmpty == true)
-                      ? null
-                      : Text(
-                          initial,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                ),
-                Positioned(
-                  bottom: -10,
-                  child: Material(
-                    color: following ? Colors.white24 : HubsomColors.live,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: followBusy ? null : onFollow,
-                      child: Padding(
-                        padding: const EdgeInsets.all(3),
-                        child: Icon(
-                          following ? Icons.check : Icons.add,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              following ? 'Following' : 'Follow',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _RailAction(
-          icon: liked ? Icons.favorite : Icons.favorite_border,
-          label: likes > 0 ? '$likes' : 'Like',
-          color: liked ? HubsomColors.live : Colors.white,
-          onTap: onLike,
-        ),
-        const SizedBox(height: 16),
-        _RailAction(
-          icon: Icons.mode_comment_outlined,
-          label: comments > 0 ? '$comments' : 'Comment',
-          onTap: onComment,
-        ),
-        const SizedBox(height: 16),
-        _RailAction(
-          icon: Icons.ios_share,
-          label: 'Share',
-          onTap: onShare,
-        ),
-        const SizedBox(height: 16),
-        _RailAction(
-          icon: saved ? Icons.bookmark : Icons.bookmark_border,
-          label: saved ? 'Saved' : 'Save',
-          color: saved ? HubsomColors.gold : Colors.white,
-          onTap: onSave,
-        ),
-      ],
-    );
-  }
-}
-
-class _RailAction extends StatelessWidget {
-  const _RailAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.color = Colors.white,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 30),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _SectionCard extends StatelessWidget {

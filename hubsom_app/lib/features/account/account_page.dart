@@ -87,6 +87,7 @@ class AccountPage extends ConsumerWidget {
             _link(context, Icons.favorite_border, 'Saved products', '/account/saved'),
             _link(context, Icons.dynamic_feed_outlined, 'Timeline', '/timeline'),
             _link(context, Icons.play_circle_outline, 'Shop videos', '/videos'),
+            _link(context, Icons.movie_creation_outlined, 'Upload video', '/videos/upload'),
             _link(context, Icons.people_outline, 'Following accounts', '/account/following'),
             _link(context, Icons.location_on_outlined, 'Addresses', '/account/addresses'),
             _link(context, Icons.account_balance_wallet_outlined, 'Wallet', '/wallet'),
