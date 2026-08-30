@@ -143,9 +143,10 @@ class SellerRepository {
         role: user.role == 'buyer' ? 'both' : user.role,
         sellerId: product.sellerId,
         huberId: user.huberId,
-        followingSellerIds: user.followingSellerIds,
-        savedProductIds: user.savedProductIds,
-        addresses: user.addresses,
+      followingSellerIds: user.followingSellerIds,
+      savedProductIds: user.savedProductIds,
+      likedProductIds: user.likedProductIds,
+      addresses: user.addresses,
         emailVerified: user.emailVerified,
         walletBalanceGhs: user.walletBalanceGhs,
       );

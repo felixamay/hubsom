@@ -31,5 +31,14 @@ service cloud.firestore {
     match /streams/{id} {
       allow read, write: if true;
     }
+    match /productComments/{id} {
+      allow read, write: if true;
+    }
+    match /timelinePosts/{id} {
+      allow read, write: if true;
+    }
+    match /productLikes/{id} {
+      allow read, write: if true;
+    }
   }
 }

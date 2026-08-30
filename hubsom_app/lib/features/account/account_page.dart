@@ -55,6 +55,7 @@ class AccountPage extends ConsumerWidget {
             const Divider(),
             _link(context, Icons.person_outline, 'Profile', '/account/profile'),
             _link(context, Icons.favorite_border, 'Saved products', '/account/saved'),
+            _link(context, Icons.dynamic_feed_outlined, 'Timeline', '/timeline'),
             _link(context, Icons.storefront_outlined, 'Following', '/account/following'),
             _link(context, Icons.location_on_outlined, 'Addresses', '/account/addresses'),
             _link(context, Icons.account_balance_wallet_outlined, 'Wallet', '/wallet'),

@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/product.dart';
+import '../../models/product_social.dart';
 import '../../models/promotion.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 
@@ -124,10 +126,100 @@ class CatalogRepository {
   Future<bool> toggleSave(String productId) async {
     try {
       final res = await _api.post('/api/products/$productId/save');
-      return ApiResponse.asMap(res.data)?['saved'] as bool? ?? false;
+      final saved = ApiResponse.asMap(res.data)?['saved'] as bool?;
+      if (saved != null) {
+        await _patchSaved(productId, saved);
+        return saved;
+      }
     } catch (_) {
-      return false;
+      // fall through to local wishlist
     }
+    final user = _currentUser();
+    if (user == null) return false;
+    final next = !user.savedProductIds.contains(productId);
+    await _patchSaved(productId, next);
+    return next;
+  }
+
+  bool isSaved(String productId) {
+    final user = _currentUser();
+    if (user == null) return false;
+    return user.savedProductIds.contains(productId);
+  }
+
+  Future<bool> toggleLike(String productId) async {
+    final user = _currentUser();
+    if (user == null) return false;
+    try {
+      final res = await _api.post('/api/products/$productId/like');
+      final liked = ApiResponse.asMap(res.data)?['liked'] as bool?;
+      if (liked != null) {
+        await _patchLiked(productId, liked);
+        final localLiked = LocalCommerceStore.isLikedBy(productId, user.id);
+        if (localLiked != liked) {
+          await LocalCommerceStore.toggleProductLike(
+            productId: productId,
+            userId: user.id,
+          );
+        }
+        return liked;
+      }
+    } catch (_) {
+      // local like graph
+    }
+    await LocalCommerceStore.toggleProductLike(
+      productId: productId,
+      userId: user.id,
+    );
+    final liked = LocalCommerceStore.isLikedBy(productId, user.id);
+    await _patchLiked(productId, liked);
+    return liked;
+  }
+
+  bool isLiked(String productId) {
+    final user = _currentUser();
+    if (user == null) return false;
+    return user.likedProductIds.contains(productId) ||
+        LocalCommerceStore.isLikedBy(productId, user.id);
+  }
+
+  int likeCount(String productId) => LocalCommerceStore.likeCount(productId);
+
+  Future<List<ProductComment>> listComments(String productId) async {
+    await LocalCommerceStore.mergeCloudSocial();
+    try {
+      final res = await _api.get('/api/products/$productId/comments');
+      final list = ApiResponse.asList(res.data, key: 'comments');
+      if (list.isNotEmpty) {
+        return list
+            .map(
+              (e) => ProductComment.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
+            .toList();
+      }
+    } catch (_) {}
+    return LocalCommerceStore.listComments(productId);
+  }
+
+  Future<ProductComment> addComment(String productId, String text) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to comment');
+    try {
+      final res = await _api.post(
+        '/api/products/$productId/comments',
+        data: {'text': text},
+      );
+      final data = ApiResponse.asMap(res.data);
+      final msg = data?['comment'] as Map? ?? data;
+      if (msg != null && msg['id'] != null) {
+        return ProductComment.fromJson(Map<String, dynamic>.from(msg));
+      }
+    } catch (_) {}
+    return LocalCommerceStore.addComment(
+      productId: productId,
+      user: user,
+      text: text,
+    );
   }
 
   Future<List<ProductReview>> listReviews(String productId) async {
@@ -160,6 +252,41 @@ class CatalogRepository {
     final data = ApiResponse.asMap(res.data);
     if (data == null) throw StateError('Review submit failed');
     return ProductReview.fromJson(data);
+  }
+
+  Future<List<TimelinePost>> listTimeline() async {
+    await LocalCommerceStore.mergeCloudSocial();
+    final local = LocalCommerceStore.listTimelinePosts();
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.timelinePosts);
+      if (rows.isEmpty) return local;
+      final byId = <String, TimelinePost>{
+        for (final p in local) p.id: p,
+      };
+      for (final row in rows) {
+        try {
+          final p = TimelinePost.fromJson(row);
+          byId[p.id] = p;
+        } catch (_) {}
+      }
+      final merged = byId.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return merged;
+    } catch (_) {
+      return local;
+    }
+  }
+
+  Future<TimelinePost> shareToTimeline(String productId, {String caption = ''}) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to share to your timeline');
+    final product = await getProduct(productId);
+    if (product == null) throw StateError('Product not found');
+    return LocalCommerceStore.shareProductToTimeline(
+      product: product,
+      author: user,
+      caption: caption,
+    );
   }
 
   Future<List<Promotion>> listPromotions(String placement) async {
@@ -235,6 +362,10 @@ class CatalogRepository {
     }
   }
 
+  Future<void> _persistUser(HubsomUser user) async {
+    await LocalStore.setUserJson(jsonEncode(user.toJson()));
+  }
+
   Future<void> _patchFollowing(String sellerId, bool following) async {
     final user = _currentUser();
     if (user == null) return;
@@ -244,24 +375,30 @@ class CatalogRepository {
     } else {
       ids.remove(sellerId);
     }
-    final patched = HubsomUser(
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      image: user.image,
-      phone: user.phone,
-      city: user.city,
-      region: user.region,
-      bio: user.bio,
-      role: user.role,
-      sellerId: user.sellerId,
-      huberId: user.huberId,
-      followingSellerIds: ids,
-      savedProductIds: user.savedProductIds,
-      addresses: user.addresses,
-      emailVerified: user.emailVerified,
-      walletBalanceGhs: user.walletBalanceGhs,
-    );
-    await LocalStore.setUserJson(jsonEncode(patched.toJson()));
+    await _persistUser(user.copyWith(followingSellerIds: ids));
+  }
+
+  Future<void> _patchSaved(String productId, bool saved) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final ids = [...user.savedProductIds];
+    if (saved) {
+      if (!ids.contains(productId)) ids.add(productId);
+    } else {
+      ids.remove(productId);
+    }
+    await _persistUser(user.copyWith(savedProductIds: ids));
+  }
+
+  Future<void> _patchLiked(String productId, bool liked) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final ids = [...user.likedProductIds];
+    if (liked) {
+      if (!ids.contains(productId)) ids.add(productId);
+    } else {
+      ids.remove(productId);
+    }
+    await _persistUser(user.copyWith(likedProductIds: ids));
   }
 }

@@ -10,6 +10,7 @@ abstract final class AuthRoutes {
     '/flash-sales',
     '/auctions',
     '/live',
+    '/timeline',
     '/cart',
     '/auth/sign-in',
     '/auth/sign-up',

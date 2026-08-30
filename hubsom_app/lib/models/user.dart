@@ -103,6 +103,7 @@ class HubsomUser extends Equatable {
     this.huberId,
     this.followingSellerIds = const [],
     this.savedProductIds = const [],
+    this.likedProductIds = const [],
     this.addresses = const [],
     this.emailVerified = false,
     this.walletBalanceGhs = 0,
@@ -121,6 +122,7 @@ class HubsomUser extends Equatable {
   final String? huberId;
   final List<String> followingSellerIds;
   final List<String> savedProductIds;
+  final List<String> likedProductIds;
   final List<UserAddress> addresses;
   final bool emailVerified;
   final double walletBalanceGhs;
@@ -139,6 +141,7 @@ class HubsomUser extends Equatable {
         huberId: json['huberId'] as String?,
         followingSellerIds: (json['followingSellerIds'] as List?)?.cast<String>() ?? const [],
         savedProductIds: (json['savedProductIds'] as List?)?.cast<String>() ?? const [],
+        likedProductIds: (json['likedProductIds'] as List?)?.cast<String>() ?? const [],
         addresses: (json['addresses'] as List?)
                 ?.map((e) => UserAddress.fromJson(Map<String, dynamic>.from(e as Map)))
                 .toList() ??
@@ -161,10 +164,48 @@ class HubsomUser extends Equatable {
         if (huberId != null) 'huberId': huberId,
         'followingSellerIds': followingSellerIds,
         'savedProductIds': savedProductIds,
+        'likedProductIds': likedProductIds,
         'addresses': addresses.map((a) => a.toJson()).toList(),
         'emailVerified': emailVerified,
         'walletBalanceGhs': walletBalanceGhs,
       };
+
+  HubsomUser copyWith({
+    String? name,
+    String? image,
+    String? phone,
+    String? city,
+    String? region,
+    String? bio,
+    String? role,
+    String? sellerId,
+    String? huberId,
+    List<String>? followingSellerIds,
+    List<String>? savedProductIds,
+    List<String>? likedProductIds,
+    List<UserAddress>? addresses,
+    bool? emailVerified,
+    double? walletBalanceGhs,
+  }) =>
+      HubsomUser(
+        id: id,
+        email: email,
+        name: name ?? this.name,
+        image: image ?? this.image,
+        phone: phone ?? this.phone,
+        city: city ?? this.city,
+        region: region ?? this.region,
+        bio: bio ?? this.bio,
+        role: role ?? this.role,
+        sellerId: sellerId ?? this.sellerId,
+        huberId: huberId ?? this.huberId,
+        followingSellerIds: followingSellerIds ?? this.followingSellerIds,
+        savedProductIds: savedProductIds ?? this.savedProductIds,
+        likedProductIds: likedProductIds ?? this.likedProductIds,
+        addresses: addresses ?? this.addresses,
+        emailVerified: emailVerified ?? this.emailVerified,
+        walletBalanceGhs: walletBalanceGhs ?? this.walletBalanceGhs,
+      );
 
   bool get isHuber =>
       role == 'huber' ||
@@ -172,6 +213,15 @@ class HubsomUser extends Equatable {
       (huberId != null && huberId!.isNotEmpty);
 
   @override
-  List<Object?> get props =>
-      [id, email, name, role, sellerId, huberId, savedProductIds, walletBalanceGhs];
+  List<Object?> get props => [
+        id,
+        email,
+        name,
+        role,
+        sellerId,
+        huberId,
+        savedProductIds,
+        likedProductIds,
+        walletBalanceGhs,
+      ];
 }

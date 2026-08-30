@@ -4,9 +4,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/order.dart';
 import '../../models/product.dart';
+import '../../models/product_social.dart';
 import '../../models/seller.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
+import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
 
@@ -19,6 +21,9 @@ class LocalCommerceStore {
   static const _streamsKey = 'localStreams';
   static const _chatKey = 'localChat';
   static const _reactionsKey = 'localReactions';
+  static const _commentsKey = 'localProductComments';
+  static const _likesKey = 'localProductLikes';
+  static const _timelineKey = 'localTimelinePosts';
   static const _uuid = Uuid();
 
   /// Wipe local commerce (keeps auth vault / cart / session).
@@ -368,9 +373,10 @@ class LocalCommerceStore {
         role: user.role == 'buyer' ? 'both' : user.role,
         sellerId: seller.id,
         huberId: user.huberId,
-        followingSellerIds: user.followingSellerIds,
-        savedProductIds: user.savedProductIds,
-        addresses: user.addresses,
+      followingSellerIds: user.followingSellerIds,
+      savedProductIds: user.savedProductIds,
+      likedProductIds: user.likedProductIds,
+      addresses: user.addresses,
         emailVerified: user.emailVerified,
         walletBalanceGhs: user.walletBalanceGhs,
       );
@@ -715,6 +721,185 @@ class LocalCommerceStore {
     } catch (_) {
       return const [];
     }
+  }
+
+  // --- product social (like / comment / timeline) ---
+
+  static Map<String, dynamic> _likesMap() {
+    final raw = LocalStore.getString(_likesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> _saveLikesMap(Map<String, dynamic> map) async {
+    await LocalStore.setString(_likesKey, jsonEncode(map));
+    final rows = <Map<String, dynamic>>[];
+    map.forEach((productId, value) {
+      if (value is Map) {
+        rows.add({
+          'id': productId,
+          'productId': productId,
+          ...Map<String, dynamic>.from(value),
+        });
+      }
+    });
+    try {
+      await CloudStore.upsertDocs(CloudStore.productLikes, rows);
+    } catch (_) {}
+  }
+
+  static int likeCount(String productId) {
+    final entry = _likesMap()[productId];
+    if (entry is Map) {
+      return (entry['count'] as num?)?.toInt() ??
+          ((entry['userIds'] as List?)?.length ?? 0);
+    }
+    return 0;
+  }
+
+  static bool isLikedBy(String productId, String userId) {
+    final entry = _likesMap()[productId];
+    if (entry is! Map) return false;
+    final ids = (entry['userIds'] as List?)?.map((e) => '$e').toList() ?? [];
+    return ids.contains(userId);
+  }
+
+  static Future<int> toggleProductLike({
+    required String productId,
+    required String userId,
+  }) async {
+    final map = _likesMap();
+    final raw = Map<String, dynamic>.from(
+      (map[productId] as Map?) ?? {'count': 0, 'userIds': <String>[]},
+    );
+    final ids = [
+      ...(raw['userIds'] as List?)?.map((e) => '$e') ?? const <String>[],
+    ];
+    if (ids.contains(userId)) {
+      ids.remove(userId);
+    } else {
+      ids.add(userId);
+    }
+    raw['userIds'] = ids;
+    raw['count'] = ids.length;
+    map[productId] = raw;
+    await _saveLikesMap(map);
+    return ids.length;
+  }
+
+  static List<ProductComment> listComments(String productId) {
+    final list = _readList(_commentsKey)
+        .map((e) => ProductComment.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((c) => c.productId == productId)
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  static Future<ProductComment> addComment({
+    required String productId,
+    required HubsomUser user,
+    required String text,
+  }) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) throw StateError('Write a comment first');
+    final comment = ProductComment(
+      id: 'cmt-${_uuid.v4().substring(0, 8)}',
+      productId: productId,
+      userId: user.id,
+      userName: user.name,
+      text: trimmed,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final rows = _readList(_commentsKey);
+    rows.insert(0, comment.toJson());
+    await _writeList(_commentsKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.productComments, [comment.toJson()]);
+    } catch (_) {}
+    return comment;
+  }
+
+  static List<TimelinePost> listTimelinePosts() {
+    final list = _readList(_timelineKey)
+        .map((e) => TimelinePost.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  static Future<TimelinePost> shareProductToTimeline({
+    required Product product,
+    required HubsomUser author,
+    String caption = '',
+  }) async {
+    final post = TimelinePost(
+      id: 'post-${_uuid.v4().substring(0, 8)}',
+      authorId: author.id,
+      authorName: author.name,
+      productId: product.id,
+      productName: product.name,
+      productImage: product.images.isNotEmpty ? product.images.first : null,
+      caption: caption.trim().isEmpty
+          ? 'Check out ${product.name} on Hubsom'
+          : caption.trim(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final rows = _readList(_timelineKey);
+    rows.insert(0, post.toJson());
+    await _writeList(_timelineKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
+    } catch (_) {}
+    return post;
+  }
+
+  static Future<void> mergeCloudSocial() async {
+    try {
+      final comments = await CloudStore.listDocs(CloudStore.productComments);
+      if (comments.isNotEmpty) {
+        final byId = <String, Map<String, dynamic>>{
+          for (final c in _readList(_commentsKey))
+            if (c is Map) '${c['id']}': Map<String, dynamic>.from(c),
+        };
+        for (final c in comments) {
+          byId['${c['id']}'] = c;
+        }
+        await _writeList(_commentsKey, byId.values.toList());
+      }
+    } catch (_) {}
+    try {
+      final posts = await CloudStore.listDocs(CloudStore.timelinePosts);
+      if (posts.isNotEmpty) {
+        final byId = <String, Map<String, dynamic>>{
+          for (final p in _readList(_timelineKey))
+            if (p is Map) '${p['id']}': Map<String, dynamic>.from(p),
+        };
+        for (final p in posts) {
+          byId['${p['id']}'] = p;
+        }
+        await _writeList(_timelineKey, byId.values.toList());
+      }
+    } catch (_) {}
+    try {
+      final likes = await CloudStore.listDocs(CloudStore.productLikes);
+      if (likes.isNotEmpty) {
+        final map = _likesMap();
+        for (final row in likes) {
+          final id = '${row['productId'] ?? row['id']}';
+          if (id.isEmpty || id == 'null') continue;
+          map[id] = {
+            'count': row['count'] ?? ((row['userIds'] as List?)?.length ?? 0),
+            'userIds': row['userIds'] ?? const [],
+          };
+        }
+        await LocalStore.setString(_likesKey, jsonEncode(map));
+      }
+    } catch (_) {}
   }
 
   // --- helpers ---

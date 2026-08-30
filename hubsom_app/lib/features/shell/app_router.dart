@@ -43,6 +43,7 @@ import '../seller/seller_orders_page.dart';
 import '../seller/seller_product_new_page.dart';
 import '../seller/seller_store_page.dart';
 import '../settings/settings_page.dart';
+import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
 import '../wallet/wallet_page.dart';
 import 'main_shell.dart';
@@ -180,6 +181,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           hostMode: state.uri.queryParameters['host'] == '1',
         ),
       ),
+      GoRoute(path: '/timeline', builder: (_, __) => const TimelinePage()),
       GoRoute(
         path: '/products/:id',
         builder: (_, state) =>
