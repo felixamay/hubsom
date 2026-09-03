@@ -50,6 +50,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _followBusy = false;
   bool _bidBusy = false;
   bool _extendBusy = false;
+  bool _hideAuctionCard = false;
+  int _likeCount = 0;
+  int _shareCount = 0;
   final _floating = <_FloatRx>[];
   Timer? _poll;
   Timer? _tick;
@@ -285,9 +288,11 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         'Watch $_hostName live on Hubsom — ${s.title}\nBargain in real time:\n$link';
     try {
       await Share.share(text, subject: s.title);
+      if (mounted) setState(() => _shareCount += 1);
     } catch (_) {
       await Clipboard.setData(ClipboardData(text: link));
       if (!mounted) return;
+      setState(() => _shareCount += 1);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Live link copied — paste to share.')),
       );
@@ -337,11 +342,31 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         duration: const Duration(milliseconds: 1600),
       ),
     );
-    setState(() => _floating.add(entry));
+    setState(() {
+      _floating.add(entry);
+      _likeCount += 1;
+    });
     entry.controller.forward().whenComplete(() {
       entry.controller.dispose();
       if (mounted) setState(() => _floating.removeWhere((e) => e.id == rx.id));
     });
+  }
+
+  Future<void> _sendGift() async {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to send a gift')) {
+      return;
+    }
+    try {
+      await ref.read(liveRepositoryProvider).sendChat(
+            widget.streamId,
+            'sent a 🎁 gift',
+          );
+      await _react();
+      await _refreshQuiet();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
   }
 
   Future<void> _endLive() async {
@@ -410,6 +435,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
             ? pinnedStream
             : updated;
         pinned = product;
+        _hideAuctionCard = false;
         if (!bag.any((p) => p.id == product.id)) {
           bag = [...bag, product];
         }
@@ -669,220 +695,248 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 builder: (_, __) {
                   final t = f.controller.value;
                   return Positioned(
-                    left: MediaQuery.sizeOf(context).width * f.x.clamp(0.2, 0.85),
-                    bottom: 120 + (220 * t),
+                    right: 18 + (MediaQuery.sizeOf(context).width * 0.02),
+                    bottom: 110 + (260 * t),
                     child: Opacity(
                       opacity: (1 - t).clamp(0, 1),
-                      child: Text(f.emoji, style: const TextStyle(fontSize: 28)),
+                      child: Transform.scale(
+                        scale: 0.85 + (0.35 * (1 - t)),
+                        child: Icon(
+                          Icons.favorite,
+                          color: Colors.pinkAccent.withValues(alpha: 0.95),
+                          size: 34,
+                          shadows: const [
+                            Shadow(blurRadius: 8, color: Colors.black45),
+                          ],
+                        ),
+                      ),
                     ),
                   );
                 },
               );
             }),
+            // TikTok-style top chrome: host + Follow | viewers + close
             Positioned(
-              left: 8,
-              top: 4,
-              right: 8,
-              child: Row(
+              left: 10,
+              top: 6,
+              right: 6,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    onPressed: () => context.go('/live'),
-                    icon: const Icon(Icons.close, color: Colors.white),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: _HostHeaderChip(
+                          name: _hostName,
+                          avatar: s.hosts.isNotEmpty ? s.hosts.first.avatar : '',
+                          likes: _likeCount,
+                          following: _following,
+                          followBusy: _followBusy,
+                          showFollow: !_isHost,
+                          onFollow: _toggleFollow,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _ViewerCountPill(count: s.viewerCount),
+                      IconButton(
+                        onPressed: () {
+                          if (_isHost) {
+                            _endLive();
+                          } else {
+                            context.go('/live');
+                          }
+                        },
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
                   ),
-                  ScaleTransition(
-                    scale: Tween(begin: 0.95, end: 1.05).animate(_pulse),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      color: HubsomColors.live,
-                      child: const Text(
-                        'LIVE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      ScaleTransition(
+                        scale: Tween(begin: 0.96, end: 1.04).animate(_pulse),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: HubsomColors.live,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'LIVE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      _GlassPill(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.shopping_bag,
+                              size: 14,
+                              color: Color(0xFFFFC107),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Shopping No.${bag.isEmpty ? 0 : bag.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_isHost) ...[
+                        const SizedBox(width: 6),
+                        _GlassPill(
+                          onTap: () => setState(() => _micOn = !_micOn),
+                          child: Icon(
+                            _micOn ? Icons.mic : Icons.mic_off,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        _GlassPill(
+                          onTap: () => setState(() => _camOn = !_camOn),
+                          child: Icon(
+                            _camOn ? Icons.videocam : Icons.videocam_off,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        _GlassPill(
+                          onTap: () {
+                            final ids = bag.map((p) => p.id).join(',');
+                            final q = ids.isEmpty
+                                ? ''
+                                : '?productIds=${Uri.encodeComponent(ids)}';
+                            context.push('/videos/upload$q');
+                          },
+                          child: const Text(
+                            'Add video',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$_hostName · ${s.viewerCount} watching',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  if (!_isHost)
-                    TextButton(
-                      onPressed: _followBusy ? null : _toggleFollow,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: _following
-                            ? Colors.white24
-                            : HubsomColors.live,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        _following ? 'Following' : 'Follow',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  IconButton(
-                    tooltip: 'Share live',
-                    onPressed: _shareShow,
-                    icon: const Icon(Icons.ios_share, color: Colors.white),
-                  ),
-                  if (_isHost)
-                    IconButton(
-                      tooltip: _micOn ? 'Mute' : 'Unmute',
-                      onPressed: () => setState(() => _micOn = !_micOn),
-                      icon: Icon(
-                        _micOn ? Icons.mic : Icons.mic_off,
-                        color: Colors.white,
-                      ),
-                    ),
-                  if (_isHost)
-                    IconButton(
-                      tooltip: _camOn ? 'Camera off' : 'Camera on',
-                      onPressed: () => setState(() => _camOn = !_camOn),
-                      icon: Icon(
-                        _camOn ? Icons.videocam : Icons.videocam_off,
-                        color: Colors.white,
-                      ),
-                    ),
-                  if (_isHost)
-                    TextButton(
-                      onPressed: _openShop,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: HubsomColors.gold,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text(
-                        'Add products',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: HubsomColors.ink,
-                        ),
-                      ),
-                    ),
-                  if (_isHost)
-                    TextButton(
-                      onPressed: () {
-                        final ids = bag.map((p) => p.id).join(',');
-                        final q = ids.isEmpty
-                            ? ''
-                            : '?productIds=${Uri.encodeComponent(ids)}';
-                        context.push('/videos/upload$q');
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.white24,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text(
-                        'Add video',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  IconButton(
-                    onPressed: _react,
-                    icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
-                  ),
-                  IconButton(
-                    tooltip: _isHost ? 'Live products' : 'Live bag',
-                    onPressed: _openShop,
-                    icon: const Icon(
-                      Icons.shopping_bag_outlined,
-                      color: Colors.white,
-                    ),
-                  ),
-                  if (_isHost)
-                    IconButton(
-                      onPressed: _ending ? null : _endLive,
-                      icon: const Icon(Icons.call_end, color: Colors.redAccent),
-                    ),
                 ],
               ),
             ),
             if (!_shopOpen)
-              // Chat floats above the bottom auction / bid dock (TikTok-style).
               Positioned(
-              left: 12,
-              right: MediaQuery.sizeOf(context).width * 0.28,
-              bottom: s.auction != null
-                  ? (_isHost ? 320 : 210)
-                  : (pinned != null ? 140 : 72),
-              child: SizedBox(
-                height: 150,
-                child: ListView(
-                  reverse: true,
-                  children: chat.take(30).map((m) {
-                    final isBid =
-                        m.text.contains('Bid ') && m.text.contains('GHS');
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        '${m.displayName}: ${m.text}',
-                        style: TextStyle(
-                          color: isBid ? HubsomColors.gold : Colors.white,
-                          fontWeight:
-                              isBid ? FontWeight.w700 : FontWeight.w400,
-                          shadows: const [
-                            Shadow(blurRadius: 6, color: Colors.black),
-                          ],
+                left: 10,
+                right: MediaQuery.sizeOf(context).width * 0.22,
+                bottom: (!_hideAuctionCard &&
+                        (s.auction != null || pinned != null))
+                    ? (_isHost ? 268 : 228)
+                    : 78,
+                child: SizedBox(
+                  height: 150,
+                  child: ListView(
+                    reverse: true,
+                    children: chat.take(24).map((m) {
+                      final isBid =
+                          m.text.contains('Bid ') && m.text.contains('GHS');
+                      final isGift = m.text.contains('🎁');
+                      final isFollow =
+                          m.text.toLowerCase().contains('following');
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 5),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.38),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: '${m.displayName} ',
+                                    style: TextStyle(
+                                      color: isBid
+                                          ? HubsomColors.gold
+                                          : (isGift
+                                              ? const Color(0xFFFF8A80)
+                                              : Colors.white),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: m.text,
+                                    style: TextStyle(
+                                      color: isFollow
+                                          ? Colors.white70
+                                          : Colors.white,
+                                      fontWeight: isBid
+                                          ? FontWeight.w700
+                                          : FontWeight.w400,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
-            ),
             if (!_shopOpen)
               Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _LiveBottomDock(
-                auction: s.auction,
-                pinned: pinned,
-                isHost: _isHost,
-                bidBusy: _bidBusy,
-                extendBusy: _extendBusy,
-                chatCtrl: _chatCtrl,
-                onQuickBid: _bidQuick,
-                onCustomBid: _bidCustom,
-                onExtend: _extendAuction,
-                onBuyPinned: pinned == null ? null : () => _buy(pinned!),
-                onSendChat: _sendChat,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _LiveBottomDock(
+                  auction: s.auction,
+                  pinned: pinned,
+                  isHost: _isHost,
+                  bidBusy: _bidBusy,
+                  extendBusy: _extendBusy,
+                  hideAuctionCard: _hideAuctionCard,
+                  bagCount: bag.length,
+                  shareCount: _shareCount,
+                  chatCtrl: _chatCtrl,
+                  onQuickBid: _bidQuick,
+                  onCustomBid: _bidCustom,
+                  onExtend: _extendAuction,
+                  onBuyPinned: pinned == null ? null : () => _buy(pinned!),
+                  onSendChat: _sendChat,
+                  onOpenShop: _openShop,
+                  onReact: _react,
+                  onGift: _sendGift,
+                  onShare: _shareShow,
+                  onDismissAuction: () =>
+                      setState(() => _hideAuctionCard = true),
+                  onShowAuction: () =>
+                      setState(() => _hideAuctionCard = false),
+                ),
               ),
-            ),
             // Host/viewer product sheet sits above the dock so Add products works.
             if (_shopOpen)
               Positioned(
@@ -1141,12 +1195,21 @@ class _LiveBottomDock extends StatelessWidget {
     required this.isHost,
     required this.bidBusy,
     required this.extendBusy,
+    required this.hideAuctionCard,
+    required this.bagCount,
+    required this.shareCount,
     required this.chatCtrl,
     required this.onQuickBid,
     required this.onCustomBid,
     required this.onExtend,
     required this.onBuyPinned,
     required this.onSendChat,
+    required this.onOpenShop,
+    required this.onReact,
+    required this.onGift,
+    required this.onShare,
+    required this.onDismissAuction,
+    required this.onShowAuction,
   });
 
   final LiveAuction? auction;
@@ -1154,12 +1217,21 @@ class _LiveBottomDock extends StatelessWidget {
   final bool isHost;
   final bool bidBusy;
   final bool extendBusy;
+  final bool hideAuctionCard;
+  final int bagCount;
+  final int shareCount;
   final TextEditingController chatCtrl;
   final VoidCallback onQuickBid;
   final VoidCallback onCustomBid;
   final VoidCallback onExtend;
   final VoidCallback? onBuyPinned;
   final VoidCallback onSendChat;
+  final VoidCallback onOpenShop;
+  final VoidCallback onReact;
+  final VoidCallback onGift;
+  final VoidCallback onShare;
+  final VoidCallback onDismissAuction;
+  final VoidCallback onShowAuction;
 
   @override
   Widget build(BuildContext context) {
@@ -1168,6 +1240,7 @@ class _LiveBottomDock extends StatelessWidget {
     final secsLeft = left.inSeconds.clamp(0, 30);
     final open = a?.isOpen == true;
     final awaiting = a?.awaitingExtend == true;
+    final showCard = !hideAuctionCard && (a != null || pinned != null);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1176,334 +1249,625 @@ class _LiveBottomDock extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: [
             Colors.transparent,
-            Colors.black.withValues(alpha: 0.55),
-            Colors.black.withValues(alpha: 0.88),
+            Colors.black.withValues(alpha: 0.35),
+            Colors.black.withValues(alpha: 0.78),
           ],
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (a != null) ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white24),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hideAuctionCard && (a != null || pinned != null))
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: onShowAuction,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white24,
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: pinned != null && pinned!.images.isNotEmpty
-                        ? HubsomImage(
-                            url: pinned!.images.first,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                          )
-                        : const Icon(Icons.gavel, color: HubsomColors.gold),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          pinned?.name ?? 'Live auction',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          formatGhs(a.currentBidGhs),
-                          style: const TextStyle(
-                            color: HubsomColors.gold,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 22,
-                            height: 1.1,
-                          ),
-                        ),
-                        Text(
-                          a.highestBidder == null
-                              ? 'Opening bid'
-                              : 'Leading · ${a.highestBidder}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.75),
-                            fontSize: 11,
-                          ),
-                        ),
-                        if (isHost && a.hasAskingPrice)
-                          Text(
-                            a.askMet
-                                ? 'Ask met · ${formatGhs(a.askingPriceGhs!)}'
-                                : 'Your ask · ${formatGhs(a.askingPriceGhs!)} (hidden)',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: a.askMet
-                                  ? const Color(0xFF81C784)
-                                  : HubsomColors.live,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  _CountdownRing(
-                    seconds: secsLeft,
-                    ended: !open,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (open && !isHost)
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: HubsomColors.live,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          onPressed: bidBusy ? null : onQuickBid,
-                          child: Text(
-                            bidBusy
-                                ? 'Bidding…'
-                                : 'BID  ${formatGhs(a.nextMinBidGhs)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 17,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 52,
-                      width: 52,
-                      child: OutlinedButton(
-                        onPressed: bidBusy ? null : onCustomBid,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: const Icon(Icons.edit, size: 20),
-                      ),
-                    ),
-                  ],
-                )
-              else if (isHost && (open || awaiting))
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        awaiting
-                            ? (a.hasAskingPrice
-                                ? 'Ask ${formatGhs(a.askingPriceGhs!)} not met · extend to keep bargaining'
-                                : 'Time up · extend to keep bargaining')
-                            : (a.askMet
-                                ? '$secsLeft s left · ask met at ${formatGhs(a.currentBidGhs)}'
-                                : '$secsLeft s left · need ${formatGhs(a.askingPriceGhs ?? a.currentBidGhs)}'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _HostBidFeed(auction: a),
-                    if (awaiting || (!a.askMet && open)) ...[
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: HubsomColors.gold,
-                            foregroundColor: HubsomColors.ink,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          onPressed: extendBusy ? null : onExtend,
-                          icon: const Icon(Icons.more_time),
-                          label: Text(
-                            extendBusy ? 'Extending…' : 'Extend auction +30s',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                )
-              else
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    a.status == 'sold'
-                        ? (a.highestBidder == null
-                            ? 'Sold · ${formatGhs(a.currentBidGhs)}'
-                            : 'Sold · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}')
-                        : a.awaitingExtend
-                            ? 'Waiting for host to extend'
-                            : (a.highestBidder == null
-                                ? 'Auction ended · ${formatGhs(a.currentBidGhs)}'
-                                : 'Ended · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    icon: const Icon(Icons.gavel, size: 16),
+                    label: const Text('Show deal'),
                   ),
                 ),
+              if (showCard && a != null)
+                _SleekAuctionCard(
+                  auction: a,
+                  pinned: pinned,
+                  isHost: isHost,
+                  secsLeft: secsLeft,
+                  open: open,
+                  awaiting: awaiting,
+                  bidBusy: bidBusy,
+                  extendBusy: extendBusy,
+                  onQuickBid: onQuickBid,
+                  onCustomBid: onCustomBid,
+                  onExtend: onExtend,
+                  onDismiss: onDismissAuction,
+                )
+              else if (showCard && pinned != null)
+                _SleekBuyCard(
+                  product: pinned!,
+                  isHost: isHost,
+                  onBuy: onBuyPinned,
+                  onDismiss: onDismissAuction,
+                ),
+              if (isHost && a != null && (open || awaiting)) ...[
+                const SizedBox(height: 8),
+                _HostBidFeed(auction: a),
+              ],
               const SizedBox(height: 8),
-            ] else if (pinned != null) ...[
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      pinned!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                  InkWell(
+                    onTap: onOpenShop,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Badge(
+                      isLabelVisible: bagCount > 0,
+                      label: Text('$bagCount'),
+                      backgroundColor: const Color(0xFFFF6D00),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF6D00),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.shopping_bag,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  ),
-                  Text(
-                    formatGhs(pinned!.effectivePrice),
-                    style: const TextStyle(
-                      color: HubsomColors.gold,
-                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (!isHost && onBuyPinned != null)
-                    FilledButton(
-                      onPressed: onBuyPinned,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: HubsomColors.live,
-                      ),
-                      child: const Text('Buy'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: chatCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    onSubmitted: (_) => onSendChat(),
-                    decoration: InputDecoration(
-                      hintText: 'Say something…',
-                      hintStyle: const TextStyle(color: Colors.white54),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.14),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+                  Expanded(
+                    child: TextField(
+                      controller: chatCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      onSubmitted: (_) => onSendChat(),
+                      decoration: InputDecoration(
+                        hintText: 'Type...',
+                        hintStyle: const TextStyle(color: Colors.white54),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.16),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: onSendChat,
-                  icon: const Icon(Icons.send, color: Colors.white),
-                ),
-              ],
-            ),
-          ],
+                  IconButton(
+                    tooltip: 'Like',
+                    onPressed: onReact,
+                    icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
+                  ),
+                  IconButton(
+                    tooltip: 'Gift',
+                    onPressed: onGift,
+                    icon: const Icon(
+                      Icons.card_giftcard,
+                      color: Color(0xFFFF8A80),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Share',
+                        onPressed: onShare,
+                        icon: const Icon(Icons.reply, color: Colors.white),
+                      ),
+                      if (shareCount > 0)
+                        Text(
+                          '$shareCount',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _CountdownRing extends StatelessWidget {
-  const _CountdownRing({required this.seconds, required this.ended});
+class _SleekAuctionCard extends StatelessWidget {
+  const _SleekAuctionCard({
+    required this.auction,
+    required this.pinned,
+    required this.isHost,
+    required this.secsLeft,
+    required this.open,
+    required this.awaiting,
+    required this.bidBusy,
+    required this.extendBusy,
+    required this.onQuickBid,
+    required this.onCustomBid,
+    required this.onExtend,
+    required this.onDismiss,
+  });
 
-  final int seconds;
-  final bool ended;
+  final LiveAuction auction;
+  final Product? pinned;
+  final bool isHost;
+  final int secsLeft;
+  final bool open;
+  final bool awaiting;
+  final bool bidBusy;
+  final bool extendBusy;
+  final VoidCallback onQuickBid;
+  final VoidCallback onCustomBid;
+  final VoidCallback onExtend;
+  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
-    final urgent = !ended && seconds <= 5;
+    final a = auction;
     return Container(
-      width: 58,
-      height: 58,
-      alignment: Alignment.center,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: urgent
-            ? HubsomColors.live.withValues(alpha: 0.25)
-            : Colors.black.withValues(alpha: 0.45),
-        border: Border.all(
-          color: ended
-              ? Colors.white38
-              : (urgent ? HubsomColors.live : HubsomColors.gold),
-          width: 3,
-        ),
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C4DFF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.timer, size: 14, color: Colors.white),
+                    const SizedBox(width: 3),
+                    Text(
+                      open ? '${secsLeft}s' : '0s',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatGhs(a.currentBidGhs),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 26,
+                        height: 1.05,
+                        color: Color(0xFF111111),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      a.highestBidder == null
+                          ? 'Be the first to bid'
+                          : '${a.highestBidder} is winning',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onDismiss,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, size: 18, color: Colors.black54),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            pinned?.name ?? 'Live auction',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: Color(0xFF222222),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            pinned == null
+                ? 'Huber delivery across Ghana · Buyer protected'
+                : '${pinned!.stock} for sale · Huber shipping · Buyer protected',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF777777)),
+          ),
+          if (isHost && a.hasAskingPrice) ...[
+            const SizedBox(height: 4),
+            Text(
+              a.askMet
+                  ? 'Ask met · ${formatGhs(a.askingPriceGhs!)}'
+                  : 'Your ask · ${formatGhs(a.askingPriceGhs!)} (hidden)',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: a.askMet ? HubsomColors.forest : HubsomColors.live,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (open && !isHost)
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: bidBusy ? null : onCustomBid,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF111111),
+                        side: const BorderSide(color: Color(0xFFDDDDDD)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                      ),
+                      child: const Text(
+                        'Custom',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 44,
+                    child: FilledButton(
+                      onPressed: bidBusy ? null : onQuickBid,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFE91E63),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                      ),
+                      child: Text(
+                        bidBusy
+                            ? 'Bidding…'
+                            : 'Bid ${formatGhs(a.nextMinBidGhs)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else if (isHost && (open || awaiting))
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: FilledButton.icon(
+                onPressed: extendBusy ? null : onExtend,
+                style: FilledButton.styleFrom(
+                  backgroundColor: HubsomColors.gold,
+                  foregroundColor: HubsomColors.ink,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                ),
+                icon: const Icon(Icons.more_time),
+                label: Text(
+                  extendBusy ? 'Extending…' : 'Extend auction +30s',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            )
+          else
+            Text(
+              a.status == 'sold'
+                  ? (a.highestBidder == null
+                      ? 'Sold · ${formatGhs(a.currentBidGhs)}'
+                      : 'Sold · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}')
+                  : awaiting
+                      ? 'Waiting for host to extend'
+                      : (a.highestBidder == null
+                          ? 'Auction ended · ${formatGhs(a.currentBidGhs)}'
+                          : 'Ended · ${a.highestBidder} at ${formatGhs(a.currentBidGhs)}'),
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF333333),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SleekBuyCard extends StatelessWidget {
+  const _SleekBuyCard({
+    required this.product,
+    required this.isHost,
+    required this.onBuy,
+    required this.onDismiss,
+  });
+
+  final Product product;
+  final bool isHost;
+  final VoidCallback? onBuy;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 52,
+              height: 52,
+              child: product.images.isNotEmpty
+                  ? HubsomImage(
+                      url: product.images.first,
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
+                    )
+                  : Container(
+                      color: HubsomColors.mist,
+                      child: const Icon(Icons.shopping_bag),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  formatGhs(product.effectivePrice),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                Text(
+                  '${product.stock} for sale · Huber shipping',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          if (!isHost && onBuy != null)
+            FilledButton(
+              onPressed: product.stock <= 0 ? null : onBuy,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE91E63),
+              ),
+              child: Text(product.stock <= 0 ? 'Sold out' : 'Buy'),
+            ),
+          IconButton(
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostHeaderChip extends StatelessWidget {
+  const _HostHeaderChip({
+    required this.name,
+    required this.avatar,
+    required this.likes,
+    required this.following,
+    required this.followBusy,
+    required this.showFollow,
+    required this.onFollow,
+  });
+
+  final String name;
+  final String avatar;
+  final int likes;
+  final bool following;
+  final bool followBusy;
+  final bool showFollow;
+  final VoidCallback onFollow;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'H';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 4, 6, 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: HubsomColors.forest,
+            backgroundImage:
+                avatar.trim().isNotEmpty ? NetworkImage(avatar) : null,
+            child: avatar.trim().isNotEmpty
+                ? null
+                : Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.favorite, size: 10, color: Colors.white70),
+                    const SizedBox(width: 2),
+                    Text(
+                      likes > 0 ? '$likes' : '0',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (showFollow) ...[
+            const SizedBox(width: 6),
+            Material(
+              color: following ? Colors.white24 : HubsomColors.live,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: followBusy ? null : onFollow,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Text(
+                    following ? 'Following' : '+ Follow',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewerCountPill extends StatelessWidget {
+  const _ViewerCountPill({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
-        ended ? '0' : '$seconds',
-        style: TextStyle(
-          color: ended
-              ? Colors.white54
-              : (urgent ? HubsomColors.live : Colors.white),
-          fontWeight: FontWeight.w900,
-          fontSize: 22,
+        '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
         ),
       ),
+    );
+  }
+}
+
+class _GlassPill extends StatelessWidget {
+  const _GlassPill({required this.child, this.onTap});
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: child,
+    );
+    if (onTap == null) return pill;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: pill,
     );
   }
 }
