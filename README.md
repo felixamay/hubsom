@@ -1,2 +1,121 @@
-# hubsom
-Online marketplace streaming platform
+# Hubsom
+
+Ghana-based social-commerce platform for **live shopping**, **live auctions**, **Buy Now marketplace**, **flash sales**, and **seller stores**.
+
+There is **no dedicated grocery marketplace**. Groceries, fashion, electronics, and every other category share the same commerce surfaces:
+
+- Buy Now
+- Live selling
+- Live auctions
+- Flash sales
+- Product bundles
+- Store listings
+- Promotions
+
+## Stack
+
+- **Next.js** (App Router) + TypeScript + Tailwind CSS
+- **Agora RTC** for ultra-low-latency live video (adaptive bitrate, HD/FHD)
+- Zustand cart + live UI state
+- Framer Motion for hero presence
+- Durable local persistence under `.data/` (products, sellers, streams, chat, orders)
+
+## Authentication
+
+Hubsom uses **Auth.js** with:
+
+- Email + password sign up / sign in
+- Social providers when configured: Google, Facebook, Apple
+
+| Route | Purpose |
+| --- | --- |
+| `/auth/sign-up` | Create account |
+| `/auth/sign-in` | Sign in |
+| `/account` | Account home + orders |
+| `/account/profile` | Editable profile (phone, city, bio, seller toggle) |
+| `/account/addresses` | Delivery addresses |
+
+Protected: `/account/*`, `/sell`, `/seller/*`, `/dashboard/*`
+
+Set `AUTH_SECRET` (required). Add social client IDs/secrets from `.env.example` to enable social buttons.
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+The catalog starts empty. Production flow:
+
+1. **Sell → Add listing** (`/seller/products/new`) — create real products
+2. **Sell → Go live** (`/seller/go-live`) — select catalog items and start a show
+3. Watchers join `/live/[id]`; hosts use `?host=1`
+
+### Agora (required for camera)
+
+| Variable | Required | Where to get it |
+| --- | --- | --- |
+| `NEXT_PUBLIC_AGORA_APP_ID` | **Yes** | [Agora Console](https://console.agora.io) → Project → **App ID** |
+| `AGORA_APP_CERTIFICATE` | **Yes (recommended)** | Project → **App Certificate** → enable & copy primary |
+
+Without Agora credentials, go-live still creates the show room, but video reports **Camera offline**. Check `/api/agora/status`.
+
+## Key routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Brand hero + live + marketplace entry |
+| `/live` | Browse shows |
+| `/live/[id]` | Live commerce room (add `?host=1` for host mode) |
+| `/marketplace` | Buy Now catalog |
+| `/categories/[slug]` | Unified category pages |
+| `/auctions` | Live auctions index |
+| `/flash-sales` | Timed drops |
+| `/stores/[slug]` | Seller stores |
+| `/seller/products/new` | Create catalog listings |
+| `/seller/go-live` | Launch a live show from your catalog |
+| `/seller/analytics` | Revenue + viewer analytics from real orders |
+| `/dashboard` | Performance overview |
+
+## Live commerce capabilities
+
+- Ultra-low latency target (&lt;2s) via Agora
+- Adaptive bitrate, HD / Full HD
+- Persisted chat + moderation heuristic
+- Floating hearts / emoji reactions
+- Product pinning + on-demand shopping bag
+- Live cart + checkout with stock reservation
+- Live auctions with countdown bidding
+- Multi-host / guest seller controls
+- Moderator panel
+- Picture-in-picture
+- Stream recording / replay hooks
+- Inventory sync API
+- Analytics derived from orders + live streams
+
+## Huber delivery integration
+
+Hubsom dispatches consolidated shipments to the **Huber** rider app.
+
+- Contract for the Huber-side AI: [`docs/HUBERS_INTEGRATION.md`](docs/HUBERS_INTEGRATION.md)
+- Repo to share: https://github.com/felixamay/hubsom (`cursor/hubsom-live-commerce-8a7a`)
+- Env: `HUBERS_API_BASE_URL`, `HUBERS_API_KEY`, `HUBERS_WEBHOOK_SECRET`
+
+## HubsomAdmin promotions
+
+Promotions listed in **[hubsomadmin](https://github.com/felixamay/hubsomadmin)** appear on landing, marketplace, category, and product pages based on admin-selected placements.
+
+- Contract: [`docs/ADMIN_PROMOTIONS.md`](docs/ADMIN_PROMOTIONS.md)
+- Env: `HUBSOM_ADMIN_API_KEY`
+- Admin APIs: `/api/admin/promotions`, `/api/admin/catalog`
+- Public feed: `/api/promotions?placement=landing|marketplace|category|product`
+
+## Data
+
+Runtime data is written to `.data/` (gitignored):
+
+- `products.json` · `sellers.json` · `live-streams.json` · `chat.json` · `orders.json` · `shipments.json` · `hubers.json` · `promotions.json`
+
+Swap these JSON stores for a managed database before multi-instance production deploy.

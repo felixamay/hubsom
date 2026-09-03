@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared Hubsom account vault (password stored as salt+sha256, never plaintext).
+    match /accounts/{email} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /hubers/{id} {
+      allow read, write: if true;
+    }
+    match /huberOffers/{id} {
+      allow read, write: if true;
+    }
+    match /huberDeliveries/{id} {
+      allow read, write: if true;
+    }
+    match /orders/{id} {
+      allow read, write: if true;
+    }
+    match /shipments/{id} {
+      allow read, write: if true;
+    }
+    match /products/{id} {
+      allow read, write: if true;
+    }
+    match /sellers/{id} {
+      allow read, write: if true;
+    }
+    match /streams/{id} {
+      allow read, write: if true;
+    }
+    // WebRTC offer/answer + ICE for live seller → viewer video.
+    match /liveSignals/{id} {
+      allow read, write: if true;
+    }
+    match /productComments/{id} {
+      allow read, write: if true;
+    }
+    match /timelinePosts/{id} {
+      allow read, write: if true;
+    }
+    match /productLikes/{id} {
+      allow read, write: if true;
+    }
+  }
+}
