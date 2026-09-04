@@ -14,6 +14,26 @@ import '../../widgets/responsive_scaffold.dart';
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
+  static TextStyle _sectionTitle(BuildContext context) {
+    final base = Theme.of(context).textTheme.titleMedium;
+    return (base ?? const TextStyle()).copyWith(
+      fontSize: (base?.fontSize ?? 16) + 3,
+      fontWeight: FontWeight.w700,
+      color: HubsomColors.ink,
+      height: 1.25,
+    );
+  }
+
+  static TextStyle _subheading(BuildContext context) {
+    final base = Theme.of(context).textTheme.bodyMedium;
+    return (base ?? const TextStyle()).copyWith(
+      fontSize: (base?.fontSize ?? 14) + 2,
+      fontWeight: FontWeight.w600,
+      color: HubsomColors.ink.withValues(alpha: 0.78),
+      height: 1.35,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
@@ -55,23 +75,13 @@ class HomePage extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+              padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Hubsom',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: HubsomColors.forest,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Live commerce marketplace for Ghana — buy now, auctions, and live shopping.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: HubsomColors.ink.withValues(alpha: 0.7),
-                        ),
+                    'Live commerce for Ghana — shop now, catch auctions, and buy while shows are live.',
+                    style: _subheading(context),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
@@ -121,13 +131,7 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        Text(
-                          'Live now',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
+                        Text('Live now', style: _sectionTitle(context)),
                         const Spacer(),
                         TextButton(
                           onPressed: () => context.push('/live'),
@@ -135,6 +139,7 @@ class HomePage extends ConsumerWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
                     SizedBox(
                       height: 160,
                       child: ListView.separated(
@@ -150,7 +155,10 @@ class HomePage extends ConsumerWidget {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
-                                  colors: [HubsomColors.forest, HubsomColors.blue],
+                                  colors: [
+                                    HubsomColors.forest,
+                                    HubsomColors.blue,
+                                  ],
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -206,13 +214,7 @@ class HomePage extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 24, bottom: 8),
               child: Row(
                 children: [
-                  Text(
-                    'Buy now',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800),
-                  ),
+                  Text('Buy now', style: _sectionTitle(context)),
                   const Spacer(),
                   TextButton(
                     onPressed: () => context.push('/marketplace'),
@@ -223,11 +225,12 @@ class HomePage extends ConsumerWidget {
             ),
           ),
           if (products.isEmpty)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(0, 8, 0, 100),
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),
                 child: Text(
                   'No products yet. Sellers can publish from Sell → New product, then go live.',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             )
