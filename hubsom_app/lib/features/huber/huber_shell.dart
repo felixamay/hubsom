@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/hubsom_colors.dart';
-import '../../widgets/hubsom_logo.dart';
+import '../../widgets/hail_logo.dart';
 
 class HuberShell extends StatelessWidget {
   const HuberShell({super.key, required this.navigationShell});
@@ -20,26 +20,7 @@ class HuberShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            const HubsomLogo(height: 28),
-            const SizedBox(width: 10),
-            Text(
-              'Huber',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: HubsomColors.huberNavy,
-                  ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Driver app for Hubsom',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: HubsomColors.ink.withValues(alpha: 0.55),
-                  ),
-            ),
-          ],
-        ),
+        title: const HailLogo(height: 34),
         actions: [
           IconButton(
             tooltip: 'Marketplace',
