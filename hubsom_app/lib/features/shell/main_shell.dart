@@ -44,7 +44,7 @@ class MainShell extends ConsumerWidget {
               backgroundColor: Colors.white,
               leading: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: HubsomLogo(height: 40),
+                child: HubsomLogo(height: 36, showWordmark: true),
               ),
               destinations: [
                 for (final t in _tabs)
@@ -71,7 +71,7 @@ class MainShell extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const HubsomLogo(height: 32),
+        title: const HubsomLogo(height: 30, showWordmark: true),
         actions: [
           IconButton(
             tooltip: 'Search',
