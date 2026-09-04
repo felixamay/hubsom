@@ -31,6 +31,7 @@ class MainShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartProvider).fold<int>(0, (s, e) => s + e.quantity);
+    final unreadMessages = ref.watch(unreadMessagesCountProvider);
     final wide = ResponsiveScaffold.isWide(context);
 
     if (wide) {
@@ -59,7 +60,7 @@ class MainShell extends ConsumerWidget {
             Expanded(
               child: Column(
                 children: [
-                  _TopBar(cartCount: cartCount),
+                  _TopBar(cartCount: cartCount, unreadMessages: unreadMessages),
                   Expanded(child: navigationShell),
                 ],
               ),
@@ -81,7 +82,11 @@ class MainShell extends ConsumerWidget {
           IconButton(
             tooltip: 'Messages',
             onPressed: () => context.push('/messages'),
-            icon: const Icon(Icons.chat_bubble_outline),
+            icon: Badge(
+              isLabelVisible: unreadMessages > 0,
+              label: Text('$unreadMessages'),
+              child: const Icon(Icons.chat_bubble_outline),
+            ),
           ),
           IconButton(
             tooltip: 'Cart',
@@ -113,8 +118,9 @@ class MainShell extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.cartCount});
+  const _TopBar({required this.cartCount, required this.unreadMessages});
   final int cartCount;
+  final int unreadMessages;
 
   @override
   Widget build(BuildContext context) {
@@ -144,8 +150,13 @@ class _TopBar extends StatelessWidget {
                 tooltip: 'Live',
               ),
               IconButton(
+                tooltip: 'Messages',
                 onPressed: () => context.push('/messages'),
-                icon: const Icon(Icons.chat_bubble_outline),
+                icon: Badge(
+                  isLabelVisible: unreadMessages > 0,
+                  label: Text('$unreadMessages'),
+                  child: const Icon(Icons.chat_bubble_outline),
+                ),
               ),
               IconButton(
                 onPressed: () => context.push('/cart'),
