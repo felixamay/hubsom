@@ -14,6 +14,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.expand = false,
     this.autoplay = false,
     this.borderRadius = 12,
+    this.showPlayOverlay = true,
   });
 
   final String productId;
@@ -24,6 +25,9 @@ class ProductDemoVideoPlayer extends StatefulWidget {
   final bool expand;
   final bool autoplay;
   final double borderRadius;
+
+  /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
+  final bool showPlayOverlay;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -132,6 +136,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         fallbackAspectRatio: widget.aspectRatio,
         expand: widget.expand,
         borderRadius: widget.borderRadius,
+        showPlayOverlay: widget.showPlayOverlay,
       );
 }
 
@@ -143,6 +148,7 @@ class _DemoVideoScaffold extends StatelessWidget {
     required this.fallbackAspectRatio,
     required this.expand,
     required this.borderRadius,
+    required this.showPlayOverlay,
   });
 
   final String? error;
@@ -151,6 +157,7 @@ class _DemoVideoScaffold extends StatelessWidget {
   final double fallbackAspectRatio;
   final bool expand;
   final double borderRadius;
+  final bool showPlayOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -203,7 +210,7 @@ class _DemoVideoScaffold extends StatelessWidget {
                 : VideoPlayer(c),
           ),
           // Expand/feed: show play affordance only when paused (video itself is the UI).
-          if (!c.value.isPlaying || !expand)
+          if (showPlayOverlay && (!c.value.isPlaying || !expand))
             Icon(
               c.value.isPlaying
                   ? Icons.pause_circle_filled

@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
@@ -13,6 +16,7 @@ import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/product_demo_video_player.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
 
@@ -314,7 +318,7 @@ class HomePage extends ConsumerWidget {
             ContainedAuctionStrip(streams: auctions),
           ],
 
-          // Shop videos — only real uploaded videos.
+          // Shop videos — vertical stack with real video thumbnails.
           if (videos.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
@@ -324,62 +328,25 @@ class HomePage extends ConsumerWidget {
                 onAction: () => context.push('/videos'),
               ),
             ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 168,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: videos.length.clamp(0, 12),
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final v = videos[i];
-                    return InkWell(
-                      onTap: () => context.push('/videos/${v.id}'),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        width: 140,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: HubsomColors.mist,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(
-                              Icons.play_circle_fill,
-                              color: HubsomColors.forest,
-                              size: 36,
-                            ),
-                            const Spacer(),
-                            Text(
-                              v.caption.trim().isEmpty
-                                  ? v.authorName
-                                  : v.caption,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                height: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              v.authorName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: HubsomColors.ink.withValues(alpha: 0.65),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final count = videos.length.clamp(0, 6);
+                  final v = videos[i];
+                  Product? linked;
+                  for (final id in v.productIds) {
+                    final match = products.where((p) => p.id == id);
+                    if (match.isNotEmpty) {
+                      linked = match.first;
+                      break;
+                    }
+                  }
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: i == count - 1 ? 0 : 14),
+                    child: _HomeShopVideoCard(video: v, linkedProduct: linked),
+                  );
+                },
+                childCount: videos.length.clamp(0, 6),
               ),
             ),
           ],
@@ -481,6 +448,149 @@ class _SectionHeader extends StatelessWidget {
           if (actionLabel != null && onAction != null)
             TextButton(onPressed: onAction, child: Text(actionLabel!)),
         ],
+      ),
+    );
+  }
+}
+
+/// Portrait shop-video card: real first frame as thumbnail, opens the feed.
+class _HomeShopVideoCard extends StatefulWidget {
+  const _HomeShopVideoCard({
+    required this.video,
+    this.linkedProduct,
+  });
+
+  final ShopVideo video;
+  final Product? linkedProduct;
+
+  @override
+  State<_HomeShopVideoCard> createState() => _HomeShopVideoCardState();
+}
+
+class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
+  late final Future<({Uint8List bytes, String mimeType})?> _loadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFuture = ProductDemoVideoStore.load(widget.video.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = widget.video;
+    final linkedProduct = widget.linkedProduct;
+    final caption = video.caption.trim();
+    final cover =
+        linkedProduct != null && linkedProduct.images.isNotEmpty
+            ? linkedProduct.images.first
+            : null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/videos/${video.id}'),
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: Colors.black,
+          ),
+          child: AspectRatio(
+            aspectRatio: 9 / 14,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (cover != null)
+                    HubsomImage(
+                      url: cover,
+                      fit: BoxFit.cover,
+                      placeholder: const ColoredBox(color: Colors.black),
+                    )
+                  else
+                    const ColoredBox(color: Colors.black),
+                  FutureBuilder(
+                    future: _loadFuture,
+                    builder: (context, snap) {
+                      if (snap.data == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return AbsorbPointer(
+                        child: ProductDemoVideoPlayer(
+                          productId: video.id,
+                          expand: true,
+                          autoplay: false,
+                          borderRadius: 0,
+                          showPlayOverlay: false,
+                        ),
+                      );
+                    },
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 120,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.78),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Center(
+                    child: Icon(
+                      Icons.play_circle_fill,
+                      size: 64,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 14,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (caption.isNotEmpty)
+                          Text(
+                            caption,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              height: 1.25,
+                            ),
+                          ),
+                        if (caption.isNotEmpty) const SizedBox(height: 4),
+                        Text(
+                          video.authorName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

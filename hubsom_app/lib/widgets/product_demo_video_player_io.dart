@@ -16,6 +16,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.expand = false,
     this.autoplay = false,
     this.borderRadius = 12,
+    this.showPlayOverlay = true,
   });
 
   final String productId;
@@ -24,6 +25,9 @@ class ProductDemoVideoPlayer extends StatefulWidget {
   final bool expand;
   final bool autoplay;
   final double borderRadius;
+
+  /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
+  final bool showPlayOverlay;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -173,7 +177,8 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
                   )
                 : VideoPlayer(c),
           ),
-          if (!c.value.isPlaying || !widget.expand)
+          if (widget.showPlayOverlay &&
+              (!c.value.isPlaying || !widget.expand))
             Icon(
               c.value.isPlaying
                   ? Icons.pause_circle_filled
