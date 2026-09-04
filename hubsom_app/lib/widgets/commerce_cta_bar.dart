@@ -15,6 +15,7 @@ class CommerceCtaBar extends StatelessWidget {
     this.enabled = true,
     this.dense = false,
     this.overlay = false,
+    this.compact = false,
   });
 
   final String primaryLabel;
@@ -27,15 +28,23 @@ class CommerceCtaBar extends StatelessWidget {
   /// Dark glass treatment for video/timeline overlays.
   final bool overlay;
 
+  /// Extra-small sizing for tight feed/video shop strips.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
-    final h = dense ? 44.0 : 52.0;
-    final radius = BorderRadius.circular(dense ? 14 : 16);
+    final h = compact ? 32.0 : (dense ? 40.0 : 52.0);
+    final radius = BorderRadius.circular(compact ? 10 : (dense ? 12 : 16));
+    final gap = compact ? 6.0 : (dense ? 8.0 : 12.0);
+    final iconSize = compact ? 13.0 : (dense ? 14.0 : 18.0);
+    final fontSize = compact ? 10.5 : (dense ? 11.5 : 14.0);
 
     final secondary = _CtaButton(
       label: secondaryLabel,
       height: h,
       radius: radius,
+      iconSize: iconSize,
+      fontSize: fontSize,
       onPressed: enabled ? onSecondary : null,
       variant: overlay ? _CtaVariant.glass : _CtaVariant.outline,
       icon: Icons.visibility_outlined,
@@ -44,6 +53,8 @@ class CommerceCtaBar extends StatelessWidget {
       label: primaryLabel,
       height: h,
       radius: radius,
+      iconSize: iconSize,
+      fontSize: fontSize,
       onPressed: enabled ? onPrimary : null,
       variant: _CtaVariant.gold,
       icon: Icons.shopping_bag_outlined,
@@ -51,9 +62,9 @@ class CommerceCtaBar extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(child: secondary),
-        SizedBox(width: dense ? 10 : 12),
-        Expanded(flex: dense ? 1 : 1, child: primary),
+        Expanded(flex: compact ? 8 : 10, child: secondary),
+        SizedBox(width: gap),
+        Expanded(flex: compact ? 10 : 9, child: primary),
       ],
     );
   }
@@ -82,7 +93,7 @@ class FeedProductShopStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -94,67 +105,62 @@ class FeedProductShopStrip extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-              child: Row(
-                children: [
-                  _Thumb(imageUrl: imageUrl),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                            letterSpacing: 0.1,
-                            height: 1.2,
-                          ),
+            Row(
+              children: [
+                _Thumb(imageUrl: imageUrl, size: 40),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          letterSpacing: 0.1,
+                          height: 1.15,
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          formatGhs(priceGhs),
-                          style: const TextStyle(
-                            color: HubsomColors.gold,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                            letterSpacing: 0.2,
-                          ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        formatGhs(priceGhs),
+                        style: const TextStyle(
+                          color: HubsomColors.gold,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          letterSpacing: 0.15,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-              child: CommerceCtaBar(
-                dense: true,
-                overlay: true,
-                enabled: inStock,
-                secondaryLabel: 'View product',
-                primaryLabel: inStock ? 'Buy now' : 'Sold out',
-                onSecondary: onView,
-                onPrimary: inStock ? onBuy : null,
-              ),
+            const SizedBox(height: 7),
+            CommerceCtaBar(
+              compact: true,
+              overlay: true,
+              enabled: inStock,
+              secondaryLabel: 'View',
+              primaryLabel: inStock ? 'Buy now' : 'Sold out',
+              onSecondary: onView,
+              onPrimary: inStock ? onBuy : null,
             ),
           ],
         ),
@@ -221,6 +227,8 @@ class _CtaButton extends StatelessWidget {
     required this.radius,
     required this.variant,
     required this.icon,
+    required this.iconSize,
+    required this.fontSize,
     this.onPressed,
   });
 
@@ -229,13 +237,15 @@ class _CtaButton extends StatelessWidget {
   final BorderRadius radius;
   final _CtaVariant variant;
   final IconData icon;
+  final double iconSize;
+  final double fontSize;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final disabled = onPressed == null;
 
-    late final Decoration decoration;
+    late final BoxDecoration decoration;
     late final Color foreground;
 
     switch (variant) {
@@ -247,16 +257,20 @@ class _CtaButton extends StatelessWidget {
               : const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFFFFB347), HubsomColors.gold, Color(0xFFE67E00)],
+                  colors: [
+                    Color(0xFFFFB347),
+                    HubsomColors.gold,
+                    Color(0xFFE67E00),
+                  ],
                 ),
           color: disabled ? const Color(0xFFD1D5DB) : null,
           boxShadow: disabled
               ? null
               : [
                   BoxShadow(
-                    color: HubsomColors.gold.withValues(alpha: 0.45),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
+                    color: HubsomColors.gold.withValues(alpha: 0.35),
+                    blurRadius: height < 36 ? 6 : 14,
+                    offset: Offset(0, height < 36 ? 2 : 5),
                   ),
                 ],
         );
@@ -293,21 +307,26 @@ class _CtaButton extends StatelessWidget {
         child: Ink(
           height: height,
           decoration: decoration,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: height < 48 ? 16 : 18, color: foreground),
-              const SizedBox(width: 6),
+              Icon(icon, size: iconSize, color: foreground),
+              const SizedBox(width: 4),
               Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: foreground,
-                    fontWeight: FontWeight.w800,
-                    fontSize: height < 48 ? 12.5 : 14,
-                    letterSpacing: 0.2,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.w800,
+                      fontSize: fontSize,
+                      letterSpacing: 0.05,
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -320,22 +339,23 @@ class _CtaButton extends StatelessWidget {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.imageUrl});
+  const _Thumb({required this.imageUrl, this.size = 52});
   final String? imageUrl;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 52,
-      height: 52,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(size * 0.22),
         border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -343,13 +363,17 @@ class _Thumb extends StatelessWidget {
       child: (imageUrl ?? '').isNotEmpty
           ? HubsomImage(
               url: imageUrl!,
-              width: 52,
-              height: 52,
+              width: size,
+              height: size,
               fit: BoxFit.cover,
             )
-          : const ColoredBox(
+          : ColoredBox(
               color: HubsomColors.forest,
-              child: Icon(Icons.shopping_bag, color: Colors.white, size: 22),
+              child: Icon(
+                Icons.shopping_bag,
+                color: Colors.white,
+                size: size * 0.42,
+              ),
             ),
     );
   }

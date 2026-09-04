@@ -612,7 +612,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
         // Right action rail
         Positioned(
           right: 10,
-          bottom: bottomPad + (_products.isNotEmpty ? 140 : 88),
+          bottom: bottomPad + (_products.isNotEmpty ? 108 : 88),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -730,7 +730,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
               if (_products.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 128,
+                  height: 96,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _products.length,
@@ -738,7 +738,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
                     itemBuilder: (_, i) {
                       final p = _products[i];
                       return SizedBox(
-                        width: 280,
+                        width: 248,
                         child: FeedProductShopStrip(
                           name: p.name,
                           priceGhs: p.effectivePrice,
