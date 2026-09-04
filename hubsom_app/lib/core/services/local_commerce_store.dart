@@ -989,6 +989,7 @@ class LocalCommerceStore {
       authorImage: author.image ?? video.authorImage,
       type: 'video',
       videoId: video.id,
+      videoUrl: video.videoUrl,
       productId: linkedProduct?.id ??
           (video.productIds.isNotEmpty ? video.productIds.first : video.id),
       productName: linkedProduct?.name ??
@@ -1079,7 +1080,20 @@ class LocalCommerceStore {
             if (v is Map) '${v['id']}': Map<String, dynamic>.from(v),
         };
         for (final v in videos) {
-          byId['${v['id']}'] = v;
+          final id = '${v['id']}';
+          final incoming = Map<String, dynamic>.from(v);
+          final existing = byId[id];
+          if (existing != null) {
+            final merged = <String, dynamic>{...existing, ...incoming};
+            final localUrl = '${existing['videoUrl'] ?? ''}';
+            final remoteUrl = '${incoming['videoUrl'] ?? ''}';
+            if (remoteUrl.isEmpty && localUrl.isNotEmpty) {
+              merged['videoUrl'] = localUrl;
+            }
+            byId[id] = merged;
+          } else {
+            byId[id] = incoming;
+          }
         }
         await _writeList(_shopVideosKey, byId.values.toList());
       }
@@ -1156,6 +1170,7 @@ class LocalCommerceStore {
     String caption = '',
     String soundTitle = '',
     String mimeType = 'video/mp4',
+    String? videoUrl,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
@@ -1174,6 +1189,7 @@ class LocalCommerceStore {
       productIds: productIds,
       mimeType: mimeType,
       shareCount: 0,
+      videoUrl: videoUrl,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);

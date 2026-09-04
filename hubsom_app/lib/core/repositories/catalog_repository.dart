@@ -12,6 +12,7 @@ import '../../models/shop_video.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
@@ -316,7 +317,24 @@ class CatalogRepository {
 
   Future<List<ShopVideo>> listShopVideos() async {
     await LocalCommerceStore.mergeCloudSocial();
+    final list = LocalCommerceStore.listShopVideos();
+    await _backfillShopVideoUrls(list);
     return LocalCommerceStore.listShopVideos();
+  }
+
+  Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
+    final needs = list.where((v) => !v.hasRemoteVideo).take(8).toList();
+    for (final video in needs) {
+      final stored = await ProductDemoVideoStore.load(video.id);
+      if (stored == null) continue;
+      final url = await CloudMedia.uploadShopVideo(
+        videoId: video.id,
+        bytes: stored.bytes,
+        mimeType: stored.mimeType,
+      );
+      if (url == null || url.isEmpty) continue;
+      await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
+    }
   }
 
   Future<ShopVideo?> getShopVideo(String id) async {
@@ -333,7 +351,8 @@ class CatalogRepository {
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
-    final video = await LocalCommerceStore.createShopVideo(
+    // Create metadata first so we have a stable id, then upload media.
+    final draft = await LocalCommerceStore.createShopVideo(
       author: user,
       productIds: productIds,
       caption: caption,
@@ -341,10 +360,21 @@ class CatalogRepository {
       mimeType: mimeType,
     );
     await ProductDemoVideoStore.save(
-      productId: video.id,
+      productId: draft.id,
       bytes: bytes,
       mimeType: mimeType,
     );
+    final remoteUrl = await CloudMedia.uploadShopVideo(
+      videoId: draft.id,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    final video = remoteUrl == null || remoteUrl.isEmpty
+        ? draft
+        : (await LocalCommerceStore.updateShopVideo(
+              draft.copyWith(videoUrl: remoteUrl),
+            )) ??
+            draft.copyWith(videoUrl: remoteUrl);
     // Post new videos to the vertical timeline feed.
     try {
       Product? linked;
@@ -482,6 +512,7 @@ class CatalogRepository {
         authorImage: video.authorImage,
         type: 'video',
         videoId: video.id,
+        videoUrl: video.videoUrl,
         productId: linked?.id ??
             (video.productIds.isNotEmpty ? video.productIds.first : video.id),
         productName: linked?.name ??

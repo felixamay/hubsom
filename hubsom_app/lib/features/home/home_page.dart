@@ -531,23 +531,35 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
                   )
                 else
                   const ColoredBox(color: Colors.black),
-                FutureBuilder(
-                  future: _loadFuture,
-                  builder: (context, snap) {
-                    if (snap.data == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return AbsorbPointer(
+                  if (video.hasRemoteVideo)
+                    AbsorbPointer(
                       child: ProductDemoVideoPlayer(
                         productId: video.id,
+                        remoteUrl: video.videoUrl,
                         expand: true,
                         autoplay: false,
                         borderRadius: 0,
                         showPlayOverlay: false,
                       ),
-                    );
-                  },
-                ),
+                    )
+                  else
+                    FutureBuilder(
+                      future: _loadFuture,
+                      builder: (context, snap) {
+                        if (snap.data == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return AbsorbPointer(
+                          child: ProductDemoVideoPlayer(
+                            productId: video.id,
+                            expand: true,
+                            autoplay: false,
+                            borderRadius: 0,
+                            showPlayOverlay: false,
+                          ),
+                        );
+                      },
+                    ),
                 Positioned(
                   left: 0,
                   right: 0,

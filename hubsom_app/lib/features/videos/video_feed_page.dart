@@ -584,6 +584,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
           child: widget.active
               ? ProductDemoVideoPlayer(
                   productId: _video.id,
+                  remoteUrl: _video.videoUrl,
                   expand: true,
                   autoplay: true,
                   borderRadius: 0,

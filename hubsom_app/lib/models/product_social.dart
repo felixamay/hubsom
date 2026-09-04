@@ -50,6 +50,7 @@ class TimelinePost extends Equatable {
     this.productName = '',
     this.productImage,
     this.videoId,
+    this.videoUrl,
     this.caption = '',
     required this.createdAt,
   });
@@ -64,6 +65,8 @@ class TimelinePost extends Equatable {
   final String productName;
   final String? productImage;
   final String? videoId;
+  /// Remote shop-video URL when this post is a video.
+  final String? videoUrl;
   final String caption;
   final String createdAt;
 
@@ -85,6 +88,7 @@ class TimelinePost extends Equatable {
       productName: json['productName'] as String? ?? 'Product',
       productImage: json['productImage'] as String?,
       videoId: videoId,
+      videoUrl: json['videoUrl'] as String?,
       caption: json['caption'] as String? ?? '',
       createdAt: json['createdAt'] as String? ?? '',
     );
@@ -100,10 +104,12 @@ class TimelinePost extends Equatable {
         'productName': productName,
         if (productImage != null) 'productImage': productImage,
         if (videoId != null) 'videoId': videoId,
+        if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
         'caption': caption,
         'createdAt': createdAt,
       };
 
   @override
-  List<Object?> get props => [id, type, productId, videoId, authorId, createdAt];
+  List<Object?> get props =>
+      [id, type, productId, videoId, videoUrl, authorId, createdAt];
 }

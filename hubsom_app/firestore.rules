@@ -44,5 +44,14 @@ service cloud.firestore {
     match /productLikes/{id} {
       allow read, write: if true;
     }
+    match /shopVideos/{id} {
+      allow read, write: if true;
+    }
+    match /productReviews/{id} {
+      allow read, write: if true;
+    }
+    match /directMessages/{id} {
+      allow read, write: if true;
+    }
   }
 }

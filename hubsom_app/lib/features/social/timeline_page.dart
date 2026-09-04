@@ -518,6 +518,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                     if (widget.active)
                       ProductDemoVideoPlayer(
                         productId: post.videoId!,
+                        remoteUrl: _video?.videoUrl ?? post.videoUrl,
                         expand: true,
                         autoplay: true,
                         borderRadius: 0,
