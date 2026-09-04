@@ -65,6 +65,14 @@ class LocalCommerceStore {
     return null;
   }
 
+  static Seller? getSellerByOwnerUserId(String userId) {
+    if (userId.isEmpty) return null;
+    for (final s in listSellers()) {
+      if (s.ownerUserId == userId) return s;
+    }
+    return null;
+  }
+
   static Future<Seller> ensureSellerForUser(HubsomUser user) async {
     final sellers = listSellers();
     for (final s in sellers) {

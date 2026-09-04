@@ -140,6 +140,19 @@ class CatalogRepository {
     }
   }
 
+  /// Find a store owned by a Hubsom user (for follow-back / visit from Followers).
+  Future<Seller?> getSellerByOwnerUserId(String userId) async {
+    final local = LocalCommerceStore.getSellerByOwnerUserId(userId);
+    if (local != null) return _withLiveFollowerCount(local);
+    final sellers = await listSellers();
+    try {
+      final found = sellers.firstWhere((s) => s.ownerUserId == userId);
+      return _withLiveFollowerCount(found);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Seller _withLiveFollowerCount(Seller seller) {
     final count = LocalCommerceStore.followerCount(seller.id);
     if (count == seller.followers) return seller;
@@ -594,12 +607,6 @@ class CatalogRepository {
       if (s.ownerUserId == user.id) ids.add(s.id);
     }
     return ids;
-  }
-
-  String? _resolveMySellerId() {
-    final ids = _mySellerIds(null);
-    if (ids.isEmpty) return null;
-    return ids.first;
   }
 
   HubsomUser? _currentUser() {

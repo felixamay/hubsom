@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/seller.dart';
@@ -17,6 +18,7 @@ class FollowingPage extends ConsumerStatefulWidget {
 class _FollowingPageState extends ConsumerState<FollowingPage> {
   List<Seller> _sellers = const [];
   bool _loading = true;
+  final Set<String> _busy = {};
 
   @override
   void initState() {
@@ -41,17 +43,52 @@ class _FollowingPageState extends ConsumerState<FollowingPage> {
     });
   }
 
+  String _peerId(Seller s) =>
+      (s.ownerUserId != null && s.ownerUserId!.isNotEmpty)
+          ? s.ownerUserId!
+          : s.id;
+
+  Future<void> _message(Seller s) async {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to message')) return;
+    await context.push('/messages/${_peerId(s)}');
+  }
+
+  Future<void> _toggleFollow(Seller s) async {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to follow')) return;
+    setState(() => _busy.add(s.id));
+    try {
+      final catalog = ref.read(catalogRepositoryProvider);
+      if (catalog.isFollowingSeller(s.id)) {
+        await catalog.unfollowSeller(s.id);
+      } else {
+        await catalog.followSeller(s.id);
+      }
+      await _load();
+    } finally {
+      if (mounted) setState(() => _busy.remove(s.id));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
     final ids = user?.followingSellerIds ?? const <String>[];
+    final catalog = ref.watch(catalogRepositoryProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text('Following accounts (${ids.length})')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ids.isEmpty
-              ? const Center(child: Text('Not following any accounts yet'))
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Not following any accounts yet. Follow sellers from their store, videos, or timeline — then message them here.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
               : _sellers.isEmpty
                   ? Center(
                       child: Padding(
@@ -62,14 +99,19 @@ class _FollowingPageState extends ConsumerState<FollowingPage> {
                         ),
                       ),
                     )
-                  : ListView.builder(
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
                       itemCount: _sellers.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final s = _sellers[i];
                         final initial = s.name.isNotEmpty
                             ? s.name.substring(0, 1).toUpperCase()
                             : 'A';
+                        final busy = _busy.contains(s.id);
+                        final following = catalog.isFollowingSeller(s.id);
                         return ListTile(
+                          onTap: () => context.push('/stores/${s.slug}'),
                           leading: CircleAvatar(
                             backgroundColor: HubsomColors.forest,
                             child: s.avatar.trim().isEmpty
@@ -101,20 +143,33 @@ class _FollowingPageState extends ConsumerState<FollowingPage> {
                                     ),
                                   ),
                           ),
-                          title: Text(s.name),
+                          title: Text(
+                            s.name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
                           subtitle: Text(
-                            '${s.city} · ${ref.read(catalogRepositoryProvider).sellerFollowerCount(s.id)} followers',
+                            '${s.city} · ${catalog.sellerFollowerCount(s.id)} followers',
                           ),
-                          trailing: TextButton(
-                            onPressed: () async {
-                              await ref
-                                  .read(catalogRepositoryProvider)
-                                  .unfollowSeller(s.id);
-                              await _load();
-                            },
-                            child: const Text('Unfollow'),
+                          trailing: Wrap(
+                            spacing: 0,
+                            children: [
+                              IconButton(
+                                tooltip: 'Message',
+                                onPressed: () => _message(s),
+                                icon: const Icon(Icons.chat_bubble_outline),
+                              ),
+                              IconButton(
+                                tooltip: 'Visit store',
+                                onPressed: () =>
+                                    context.push('/stores/${s.slug}'),
+                                icon: const Icon(Icons.storefront_outlined),
+                              ),
+                              TextButton(
+                                onPressed: busy ? null : () => _toggleFollow(s),
+                                child: Text(following ? 'Unfollow' : 'Follow'),
+                              ),
+                            ],
                           ),
-                          onTap: () => context.push('/stores/${s.slug}'),
                         );
                       },
                     ),
