@@ -100,7 +100,7 @@ class HomePage extends ConsumerWidget {
                       ),
                       OutlinedButton(
                         onPressed: () => context.push('/huber'),
-                        child: const Text('Huber drivers'),
+                        child: const Text('Hail riders'),
                       ),
                     ],
                   ),
