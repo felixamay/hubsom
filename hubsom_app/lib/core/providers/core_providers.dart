@@ -310,7 +310,7 @@ final promotionsProvider =
 });
 
 final shopVideosProvider =
-    FutureProvider.autoDispose<List<ShopVideo>>((ref) async {
+    FutureProvider<List<ShopVideo>>((ref) async {
   return ref.watch(catalogRepositoryProvider).listShopVideos();
 });
 

@@ -30,7 +30,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   bool _bootstrapping = true;
   String? _error;
   late final PageController _pageCtrl;
-  int _index = 0;
+  /// Avoid setState on every swipe — that rebuilt HtmlElementView and flickered.
+  final ValueNotifier<int> _index = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -42,6 +43,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   @override
   void dispose() {
     _pageCtrl.dispose();
+    _index.dispose();
     super.dispose();
   }
 
@@ -128,7 +130,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     ref.listen(shopVideosProvider, (previous, next) {
       next.whenData((videos) {
         final wasEmpty = previous?.valueOrNull?.isEmpty ?? true;
-        if (wasEmpty && videos.isNotEmpty && _index == 0) {
+        if (wasEmpty && videos.isNotEmpty && _index.value == 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted || !_pageCtrl.hasClients) return;
             _pageCtrl.jumpToPage(0);
@@ -173,8 +175,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       );
     }
 
-    final safeIndex = _index.clamp(0, posts.length - 1);
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -190,16 +190,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
             ),
             itemCount: posts.length,
             onPageChanged: (i) {
-              if (_index == i) return;
-              setState(() => _index = i);
+              if (_index.value != i) _index.value = i;
             },
             itemBuilder: (_, i) {
-              final nearby = (i - safeIndex).abs() <= 1;
-              return _TimelineSlide(
-                key: ValueKey(posts[i].id),
-                post: posts[i],
-                active: i == safeIndex,
-                keepMedia: nearby,
+              return ValueListenableBuilder<int>(
+                valueListenable: _index,
+                builder: (_, index, __) {
+                  final safeIndex = index.clamp(0, posts.length - 1);
+                  final nearby = (i - safeIndex).abs() <= 1;
+                  return _TimelineSlide(
+                    key: ValueKey(posts[i].id),
+                    post: posts[i],
+                    active: i == safeIndex,
+                    keepMedia: nearby,
+                  );
+                },
               );
             },
           ),

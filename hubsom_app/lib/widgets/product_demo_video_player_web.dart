@@ -6,6 +6,9 @@ import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
 
 /// Web: play from local bytes (blob URL) and/or a real http(s) remote URL.
+///
+/// Desktop browsers block unmuted programmatic [play]. Autoplay always starts
+/// muted (`setVolume(0)`). A user tap unmutes.
 class ProductDemoVideoPlayer extends StatefulWidget {
   const ProductDemoVideoPlayer({
     super.key,
@@ -35,6 +38,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
   String? _ownedBlobUrl;
   bool _ready = false;
   bool _playing = false;
+  bool _muted = true;
   String? _error;
   int _loadGen = 0;
 
@@ -74,16 +78,23 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
 
   Future<void> _applyAutoplay() async {
     final c = _controller;
-    if (c == null || !_ready) return;
+    if (c == null || !_ready || c.value.hasError) return;
     try {
       if (widget.autoplay) {
-        await c.setVolume(1.0);
-        await c.play();
+        await _playMuted(c);
       } else {
+        // Pause only — seeking to zero on every swipe caused visible flicker.
         await c.pause();
-        await c.seekTo(Duration.zero);
       }
     } catch (_) {}
+  }
+
+  /// Programmatic play must be muted on web or the controller becomes erroneous.
+  Future<void> _playMuted(VideoPlayerController c) async {
+    if (c.value.hasError || !c.value.isInitialized) return;
+    await c.setVolume(0);
+    if (mounted) setState(() => _muted = true);
+    await c.play();
   }
 
   Future<void> _bootstrap() async {
@@ -93,6 +104,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       setState(() {
         _ready = false;
         _playing = false;
+        _muted = true;
         _error = null;
       });
     }
@@ -142,16 +154,18 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         return;
       }
       await controller.setLooping(true);
+      // Start muted so a later autoplay play() is allowed by the browser.
+      await controller.setVolume(0);
       controller.addListener(_onControllerTick);
       _controller = controller;
       setState(() {
         _ready = true;
         _playing = controller.value.isPlaying;
+        _muted = true;
         _error = null;
       });
       if (widget.autoplay) {
-        await controller.setVolume(1.0);
-        await controller.play();
+        await _playMuted(controller);
       }
     } catch (_) {
       try {
@@ -169,10 +183,26 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
   void _onControllerTick() {
     final c = _controller;
     if (c == null || !mounted) return;
+    if (c.value.hasError) return;
     final playing = c.value.isPlaying;
     if (playing != _playing) {
       setState(() => _playing = playing);
     }
+  }
+
+  Future<void> _onTapToggle() async {
+    final c = _controller;
+    if (c == null || !_ready || c.value.hasError) return;
+    try {
+      if (c.value.isPlaying) {
+        await c.pause();
+      } else {
+        // User gesture: unmute + play is allowed.
+        await c.setVolume(1.0);
+        if (mounted) setState(() => _muted = false);
+        await c.play();
+      }
+    } catch (_) {}
   }
 
   Future<void> _disposeController() async {
@@ -201,10 +231,12 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         ready: _ready,
         controller: _controller,
         playing: _playing,
+        muted: _muted,
         fallbackAspectRatio: widget.aspectRatio,
         expand: widget.expand,
         borderRadius: widget.borderRadius,
         showPlayOverlay: widget.showPlayOverlay,
+        onToggle: _onTapToggle,
       );
 }
 
@@ -214,20 +246,24 @@ class _DemoVideoScaffold extends StatelessWidget {
     required this.ready,
     required this.controller,
     required this.playing,
+    required this.muted,
     required this.fallbackAspectRatio,
     required this.expand,
     required this.borderRadius,
     required this.showPlayOverlay,
+    required this.onToggle,
   });
 
   final String? error;
   final bool ready;
   final VideoPlayerController? controller;
   final bool playing;
+  final bool muted;
   final double fallbackAspectRatio;
   final bool expand;
   final double borderRadius;
   final bool showPlayOverlay;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +283,7 @@ class _DemoVideoScaffold extends StatelessWidget {
               ),
       );
     }
-    if (!ready || controller == null) {
+    if (!ready || controller == null || controller!.value.hasError) {
       return ColoredBox(
         color: Colors.black,
         child: Center(
@@ -259,18 +295,10 @@ class _DemoVideoScaffold extends StatelessWidget {
       );
     }
     final c = controller!;
-    void toggle() {
-      if (c.value.isPlaying) {
-        c.pause();
-      } else {
-        c.setVolume(1.0);
-        c.play();
-      }
-    }
 
     final video = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: toggle,
+      onTap: onToggle,
       child: Stack(
         fit: StackFit.expand,
         alignment: Alignment.center,
@@ -290,6 +318,18 @@ class _DemoVideoScaffold extends StatelessWidget {
                   )
                 : VideoPlayer(c),
           ),
+          if (expand && muted && playing)
+            const Positioned(
+              right: 12,
+              top: 12,
+              child: IgnorePointer(
+                child: Icon(
+                  Icons.volume_off,
+                  color: Colors.white70,
+                  size: 22,
+                ),
+              ),
+            ),
           if (showPlayOverlay && (!playing || !expand))
             Icon(
               playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
@@ -301,9 +341,12 @@ class _DemoVideoScaffold extends StatelessWidget {
     );
 
     if (expand) return video;
+    final ratio = c.value.aspectRatio == 0
+        ? fallbackAspectRatio
+        : c.value.aspectRatio;
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
-      child: AspectRatio(aspectRatio: c.value.aspectRatio, child: video),
+      child: AspectRatio(aspectRatio: ratio, child: video),
     );
   }
 }

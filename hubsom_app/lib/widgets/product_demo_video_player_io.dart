@@ -81,7 +81,6 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         await c.play();
       } else {
         await c.pause();
-        await c.seekTo(Duration.zero);
       }
     } catch (_) {}
   }
