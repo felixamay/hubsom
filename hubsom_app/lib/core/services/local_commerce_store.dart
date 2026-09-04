@@ -239,6 +239,8 @@ class LocalCommerceStore {
     ],
     bool hasDemoVideo = false,
     String? demoVideoUrl,
+    FlashSale? flashSale,
+    double? compareAtGhs,
   }) async {
     if (images.length < 3) {
       throw StateError('Upload at least 3 product photos before publishing');
@@ -256,12 +258,14 @@ class LocalCommerceStore {
       description: description,
       category: category,
       priceGhs: priceGhs,
+      compareAtGhs: compareAtGhs,
       images: images,
       sellerId: seller.id,
       stock: stock,
       supports: supports,
       hasDemoVideo: hasDemoVideo,
       demoVideoUrl: demoVideoUrl,
+      flashSale: flashSale,
     );
     final products = listProducts();
     products.insert(0, product);

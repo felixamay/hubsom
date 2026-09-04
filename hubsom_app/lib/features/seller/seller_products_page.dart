@@ -274,6 +274,17 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
+                                          if (p.hasActiveFlashSale) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Flash −${p.flashSale!.discountPct}%',
+                                              style: const TextStyle(
+                                                color: HubsomColors.live,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),

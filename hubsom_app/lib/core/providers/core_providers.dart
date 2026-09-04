@@ -229,7 +229,7 @@ class CartController extends StateNotifier<List<CartItem>> {
     String? streamId,
   }) async {
     final qty = quantity <= 0 ? 1 : quantity;
-    final resolvedSource = product.flashSale != null && source == 'buy-now'
+    final resolvedSource = product.hasActiveFlashSale && source == 'buy-now'
         ? 'flash-sale'
         : source;
     final item = CartItem(

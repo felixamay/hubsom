@@ -82,7 +82,8 @@ class HomePage extends ConsumerWidget {
     );
 
     final live = streams.where((s) => s.isLive).toList();
-    final flash = products.where((p) => p.flashSale != null).toList();
+    final flash =
+        products.where((p) => p.hasActiveFlashSale).toList();
     final auctions = streams
         .where((s) => s.auction != null && s.auction!.remainsOnAuctions)
         .toList();
@@ -279,16 +280,28 @@ class HomePage extends ConsumerWidget {
             ),
           ],
 
-          // Flash sales — only products that actually have a flash sale.
-          if (flash.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: _SectionHeader(
-                title: 'Flash sales',
-                titleStyle: _sectionTitle(context),
-                actionLabel: 'See all',
-                onAction: () => context.push('/flash-sales'),
-              ),
+          // Flash sales — always listed; products only when sellers run an active sale.
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Flash sales',
+              titleStyle: _sectionTitle(context),
+              actionLabel: 'See all',
+              onAction: () => context.push('/flash-sales'),
             ),
+          ),
+          if (flash.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'No flash sales running. Sellers can turn one on when listing or editing a product.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: HubsomColors.ink.withValues(alpha: 0.7),
+                      ),
+                ),
+              ),
+            )
+          else
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 260,
@@ -303,7 +316,6 @@ class HomePage extends ConsumerWidget {
                 ),
               ),
             ),
-          ],
 
           // Auctions — only streams that still remain on auctions.
           if (auctions.isNotEmpty) ...[
