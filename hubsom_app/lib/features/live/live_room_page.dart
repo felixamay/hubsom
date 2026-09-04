@@ -16,7 +16,6 @@ import '../../core/services/live_webrtc_signal_store.dart';
 import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
-import '../../models/cart.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
@@ -499,20 +498,20 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     if (!ensureSignedIn(context, ref, message: 'Sign in to buy from live')) {
       return;
     }
-    ref.read(cartProvider.notifier).add(
-          CartItem(
-            productId: product.id,
-            quantity: 1,
-            source: 'live',
-            streamId: stream!.id,
-            name: product.name,
-            priceGhs: product.effectivePrice,
-            image: product.images.isNotEmpty ? product.images.first : null,
-            category: product.category,
-          ),
+    await ref.read(cartProvider.notifier).addProduct(
+          product,
+          source: 'live',
+          streamId: stream?.id,
         );
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Added to bag from live')),
+      SnackBar(
+        content: Text('${product.name} added to cart'),
+        action: SnackBarAction(
+          label: 'View cart',
+          onPressed: () => context.push('/cart'),
+        ),
+      ),
     );
   }
 
@@ -920,6 +919,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   extendBusy: _extendBusy,
                   hideAuctionCard: _hideAuctionCard,
                   bagCount: bag.length,
+                  cartCount: ref.watch(cartCountProvider),
                   shareCount: _shareCount,
                   chatCtrl: _chatCtrl,
                   onQuickBid: _bidQuick,
@@ -928,6 +928,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   onBuyPinned: pinned == null ? null : () => _buy(pinned!),
                   onSendChat: _sendChat,
                   onOpenShop: _openShop,
+                  onOpenCart: () => context.push('/cart'),
                   onReact: _react,
                   onGift: _sendGift,
                   onShare: _shareShow,
@@ -1197,6 +1198,7 @@ class _LiveBottomDock extends StatelessWidget {
     required this.extendBusy,
     required this.hideAuctionCard,
     required this.bagCount,
+    required this.cartCount,
     required this.shareCount,
     required this.chatCtrl,
     required this.onQuickBid,
@@ -1205,6 +1207,7 @@ class _LiveBottomDock extends StatelessWidget {
     required this.onBuyPinned,
     required this.onSendChat,
     required this.onOpenShop,
+    required this.onOpenCart,
     required this.onReact,
     required this.onGift,
     required this.onShare,
@@ -1219,6 +1222,7 @@ class _LiveBottomDock extends StatelessWidget {
   final bool extendBusy;
   final bool hideAuctionCard;
   final int bagCount;
+  final int cartCount;
   final int shareCount;
   final TextEditingController chatCtrl;
   final VoidCallback onQuickBid;
@@ -1227,6 +1231,7 @@ class _LiveBottomDock extends StatelessWidget {
   final VoidCallback? onBuyPinned;
   final VoidCallback onSendChat;
   final VoidCallback onOpenShop;
+  final VoidCallback onOpenCart;
   final VoidCallback onReact;
   final VoidCallback onGift;
   final VoidCallback onShare;
@@ -1319,7 +1324,30 @@ class _LiveBottomDock extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
-                          Icons.shopping_bag,
+                          Icons.storefront,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: onOpenCart,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Badge(
+                      isLabelVisible: cartCount > 0,
+                      label: Text('$cartCount'),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: const Icon(
+                          Icons.shopping_cart_outlined,
                           color: Colors.white,
                         ),
                       ),

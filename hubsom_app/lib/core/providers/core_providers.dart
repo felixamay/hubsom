@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/cart.dart';
 import '../../models/huber.dart';
+import '../../models/product.dart';
 import '../../models/user.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
@@ -173,17 +174,77 @@ final cartProvider = StateNotifierProvider<CartController, List<CartItem>>((ref)
   return CartController();
 });
 
+/// Total quantity across all cart lines (header badge).
+final cartCountProvider = Provider<int>((ref) {
+  return ref.watch(cartProvider).fold<int>(0, (s, e) => s + e.quantity);
+});
+
 class CartController extends StateNotifier<List<CartItem>> {
-  CartController() : super(LocalStore.loadCart());
+  CartController() : super(_mergeByProduct(LocalStore.loadCart()));
+
+  static List<CartItem> _mergeByProduct(List<CartItem> items) {
+    final byId = <String, CartItem>{};
+    for (final item in items) {
+      final existing = byId[item.productId];
+      if (existing == null) {
+        byId[item.productId] = item;
+      } else {
+        byId[item.productId] = existing.copyWith(
+          quantity: existing.quantity + item.quantity,
+          source: item.source,
+          streamId: item.streamId ?? existing.streamId,
+          name: item.name.isNotEmpty ? item.name : existing.name,
+          priceGhs: item.priceGhs,
+          image: item.image ?? existing.image,
+          category: item.category ?? existing.category,
+        );
+      }
+    }
+    return byId.values.toList();
+  }
 
   Future<void> _persist() => LocalStore.saveCart(state);
 
+  /// Add any platform product (live, shop, flash, category) into the shared cart.
+  Future<CartItem> addProduct(
+    Product product, {
+    int quantity = 1,
+    String source = 'buy-now',
+    String? streamId,
+  }) async {
+    final qty = quantity <= 0 ? 1 : quantity;
+    final resolvedSource = product.flashSale != null && source == 'buy-now'
+        ? 'flash-sale'
+        : source;
+    final item = CartItem(
+      productId: product.id,
+      quantity: qty,
+      source: resolvedSource,
+      streamId: streamId,
+      name: product.name,
+      priceGhs: product.effectivePrice,
+      image: product.images.isNotEmpty ? product.images.first : null,
+      category: product.category,
+    );
+    await add(item);
+    return item;
+  }
+
   Future<void> add(CartItem item) async {
-    final idx =
-        state.indexWhere((e) => e.productId == item.productId && e.source == item.source);
+    // One line per product so live / shop / flash all feed the same header cart.
+    final idx = state.indexWhere((e) => e.productId == item.productId);
     if (idx >= 0) {
+      final existing = state[idx];
       final next = [...state];
-      next[idx] = next[idx].copyWith(quantity: next[idx].quantity + item.quantity);
+      next[idx] = existing.copyWith(
+        quantity: existing.quantity + item.quantity,
+        source: item.source,
+        streamId: item.streamId ?? existing.streamId,
+        name: item.name.isNotEmpty ? item.name : existing.name,
+        priceGhs: item.priceGhs,
+        image: item.image ?? existing.image,
+        category: item.category ?? existing.category,
+      );
       state = next;
     } else {
       state = [...state, item];

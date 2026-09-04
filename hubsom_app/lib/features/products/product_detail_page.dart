@@ -8,7 +8,6 @@ import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
-import '../../models/cart.dart';
 import '../../models/message.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
@@ -928,20 +927,19 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                   onPressed: product.stock <= 0
                       ? null
                       : () async {
-                          await ref.read(cartProvider.notifier).add(
-                                CartItem(
-                                  productId: product.id,
-                                  quantity: 1,
-                                  source: 'buy-now',
-                                  name: product.name,
-                                  priceGhs: product.effectivePrice,
-                                  image: image,
-                                  category: product.category,
-                                ),
+                          await ref.read(cartProvider.notifier).addProduct(
+                                product,
+                                source: 'buy-now',
                               );
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Added to cart')),
+                              SnackBar(
+                                content: Text('${product.name} added to cart'),
+                                action: SnackBarAction(
+                                  label: 'View cart',
+                                  onPressed: () => context.push('/cart'),
+                                ),
+                              ),
                             );
                           }
                         },
@@ -961,16 +959,9 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                           )) {
                             return;
                           }
-                          await ref.read(cartProvider.notifier).add(
-                                CartItem(
-                                  productId: product.id,
-                                  quantity: 1,
-                                  source: 'buy-now',
-                                  name: product.name,
-                                  priceGhs: product.effectivePrice,
-                                  image: image,
-                                  category: product.category,
-                                ),
+                          await ref.read(cartProvider.notifier).addProduct(
+                                product,
+                                source: 'buy-now',
                               );
                           if (context.mounted) context.push('/checkout');
                         },
