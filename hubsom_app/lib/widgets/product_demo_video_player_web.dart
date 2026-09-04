@@ -5,28 +5,25 @@ import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
 
+/// Web: play from local bytes (blob URL) and/or a real http(s) remote URL.
 class ProductDemoVideoPlayer extends StatefulWidget {
   const ProductDemoVideoPlayer({
     super.key,
     required this.productId,
     this.remoteUrl,
     this.aspectRatio = 16 / 9,
-    this.expand = false,
     this.autoplay = false,
-    this.borderRadius = 12,
+    this.expand = false,
+    this.borderRadius = 14,
     this.showPlayOverlay = true,
   });
 
   final String productId;
   final String? remoteUrl;
   final double aspectRatio;
-
-  /// Fill the parent (carousel stage) instead of intrinsic aspect ratio.
-  final bool expand;
   final bool autoplay;
+  final bool expand;
   final double borderRadius;
-
-  /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
   final bool showPlayOverlay;
 
   @override
@@ -35,96 +32,166 @@ class ProductDemoVideoPlayer extends StatefulWidget {
 
 class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
   VideoPlayerController? _controller;
-  String? _ownedUrl;
-  String? _error;
+  String? _ownedBlobUrl;
   bool _ready = false;
+  bool _playing = false;
+  String? _error;
+  int _loadGen = 0;
+
+  static bool _isPlayableRemote(String? url) {
+    final u = (url ?? '').trim();
+    return u.startsWith('http://') ||
+        u.startsWith('https://') ||
+        u.startsWith('blob:');
+  }
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _bootstrap();
   }
 
   @override
   void didUpdateWidget(covariant ProductDemoVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.productId != widget.productId ||
-        oldWidget.remoteUrl != widget.remoteUrl) {
-      _controller?.dispose();
-      final url = _ownedUrl;
-      if (url != null) {
-        revokeDemoVideoObjectUrl(url);
-        _ownedUrl = null;
-      }
-      _controller = null;
-      _ready = false;
-      _error = null;
-      _load();
+    if (oldWidget.productId != widget.productId) {
+      _bootstrap();
       return;
     }
+    final oldRemote = _isPlayableRemote(oldWidget.remoteUrl)
+        ? oldWidget.remoteUrl!.trim()
+        : null;
+    final newRemote =
+        _isPlayableRemote(widget.remoteUrl) ? widget.remoteUrl!.trim() : null;
+    if (oldRemote != newRemote && newRemote != null && !_ready) {
+      _bootstrap();
+      return;
+    }
+    if (oldWidget.autoplay != widget.autoplay) {
+      _applyAutoplay();
+    }
+  }
+
+  Future<void> _applyAutoplay() async {
     final c = _controller;
-    if (c != null && oldWidget.autoplay != widget.autoplay) {
+    if (c == null || !_ready) return;
+    try {
       if (widget.autoplay) {
-        c.play();
+        await c.setVolume(1.0);
+        await c.play();
       } else {
-        c.pause();
+        await c.pause();
+        await c.seekTo(Duration.zero);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _bootstrap() async {
+    final gen = ++_loadGen;
+    await _disposeController();
+    if (mounted) {
+      setState(() {
+        _ready = false;
+        _playing = false;
+        _error = null;
+      });
+    }
+
+    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (!mounted || gen != _loadGen) return;
+
+    if (stored != null && stored.bytes.isNotEmpty) {
+      final blobUrl = await createDemoVideoObjectUrl(
+        bytes: stored.bytes,
+        mimeType: stored.mimeType.isEmpty ? 'video/mp4' : stored.mimeType,
+      );
+      if (!mounted || gen != _loadGen) {
+        revokeDemoVideoObjectUrl(blobUrl);
+        return;
+      }
+      _ownedBlobUrl = blobUrl;
+      await _attachController(
+        VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
+        gen: gen,
+      );
+      return;
+    }
+
+    final remote = widget.remoteUrl?.trim();
+    if (_isPlayableRemote(remote)) {
+      await _attachController(
+        VideoPlayerController.networkUrl(Uri.parse(remote!)),
+        gen: gen,
+      );
+      return;
+    }
+
+    if (mounted && gen == _loadGen) {
+      setState(() => _error = widget.expand ? null : 'No demo video');
+    }
+  }
+
+  Future<void> _attachController(
+    VideoPlayerController controller, {
+    required int gen,
+  }) async {
+    try {
+      await controller.initialize();
+      if (!mounted || gen != _loadGen) {
+        await controller.dispose();
+        return;
+      }
+      await controller.setLooping(true);
+      controller.addListener(_onControllerTick);
+      _controller = controller;
+      setState(() {
+        _ready = true;
+        _playing = controller.value.isPlaying;
+        _error = null;
+      });
+      if (widget.autoplay) {
+        await controller.setVolume(1.0);
+        await controller.play();
+      }
+    } catch (_) {
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      if (mounted && gen == _loadGen) {
+        setState(
+          () => _error = widget.expand ? null : 'Could not play demo video',
+        );
       }
     }
   }
 
-  Future<void> _load() async {
-    try {
-      late final VideoPlayerController controller;
-      final remote = widget.remoteUrl?.trim();
-      if (remote != null &&
-          remote.isNotEmpty &&
-          (remote.startsWith('http://') ||
-              remote.startsWith('https://') ||
-              remote.startsWith('blob:') ||
-              remote.startsWith('data:'))) {
-        controller = VideoPlayerController.networkUrl(Uri.parse(remote));
-      } else {
-        final stored = await ProductDemoVideoStore.load(widget.productId);
-        if (stored == null) {
-          if (mounted) setState(() => _error = 'No demo video');
-          return;
-        }
-        final url = await createDemoVideoObjectUrl(
-          bytes: stored.bytes,
-          mimeType: stored.mimeType,
-        );
-        _ownedUrl = url;
-        controller = VideoPlayerController.networkUrl(Uri.parse(url));
-      }
+  /// Only rebuild on play/pause — never on every frame (that caused timeline flicker).
+  void _onControllerTick() {
+    final c = _controller;
+    if (c == null || !mounted) return;
+    final playing = c.value.isPlaying;
+    if (playing != _playing) {
+      setState(() => _playing = playing);
+    }
+  }
 
-      await controller.initialize();
-      controller.setLooping(true);
-      controller.addListener(() {
-        if (mounted) setState(() {});
-      });
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
-      setState(() {
-        _controller = controller;
-        _ready = true;
-      });
-      if (widget.autoplay) {
-        await controller.play();
-      }
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Could not play demo video');
+  Future<void> _disposeController() async {
+    final c = _controller;
+    _controller = null;
+    if (c != null) {
+      c.removeListener(_onControllerTick);
+      await c.dispose();
+    }
+    final blob = _ownedBlobUrl;
+    _ownedBlobUrl = null;
+    if (blob != null) {
+      revokeDemoVideoObjectUrl(blob);
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
-    final url = _ownedUrl;
-    if (url != null) {
-      revokeDemoVideoObjectUrl(url);
-    }
+    _disposeController();
     super.dispose();
   }
 
@@ -133,6 +200,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         error: _error,
         ready: _ready,
         controller: _controller,
+        playing: _playing,
         fallbackAspectRatio: widget.aspectRatio,
         expand: widget.expand,
         borderRadius: widget.borderRadius,
@@ -145,6 +213,7 @@ class _DemoVideoScaffold extends StatelessWidget {
     required this.error,
     required this.ready,
     required this.controller,
+    required this.playing,
     required this.fallbackAspectRatio,
     required this.expand,
     required this.borderRadius,
@@ -154,6 +223,7 @@ class _DemoVideoScaffold extends StatelessWidget {
   final String? error;
   final bool ready;
   final VideoPlayerController? controller;
+  final bool playing;
   final double fallbackAspectRatio;
   final bool expand;
   final double borderRadius;
@@ -162,11 +232,19 @@ class _DemoVideoScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (error != null) {
-      return Container(
-        height: expand ? null : 160,
-        alignment: Alignment.center,
+      return ColoredBox(
         color: Colors.black,
-        child: Text(error!, style: const TextStyle(color: Colors.white70)),
+        child: expand
+            ? const SizedBox.expand()
+            : SizedBox(
+                height: 160,
+                child: Center(
+                  child: Text(
+                    error!,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
       );
     }
     if (!ready || controller == null) {
@@ -174,7 +252,8 @@ class _DemoVideoScaffold extends StatelessWidget {
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: expand ? Colors.white : HubsomColors.forest,
+            color: expand ? Colors.white54 : HubsomColors.forest,
+            strokeWidth: expand ? 2 : 3,
           ),
         ),
       );
@@ -184,6 +263,7 @@ class _DemoVideoScaffold extends StatelessWidget {
       if (c.value.isPlaying) {
         c.pause();
       } else {
+        c.setVolume(1.0);
         c.play();
       }
     }
@@ -200,6 +280,7 @@ class _DemoVideoScaffold extends StatelessWidget {
             child: expand
                 ? FittedBox(
                     fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
                     child: SizedBox(
                       width: c.value.size.width == 0 ? 16 : c.value.size.width,
                       height:
@@ -209,12 +290,9 @@ class _DemoVideoScaffold extends StatelessWidget {
                   )
                 : VideoPlayer(c),
           ),
-          // Expand/feed: show play affordance only when paused (video itself is the UI).
-          if (showPlayOverlay && (!c.value.isPlaying || !expand))
+          if (showPlayOverlay && (!playing || !expand))
             Icon(
-              c.value.isPlaying
-                  ? Icons.pause_circle_filled
-                  : Icons.play_circle_filled,
+              playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
               size: 56,
               color: Colors.white,
             ),
@@ -222,20 +300,10 @@ class _DemoVideoScaffold extends StatelessWidget {
       ),
     );
 
-    if (expand) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: video,
-      );
-    }
-
-    return AspectRatio(
-      aspectRatio:
-          c.value.aspectRatio == 0 ? fallbackAspectRatio : c.value.aspectRatio,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: video,
-      ),
+    if (expand) return video;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: AspectRatio(aspectRatio: c.value.aspectRatio, child: video),
     );
   }
 }

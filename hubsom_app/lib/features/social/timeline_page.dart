@@ -5,7 +5,9 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/cloud_video_media.dart';
 import '../../core/services/local_commerce_store.dart';
+import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
@@ -116,21 +118,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     final waitingFirstPaint =
         _bootstrapping && posts.isEmpty && videosAsync.isLoading;
 
-    // Soft refresh product posts when opening the Timeline tab — never blank the feed.
+    // Soft refresh product posts when opening Timeline — do not invalidate videos
+    // (that remounts every player and causes flicker / blank video on desktop).
     ref.listen(timelineTabTickProvider, (previous, next) {
       if (previous != next) {
         _loadProductPosts(initial: false);
-        ref.invalidate(shopVideosProvider);
       }
     });
     ref.listen(shopVideosProvider, (previous, next) {
       next.whenData((videos) {
         final wasEmpty = previous?.valueOrNull?.isEmpty ?? true;
-        if (wasEmpty && videos.isNotEmpty) {
+        if (wasEmpty && videos.isNotEmpty && _index == 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            setState(() => _index = 0);
-            if (_pageCtrl.hasClients) _pageCtrl.jumpToPage(0);
+            if (!mounted || !_pageCtrl.hasClients) return;
+            _pageCtrl.jumpToPage(0);
           });
         }
       });
@@ -289,7 +290,7 @@ class _TimelineSlide extends ConsumerStatefulWidget {
 }
 
 class _TimelineSlideState extends ConsumerState<_TimelineSlide>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   Product? _product;
   ShopVideo? _video;
   bool _liked = false;
@@ -303,6 +304,9 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
   late final AnimationController _discCtrl;
   late final AnimationController _heartBurst;
   Offset? _burstAt;
+
+  @override
+  bool get wantKeepAlive => widget.active || widget.keepMedia;
 
   bool get _isVideo =>
       widget.post.isVideo &&
@@ -342,6 +346,10 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.post.id != widget.post.id) {
       _bootstrap();
+    }
+    if (oldWidget.active != widget.active ||
+        oldWidget.keepMedia != widget.keepMedia) {
+      updateKeepAlive();
     }
     if (widget.active && _isVideo && !_discCtrl.isAnimating) {
       _discCtrl.repeat();
@@ -588,6 +596,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final post = widget.post;
     final bottomPad = MediaQuery.paddingOf(context).bottom + 12;
     final caption = post.caption.trim();
@@ -606,26 +615,12 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
           onDoubleTapDown: (d) => _burstAt = d.localPosition,
           onDoubleTap: () => _toggleLike(at: _burstAt),
           child: _isVideo
-              ? Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _ProductHero(
-                      imageUrl: post.productImage,
-                      name: post.productName,
-                    ),
-                    // Keep adjacent players alive; only the active slide autoplays.
-                    if (widget.active || widget.keepMedia)
-                      ProductDemoVideoPlayer(
-                        productId: post.videoId!,
-                        remoteUrl: _video?.videoUrl ?? post.videoUrl,
-                        expand: true,
-                        autoplay: widget.active,
-                        borderRadius: 0,
-                        showPlayOverlay: false,
-                      )
-                    else
-                      const ColoredBox(color: Colors.black),
-                  ],
+              ? _TimelineVideoSurface(
+                  videoId: post.videoId!,
+                  videoUrl: _video?.videoUrl ?? post.videoUrl,
+                  mimeType: _video?.mimeType ?? 'video/mp4',
+                  autoplay: widget.active,
+                  mountPlayer: widget.active || widget.keepMedia,
                 )
               : _ProductHero(
                   imageUrl: post.productImage,
@@ -995,6 +990,120 @@ class _ActionBtn extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TimelineVideoSurface extends StatefulWidget {
+  const _TimelineVideoSurface({
+    required this.videoId,
+    required this.videoUrl,
+    required this.mimeType,
+    required this.autoplay,
+    required this.mountPlayer,
+  });
+
+  final String videoId;
+  final String? videoUrl;
+  final String mimeType;
+  final bool autoplay;
+  final bool mountPlayer;
+
+  @override
+  State<_TimelineVideoSurface> createState() => _TimelineVideoSurfaceState();
+}
+
+class _TimelineVideoSurfaceState extends State<_TimelineVideoSurface> {
+  bool _hydrated = false;
+  bool _playerLocked = false;
+  int _gen = 0;
+
+  static String? _playableRemote(String? url) {
+    final u = (url ?? '').trim();
+    if (u.startsWith('http://') ||
+        u.startsWith('https://') ||
+        u.startsWith('blob:')) {
+      return u;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.mountPlayer) _playerLocked = true;
+    _hydrate();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimelineVideoSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.mountPlayer) _playerLocked = true;
+    if (oldWidget.videoId != widget.videoId) {
+      _playerLocked = widget.mountPlayer;
+      _hydrate();
+      return;
+    }
+    // Only re-hydrate when we still lack media and a better URL arrived.
+    if (!_hydrated && oldWidget.videoUrl != widget.videoUrl) {
+      _hydrate();
+    }
+  }
+
+  Future<void> _hydrate() async {
+    final gen = ++_gen;
+
+    final playable = _playableRemote(widget.videoUrl);
+    if (playable != null) {
+      if (mounted && gen == _gen) setState(() => _hydrated = true);
+      return;
+    }
+
+    if (ProductDemoVideoStore.hasVideo(widget.videoId)) {
+      if (mounted && gen == _gen) setState(() => _hydrated = true);
+      return;
+    }
+
+    if (mounted) setState(() => _hydrated = false);
+
+    await CloudVideoMedia.ensureLocalBytes(
+      videoId: widget.videoId,
+      videoUrl: widget.videoUrl,
+      mimeType: widget.mimeType,
+    );
+    if (!mounted || gen != _gen) return;
+    final after = await ProductDemoVideoStore.load(widget.videoId);
+    if (!mounted || gen != _gen) return;
+    setState(() => _hydrated = after != null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showPlayer = _hydrated && (_playerLocked || widget.mountPlayer);
+
+    // Always black — never flash a product still under a broken/loading video.
+    if (!showPlayer) {
+      return ColoredBox(
+        color: Colors.black,
+        child: widget.mountPlayer && !_hydrated
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.white54,
+                  strokeWidth: 2,
+                ),
+              )
+            : null,
+      );
+    }
+
+    return ProductDemoVideoPlayer(
+      key: ValueKey('timeline-video-${widget.videoId}'),
+      productId: widget.videoId,
+      remoteUrl: _playableRemote(widget.videoUrl),
+      expand: true,
+      autoplay: widget.autoplay,
+      borderRadius: 0,
+      showPlayOverlay: false,
     );
   }
 }
