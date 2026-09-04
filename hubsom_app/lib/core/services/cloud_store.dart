@@ -31,6 +31,7 @@ class CloudStore {
   static const productLikes = 'productLikes';
   static const productReviews = 'productReviews';
   static const shopVideos = 'shopVideos';
+  static const directMessages = 'directMessages';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -306,6 +307,7 @@ class CloudStore {
       'localProductLikes': productLikes,
       'localProductReviews': productReviews,
       'localShopVideos': shopVideos,
+      'localDirectMessages': directMessages,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

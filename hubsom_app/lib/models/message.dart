@@ -7,6 +7,8 @@ class DirectMessage extends Equatable {
     required this.toUserId,
     required this.text,
     required this.createdAt,
+    this.fromUserName = '',
+    this.toUserName = '',
     this.read = false,
   });
 
@@ -15,6 +17,8 @@ class DirectMessage extends Equatable {
   final String toUserId;
   final String text;
   final String createdAt;
+  final String fromUserName;
+  final String toUserName;
   final bool read;
 
   factory DirectMessage.fromJson(Map<String, dynamic> json) => DirectMessage(
@@ -23,11 +27,35 @@ class DirectMessage extends Equatable {
         toUserId: json['toUserId'] as String? ?? '',
         text: json['text'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
+        fromUserName: json['fromUserName'] as String? ?? '',
+        toUserName: json['toUserName'] as String? ?? '',
         read: json['read'] as bool? ?? false,
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'fromUserId': fromUserId,
+        'toUserId': toUserId,
+        'text': text,
+        'createdAt': createdAt,
+        'fromUserName': fromUserName,
+        'toUserName': toUserName,
+        'read': read,
+      };
+
+  DirectMessage copyWith({bool? read}) => DirectMessage(
+        id: id,
+        fromUserId: fromUserId,
+        toUserId: toUserId,
+        text: text,
+        createdAt: createdAt,
+        fromUserName: fromUserName,
+        toUserName: toUserName,
+        read: read ?? this.read,
+      );
+
   @override
-  List<Object?> get props => [id, fromUserId, toUserId, text];
+  List<Object?> get props => [id, fromUserId, toUserId, text, read];
 }
 
 class ConversationPreview extends Equatable {

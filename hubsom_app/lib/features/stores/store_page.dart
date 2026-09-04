@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
@@ -85,6 +86,19 @@ class _StorePageState extends ConsumerState<StorePage> {
       appBar: AppBar(
         title: Text(seller.name),
         actions: [
+          IconButton(
+            tooltip: 'Message',
+            onPressed: () {
+              if (!ensureSignedIn(context, ref, message: 'Sign in to message')) {
+                return;
+              }
+              final peerId = (seller.ownerUserId?.isNotEmpty == true)
+                  ? seller.ownerUserId!
+                  : seller.id;
+              context.push('/messages/$peerId');
+            },
+            icon: const Icon(Icons.chat_bubble_outline),
+          ),
           TextButton(
             onPressed: _followBusy ? null : _toggleFollow,
             child: Text(_following ? 'Following' : 'Follow account'),

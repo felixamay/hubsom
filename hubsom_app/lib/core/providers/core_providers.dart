@@ -48,6 +48,16 @@ final messageRepositoryProvider = Provider<MessageRepository>(
   (ref) => MessageRepository(ref.watch(apiClientProvider)),
 );
 
+/// Unread direct-message count for the signed-in user (header badge).
+final unreadMessagesCountProvider = Provider<int>((ref) {
+  ref.watch(authStateProvider);
+  ref.watch(messagesTickProvider);
+  return ref.watch(messageRepositoryProvider).unreadCount();
+});
+
+/// Bump to refresh inbox / unread badge after send or read.
+final messagesTickProvider = StateProvider<int>((ref) => 0);
+
 final sellerRepositoryProvider = Provider<SellerRepository>(
   (ref) => SellerRepository(ref.watch(apiClientProvider)),
 );
