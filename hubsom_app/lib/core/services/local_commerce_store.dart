@@ -28,6 +28,7 @@ class LocalCommerceStore {
   static const _timelineKey = 'localTimelinePosts';
   static const _reviewsKey = 'localProductReviews';
   static const _shopVideosKey = 'localShopVideos';
+  static const _videoSavesKey = 'localVideoSaves';
   static const _uuid = Uuid();
 
   /// Wipe local commerce (keeps auth vault / cart / session).
@@ -1037,18 +1038,26 @@ class LocalCommerceStore {
     required HubsomUser author,
     required List<String> productIds,
     String caption = '',
+    String soundTitle = '',
     String mimeType = 'video/mp4',
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
     }
+    final seller = await ensureSellerForUser(author);
     final video = ShopVideo(
       id: 'vid-${_uuid.v4().substring(0, 10)}',
       authorId: author.id,
       authorName: author.name,
+      authorImage: author.image ?? seller.avatar,
+      authorSellerId: seller.id,
       caption: caption.trim(),
+      soundTitle: soundTitle.trim().isEmpty
+          ? 'Original sound - ${author.name}'
+          : soundTitle.trim(),
       productIds: productIds,
       mimeType: mimeType,
+      shareCount: 0,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);
@@ -1058,6 +1067,82 @@ class LocalCommerceStore {
       await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
     } catch (_) {}
     return video;
+  }
+
+  static Future<ShopVideo?> updateShopVideo(ShopVideo video) async {
+    final rows = _readList(_shopVideosKey);
+    final idx = rows.indexWhere((e) {
+      if (e is! Map) return false;
+      return '${e['id']}' == video.id;
+    });
+    if (idx < 0) return null;
+    rows[idx] = video.toJson();
+    await _writeList(_shopVideosKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+    } catch (_) {}
+    return video;
+  }
+
+  static Future<int> recordVideoShare(String videoId) async {
+    final video = getShopVideo(videoId);
+    if (video == null) return 0;
+    final updated = video.copyWith(shareCount: video.shareCount + 1);
+    await updateShopVideo(updated);
+    return updated.shareCount;
+  }
+
+  static Future<int> toggleVideoSaveCount({
+    required String videoId,
+    required String userId,
+  }) async {
+    final map = _videoSavesMap();
+    final raw = Map<String, dynamic>.from(
+      (map[videoId] as Map?) ?? {'count': 0, 'userIds': <String>[]},
+    );
+    final ids = [
+      ...(raw['userIds'] as List?)?.map((e) => '$e') ?? const <String>[],
+    ];
+    if (ids.contains(userId)) {
+      ids.remove(userId);
+    } else {
+      ids.add(userId);
+    }
+    raw['userIds'] = ids;
+    raw['count'] = ids.length;
+    map[videoId] = raw;
+    await _saveVideoSavesMap(map);
+    return ids.length;
+  }
+
+  static int videoSaveCount(String videoId) {
+    final entry = _videoSavesMap()[videoId];
+    if (entry is Map) {
+      return (entry['count'] as num?)?.toInt() ??
+          ((entry['userIds'] as List?)?.length ?? 0);
+    }
+    return 0;
+  }
+
+  static bool isVideoSavedBy(String videoId, String userId) {
+    final entry = _videoSavesMap()[videoId];
+    if (entry is! Map) return false;
+    final ids = (entry['userIds'] as List?)?.map((e) => '$e').toList() ?? [];
+    return ids.contains(userId);
+  }
+
+  static Map<String, dynamic> _videoSavesMap() {
+    final raw = LocalStore.getString(_videoSavesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> _saveVideoSavesMap(Map<String, dynamic> map) async {
+    await LocalStore.setString(_videoSavesKey, jsonEncode(map));
   }
 
   // --- helpers ---

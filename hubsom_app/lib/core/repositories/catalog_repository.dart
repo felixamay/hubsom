@@ -290,6 +290,7 @@ class CatalogRepository {
     required String mimeType,
     required List<String> productIds,
     String caption = '',
+    String soundTitle = '',
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
@@ -297,6 +298,7 @@ class CatalogRepository {
       author: user,
       productIds: productIds,
       caption: caption,
+      soundTitle: soundTitle,
       mimeType: mimeType,
     );
     await ProductDemoVideoStore.save(
@@ -305,6 +307,108 @@ class CatalogRepository {
       mimeType: mimeType,
     );
     return video;
+  }
+
+  Future<bool> toggleVideoLike(String videoId) async {
+    final user = _currentUser();
+    if (user == null) return false;
+    await LocalCommerceStore.toggleProductLike(
+      productId: videoId,
+      userId: user.id,
+    );
+    final liked = LocalCommerceStore.isLikedBy(videoId, user.id);
+    await _patchLikedVideo(videoId, liked);
+    return liked;
+  }
+
+  bool isVideoLiked(String videoId) {
+    final user = _currentUser();
+    if (user == null) return false;
+    return user.likedVideoIds.contains(videoId) ||
+        LocalCommerceStore.isLikedBy(videoId, user.id);
+  }
+
+  int videoLikeCount(String videoId) => LocalCommerceStore.likeCount(videoId);
+
+  Future<bool> toggleVideoSave(String videoId) async {
+    final user = _currentUser();
+    if (user == null) return false;
+    await LocalCommerceStore.toggleVideoSaveCount(
+      videoId: videoId,
+      userId: user.id,
+    );
+    final saved = LocalCommerceStore.isVideoSavedBy(videoId, user.id);
+    await _patchSavedVideo(videoId, saved);
+    return saved;
+  }
+
+  bool isVideoSaved(String videoId) {
+    final user = _currentUser();
+    if (user == null) return false;
+    return user.savedVideoIds.contains(videoId) ||
+        LocalCommerceStore.isVideoSavedBy(videoId, user.id);
+  }
+
+  int videoSaveCount(String videoId) =>
+      LocalCommerceStore.videoSaveCount(videoId);
+
+  Future<List<ProductComment>> listVideoComments(String videoId) async {
+    await LocalCommerceStore.mergeCloudSocial();
+    return LocalCommerceStore.listComments(videoId);
+  }
+
+  Future<ProductComment> addVideoComment(String videoId, String text) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to comment');
+    return LocalCommerceStore.addComment(
+      productId: videoId,
+      user: user,
+      text: text,
+    );
+  }
+
+  int videoCommentCount(String videoId) =>
+      LocalCommerceStore.listComments(videoId).length;
+
+  Future<int> recordVideoShare(String videoId) async {
+    return LocalCommerceStore.recordVideoShare(videoId);
+  }
+
+  Future<TimelinePost> shareVideoToTimeline(
+    String videoId, {
+    String caption = '',
+  }) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to share to your timeline');
+    final video = await getShopVideo(videoId);
+    if (video == null) throw StateError('Video not found');
+    Product? product;
+    for (final id in video.productIds) {
+      product = await getProduct(id);
+      if (product != null) break;
+    }
+    product ??= Product(
+      id: video.id,
+      sellerId: video.authorSellerId ?? video.authorId,
+      name: video.caption.trim().isEmpty
+          ? 'Shop video by ${video.authorName}'
+          : video.caption.trim(),
+      slug: video.id,
+      description: video.caption,
+      category: 'video',
+      priceGhs: 0,
+      images: const [],
+      stock: 0,
+    );
+    final post = await LocalCommerceStore.shareProductToTimeline(
+      product: product,
+      author: user,
+      caption: caption.trim().isEmpty
+          ? 'Watch ${video.authorName}\'s video on Hubsom'
+          : caption.trim(),
+    );
+    await recordVideoShare(videoId);
+    return post;
   }
 
   Future<List<TimelinePost>> listTimeline() async {
@@ -453,5 +557,29 @@ class CatalogRepository {
       ids.remove(productId);
     }
     await _persistUser(user.copyWith(likedProductIds: ids));
+  }
+
+  Future<void> _patchLikedVideo(String videoId, bool liked) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final ids = [...user.likedVideoIds];
+    if (liked) {
+      if (!ids.contains(videoId)) ids.add(videoId);
+    } else {
+      ids.remove(videoId);
+    }
+    await _persistUser(user.copyWith(likedVideoIds: ids));
+  }
+
+  Future<void> _patchSavedVideo(String videoId, bool saved) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final ids = [...user.savedVideoIds];
+    if (saved) {
+      if (!ids.contains(videoId)) ids.add(videoId);
+    } else {
+      ids.remove(videoId);
+    }
+    await _persistUser(user.copyWith(savedVideoIds: ids));
   }
 }
