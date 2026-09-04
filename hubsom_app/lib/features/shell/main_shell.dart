@@ -30,7 +30,7 @@ class MainShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cartCount = ref.watch(cartProvider).fold<int>(0, (s, e) => s + e.quantity);
+    final cartCount = ref.watch(cartCountProvider);
     final unreadMessages = ref.watch(unreadMessagesCountProvider);
     final wide = ResponsiveScaffold.isWide(context);
 

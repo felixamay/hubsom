@@ -23,15 +23,24 @@ class CartItem extends Equatable {
 
   double get lineTotal => priceGhs * quantity;
 
-  CartItem copyWith({int? quantity}) => CartItem(
+  CartItem copyWith({
+    int? quantity,
+    String? source,
+    String? streamId,
+    String? name,
+    double? priceGhs,
+    String? image,
+    String? category,
+  }) =>
+      CartItem(
         productId: productId,
         quantity: quantity ?? this.quantity,
-        source: source,
-        streamId: streamId,
-        name: name,
-        priceGhs: priceGhs,
-        image: image,
-        category: category,
+        source: source ?? this.source,
+        streamId: streamId ?? this.streamId,
+        name: name ?? this.name,
+        priceGhs: priceGhs ?? this.priceGhs,
+        image: image ?? this.image,
+        category: category ?? this.category,
       );
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
