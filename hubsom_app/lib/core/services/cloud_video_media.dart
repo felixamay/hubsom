@@ -8,17 +8,14 @@ import 'cloud_store.dart';
 import 'product_demo_video_store.dart';
 
 /// Cross-device shop-video media via Storage when available, else Firestore chunks.
-///
-/// Firebase Storage may not be initialized on the project yet; Firestore is.
-/// Chunks stay under the 1 MiB Firestore document limit.
 class CloudVideoMedia {
   CloudVideoMedia._();
 
   static const metaCollection = 'shopVideoMedia';
   static const chunkCollection = 'shopVideoChunks';
 
-  /// ~700KB base64 payload ≈ safe under Firestore's 1 MiB doc limit.
-  static const _chunkBytes = 500 * 1024;
+  /// Keep base64 payloads comfortably under Firestore's 1 MiB doc limit.
+  static const _chunkBytes = 350 * 1024;
 
   static const fsScheme = 'hubsom-fs://';
 
@@ -60,19 +57,20 @@ class CloudVideoMedia {
   }) async {
     try {
       final chunkCount = (bytes.length / _chunkBytes).ceil();
-      final chunkDocs = <Map<String, dynamic>>[];
+      // One doc at a time so a large video never blows a single batch.
       for (var i = 0; i < chunkCount; i++) {
         final start = i * _chunkBytes;
         final end = (start + _chunkBytes).clamp(0, bytes.length);
         final slice = bytes.sublist(start, end);
-        chunkDocs.add({
-          'id': '${videoId}_$i',
-          'videoId': videoId,
-          'index': i,
-          'data': base64Encode(slice),
-        });
+        await CloudStore.upsertDocs(chunkCollection, [
+          {
+            'id': '${videoId}_$i',
+            'videoId': videoId,
+            'index': i,
+            'data': base64Encode(slice),
+          },
+        ]);
       }
-      await CloudStore.upsertDocs(chunkCollection, chunkDocs);
       await CloudStore.upsertDocs(metaCollection, [
         {
           'id': videoId,
@@ -96,26 +94,30 @@ class CloudVideoMedia {
     String mimeType = 'video/mp4',
   }) async {
     if (videoId.isEmpty) return false;
-    final existing = await ProductDemoVideoStore.load(videoId);
-    if (existing != null) return true;
+    try {
+      final existing = await ProductDemoVideoStore.load(videoId);
+      if (existing != null) return true;
 
-    final url = videoUrl?.trim() ?? '';
-    if (url.startsWith('http://') ||
-        url.startsWith('https://') ||
-        url.startsWith('blob:') ||
-        url.startsWith('data:')) {
-      // Remote HTTP playback does not need local bytes.
+      final url = videoUrl?.trim() ?? '';
+      if (url.startsWith('http://') ||
+          url.startsWith('https://') ||
+          url.startsWith('blob:') ||
+          url.startsWith('data:')) {
+        return false;
+      }
+
+      final downloaded = await _downloadChunks(videoId);
+      if (downloaded == null || downloaded.isEmpty) return false;
+      await ProductDemoVideoStore.save(
+        productId: videoId,
+        bytes: downloaded,
+        mimeType: mimeType.isEmpty ? 'video/mp4' : mimeType,
+      );
+      return true;
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudVideoMedia.ensureLocalBytes failed: $e');
       return false;
     }
-
-    final downloaded = await _downloadChunks(videoId);
-    if (downloaded == null || downloaded.isEmpty) return false;
-    await ProductDemoVideoStore.save(
-      productId: videoId,
-      bytes: downloaded,
-      mimeType: mimeType,
-    );
-    return true;
   }
 
   static Future<Uint8List?> _downloadChunks(String videoId) async {
@@ -128,14 +130,15 @@ class CloudVideoMedia {
           break;
         }
       }
-      // Also try direct get via list filter on chunks if meta missing.
+
       final chunks = await CloudStore.listDocs(chunkCollection);
       final mine = chunks
           .where((c) => '${c['videoId']}' == videoId)
           .toList()
-        ..sort((a, b) =>
-            ((a['index'] as num?)?.toInt() ?? 0)
-                .compareTo((b['index'] as num?)?.toInt() ?? 0));
+        ..sort(
+          (a, b) => ((a['index'] as num?)?.toInt() ?? 0)
+              .compareTo((b['index'] as num?)?.toInt() ?? 0),
+        );
       if (mine.isEmpty) return null;
 
       final expected = (meta?['chunkCount'] as num?)?.toInt() ?? mine.length;

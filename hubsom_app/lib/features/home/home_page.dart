@@ -1,11 +1,10 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/cloud_video_media.dart';
 import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
@@ -330,16 +329,39 @@ class HomePage extends ConsumerWidget {
             ContainedAuctionStrip(streams: auctions),
           ],
 
-          // Shop videos — at least 3 vertical columns with real thumbnails.
-          if (videos.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: _SectionHeader(
-                title: 'Shop videos',
-                titleStyle: _sectionTitle(context),
-                actionLabel: 'See all',
-                onAction: () => context.push('/videos'),
-              ),
+          // Shop videos — always listed; tiles only when real videos exist.
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Shop videos',
+              titleStyle: _sectionTitle(context),
+              actionLabel: 'See all',
+              onAction: () => context.push('/videos'),
             ),
+          ),
+          if (videos.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No shop videos yet. Upload a short clip from Sell → Add video to show it here and on Timeline.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: HubsomColors.ink.withValues(alpha: 0.7),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => context.push('/videos/upload'),
+                      icon: const Icon(Icons.video_call_outlined),
+                      label: const Text('Add video'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
             SliverGrid(
               gridDelegate: ContainedVideoGridDelegate.forContext(context),
               delegate: SliverChildBuilderDelegate(
@@ -358,7 +380,6 @@ class HomePage extends ConsumerWidget {
                 childCount: videos.length.clamp(0, 12),
               ),
             ),
-          ],
 
           // Stores — only real sellers.
           if (sellers.isNotEmpty) ...[
@@ -502,12 +523,25 @@ class _HomeShopVideoCard extends StatefulWidget {
 }
 
 class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
-  late final Future<({Uint8List bytes, String mimeType})?> _loadFuture;
+  late final Future<bool> _readyFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadFuture = ProductDemoVideoStore.load(widget.video.id);
+    _readyFuture = _prepare();
+  }
+
+  Future<bool> _prepare() async {
+    final video = widget.video;
+    if (video.hasRemoteVideo) return true;
+    final hydrated = await CloudVideoMedia.ensureLocalBytes(
+      videoId: video.id,
+      videoUrl: video.videoUrl,
+      mimeType: video.mimeType,
+    );
+    if (hydrated) return true;
+    final local = await ProductDemoVideoStore.load(video.id);
+    return local != null;
   }
 
   @override
@@ -543,35 +577,37 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
                   )
                 else
                   const ColoredBox(color: Colors.black),
-                  if (video.hasRemoteVideo)
-                    AbsorbPointer(
+                FutureBuilder<bool>(
+                  future: _readyFuture,
+                  builder: (context, snap) {
+                    final ready = snap.data == true;
+                    if (!ready) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }
+                    return AbsorbPointer(
                       child: ProductDemoVideoPlayer(
                         productId: video.id,
-                        remoteUrl: video.videoUrl,
+                        remoteUrl: video.hasRemoteVideo ? video.videoUrl : null,
                         expand: true,
                         autoplay: false,
                         borderRadius: 0,
                         showPlayOverlay: false,
                       ),
-                    )
-                  else
-                    FutureBuilder(
-                      future: _loadFuture,
-                      builder: (context, snap) {
-                        if (snap.data == null) {
-                          return const SizedBox.shrink();
-                        }
-                        return AbsorbPointer(
-                          child: ProductDemoVideoPlayer(
-                            productId: video.id,
-                            expand: true,
-                            autoplay: false,
-                            borderRadius: 0,
-                            showPlayOverlay: false,
-                          ),
-                        );
-                      },
-                    ),
+                    );
+                  },
+                ),
                 Positioned(
                   left: 0,
                   right: 0,

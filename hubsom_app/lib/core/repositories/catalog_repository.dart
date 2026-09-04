@@ -316,38 +316,52 @@ class CatalogRepository {
   }
 
   Future<List<ShopVideo>> listShopVideos() async {
-    await LocalCommerceStore.mergeCloudSocial();
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
     final list = LocalCommerceStore.listShopVideos();
-    await _backfillShopVideoUrls(list);
-    final refreshed = LocalCommerceStore.listShopVideos();
-    for (final video in refreshed) {
-      await CloudVideoMedia.ensureLocalBytes(
-        videoId: video.id,
-        videoUrl: video.videoUrl,
-        mimeType: video.mimeType,
-      );
-    }
-    return LocalCommerceStore.listShopVideos();
+    // Never block the homepage/timeline on media backfill — do it in background.
+    // ignore: unawaited_futures
+    _publishAndHydrateInBackground(list);
+    return list;
+  }
+
+  Future<void> _publishAndHydrateInBackground(List<ShopVideo> list) async {
+    try {
+      await _backfillShopVideoUrls(list);
+      final refreshed = LocalCommerceStore.listShopVideos();
+      for (final video in refreshed.take(12)) {
+        await CloudVideoMedia.ensureLocalBytes(
+          videoId: video.id,
+          videoUrl: video.videoUrl,
+          mimeType: video.mimeType,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
     final needs = list.where((v) => !v.hasPublishedMedia).take(8).toList();
     for (final video in needs) {
-      final stored = await ProductDemoVideoStore.load(video.id);
-      if (stored == null) continue;
-      final url = await CloudVideoMedia.publish(
-        videoId: video.id,
-        bytes: stored.bytes,
-        mimeType: stored.mimeType,
-      );
-      if (url == null || url.isEmpty) continue;
-      await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
+      try {
+        final stored = await ProductDemoVideoStore.load(video.id);
+        if (stored == null) continue;
+        final url = await CloudVideoMedia.publish(
+          videoId: video.id,
+          bytes: stored.bytes,
+          mimeType: stored.mimeType,
+        );
+        if (url == null || url.isEmpty) continue;
+        await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
+      } catch (_) {}
     }
   }
 
   Future<ShopVideo?> getShopVideo(String id) async {
-    await LocalCommerceStore.mergeCloudSocial();
-    final video = LocalCommerceStore.getShopVideo(id);
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    var video = LocalCommerceStore.getShopVideo(id);
     if (video == null) return null;
     await CloudVideoMedia.ensureLocalBytes(
       videoId: video.id,
@@ -390,6 +404,11 @@ class CatalogRepository {
               draft.copyWith(videoUrl: remoteUrl),
             )) ??
             draft.copyWith(videoUrl: remoteUrl);
+    // Force metadata to cloud even if media publish failed (other devices
+    // still see the card; media hydrates when bytes become available).
+    try {
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+    } catch (_) {}
     // Post new videos to the vertical timeline feed.
     try {
       Product? linked;
@@ -496,7 +515,14 @@ class CatalogRepository {
   }
 
   Future<List<TimelinePost>> listTimeline() async {
-    await LocalCommerceStore.mergeCloudSocial();
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    // Pull shop-video metadata into local cache before synthesizing the feed.
+    try {
+      await listShopVideos();
+    } catch (_) {}
+
     final local = LocalCommerceStore.listTimelinePosts();
     final byId = <String, TimelinePost>{
       for (final p in local) p.id: p,
@@ -514,7 +540,32 @@ class CatalogRepository {
     // Surface shop videos in the vertical timeline even if not shared yet.
     for (final video in LocalCommerceStore.listShopVideos()) {
       final already = byId.values.any((p) => p.videoId == video.id);
-      if (already) continue;
+      if (already) {
+        // Enrich existing posts with remote videoUrl when missing.
+        for (final entry in byId.entries.toList()) {
+          final post = entry.value;
+          if (post.videoId == video.id &&
+              (post.videoUrl == null || post.videoUrl!.isEmpty) &&
+              video.videoUrl != null &&
+              video.videoUrl!.isNotEmpty) {
+            byId[entry.key] = TimelinePost(
+              id: post.id,
+              authorId: post.authorId,
+              authorName: post.authorName,
+              authorImage: post.authorImage,
+              type: post.type,
+              productId: post.productId,
+              productName: post.productName,
+              productImage: post.productImage,
+              videoId: post.videoId,
+              videoUrl: video.videoUrl,
+              caption: post.caption,
+              createdAt: post.createdAt,
+            );
+          }
+        }
+        continue;
+      }
       Product? linked;
       for (final id in video.productIds) {
         linked = LocalCommerceStore.getProduct(id);
