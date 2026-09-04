@@ -7,8 +7,8 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
 import '../../widgets/responsive_scaffold.dart';
 
-/// Footer tabs: Home / Categories / Sell / Timeline / Dashboard
-/// Header menu keeps the former Account destinations (profile, saved, wallet…).
+/// Footer: Home / Categories / Sell / Timeline / Dashboard
+/// Header ☰: formal Hubsom links + Account hub (Account is not a footer tab).
 class MainShell extends ConsumerWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -42,16 +42,23 @@ class MainShell extends ConsumerWidget {
     ),
   ];
 
-  static const _menuItems = <(String value, IconData icon, String label)>[
+  /// Formal SiteHeader links first, then Account destinations.
+  static const _formalItems = <(String value, IconData icon, String label)>[
+    ('live', Icons.videocam_outlined, 'Live'),
+    ('marketplace', Icons.storefront_outlined, 'Marketplace'),
+    ('auctions', Icons.gavel, 'Auctions'),
+    ('flash', Icons.bolt_outlined, 'Flash Sales'),
+    ('sell', Icons.add_business_outlined, 'Sell'),
+  ];
+
+  static const _accountItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
     ('profile', Icons.badge_outlined, 'Profile'),
     ('saved', Icons.favorite_border, 'Saved products'),
     ('following', Icons.people_outline, 'Following'),
     ('followers', Icons.groups_outlined, 'Followers'),
     ('wallet', Icons.account_balance_wallet_outlined, 'Wallet'),
-    ('live', Icons.videocam_outlined, 'Live shopping'),
     ('videos', Icons.play_circle_outline, 'Watch videos'),
-    ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('messages', Icons.chat_bubble_outline, 'Messages'),
     ('notifications', Icons.notifications_outlined, 'Notifications'),
     ('settings', Icons.settings_outlined, 'Settings'),
@@ -65,32 +72,77 @@ class MainShell extends ConsumerWidget {
   }
 
   void _onMenuSelected(BuildContext context, String value) {
-    switch (value) {
-      case 'account':
-        context.push('/account');
-      case 'profile':
-        context.push('/account/profile');
-      case 'saved':
-        context.push('/account/saved');
-      case 'following':
-        context.push('/account/following');
-      case 'followers':
-        context.push('/account/followers');
-      case 'wallet':
-        context.push('/wallet');
-      case 'live':
-        context.push('/live');
-      case 'videos':
-        context.push('/videos');
-      case 'marketplace':
-        context.push('/marketplace');
-      case 'messages':
-        context.push('/messages');
-      case 'notifications':
-        context.push('/notifications');
-      case 'settings':
-        context.push('/settings');
-    }
+    final path = switch (value) {
+      'live' => '/live',
+      'marketplace' => '/marketplace',
+      'auctions' => '/auctions',
+      'flash' => '/flash-sales',
+      'sell' => '/sell',
+      'account' => '/account',
+      'profile' => '/account/profile',
+      'saved' => '/account/saved',
+      'following' => '/account/following',
+      'followers' => '/account/followers',
+      'wallet' => '/wallet',
+      'videos' => '/videos',
+      'messages' => '/messages',
+      'notifications' => '/notifications',
+      'settings' => '/settings',
+      _ => null,
+    };
+    if (path == null) return;
+    // Root-level go so Account is not trapped inside the shell branch stack.
+    context.go(path);
+  }
+
+  List<PopupMenuEntry<String>> _buildMenu() {
+    return [
+      const PopupMenuItem<String>(
+        enabled: false,
+        child: Text(
+          'Browse',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: HubsomColors.forest,
+            fontSize: 12,
+          ),
+        ),
+      ),
+      for (final item in _formalItems)
+        PopupMenuItem<String>(
+          value: item.$1,
+          child: Row(
+            children: [
+              Icon(item.$2, size: 22, color: HubsomColors.forest),
+              const SizedBox(width: 12),
+              Text(item.$3),
+            ],
+          ),
+        ),
+      const PopupMenuDivider(),
+      const PopupMenuItem<String>(
+        enabled: false,
+        child: Text(
+          'Account',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: HubsomColors.forest,
+            fontSize: 12,
+          ),
+        ),
+      ),
+      for (final item in _accountItems)
+        PopupMenuItem<String>(
+          value: item.$1,
+          child: Row(
+            children: [
+              Icon(item.$2, size: 22, color: HubsomColors.forest),
+              const SizedBox(width: 12),
+              Text(item.$3),
+            ],
+          ),
+        ),
+    ];
   }
 
   @override
@@ -98,6 +150,7 @@ class MainShell extends ConsumerWidget {
     final cartCount = ref.watch(cartCountProvider);
     final unreadMessages = ref.watch(unreadMessagesCountProvider);
     final wide = ResponsiveScaffold.isWide(context);
+    final menu = _buildMenu();
 
     if (wide) {
       return Scaffold(
@@ -128,8 +181,8 @@ class MainShell extends ConsumerWidget {
                   _TopBar(
                     cartCount: cartCount,
                     unreadMessages: unreadMessages,
+                    menuEntries: menu,
                     onMenuSelected: (v) => _onMenuSelected(context, v),
-                    menuItems: _menuItems,
                   ),
                   Expanded(child: navigationShell),
                 ],
@@ -146,17 +199,17 @@ class MainShell extends ConsumerWidget {
         actions: [
           IconButton(
             tooltip: 'Search',
-            onPressed: () => context.push('/marketplace'),
+            onPressed: () => context.go('/marketplace'),
             icon: const Icon(Icons.search),
           ),
           IconButton(
             tooltip: 'Live',
-            onPressed: () => context.push('/live'),
+            onPressed: () => context.go('/live'),
             icon: const Icon(Icons.videocam_outlined),
           ),
           IconButton(
             tooltip: 'Messages',
-            onPressed: () => context.push('/messages'),
+            onPressed: () => context.go('/messages'),
             icon: Badge(
               isLabelVisible: unreadMessages > 0,
               label: Text('$unreadMessages'),
@@ -165,7 +218,7 @@ class MainShell extends ConsumerWidget {
           ),
           IconButton(
             tooltip: 'Cart',
-            onPressed: () => context.push('/cart'),
+            onPressed: () => context.go('/cart'),
             icon: Badge(
               isLabelVisible: cartCount > 0,
               label: Text('$cartCount'),
@@ -176,19 +229,7 @@ class MainShell extends ConsumerWidget {
             tooltip: 'Menu',
             icon: const Icon(Icons.menu),
             onSelected: (value) => _onMenuSelected(context, value),
-            itemBuilder: (_) => [
-              for (final item in _menuItems)
-                PopupMenuItem<String>(
-                  value: item.$1,
-                  child: Row(
-                    children: [
-                      Icon(item.$2, size: 22, color: HubsomColors.forest),
-                      const SizedBox(width: 12),
-                      Text(item.$3),
-                    ],
-                  ),
-                ),
-            ],
+            itemBuilder: (_) => menu,
           ),
           const SizedBox(width: 4),
         ],
@@ -214,14 +255,14 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.cartCount,
     required this.unreadMessages,
+    required this.menuEntries,
     required this.onMenuSelected,
-    required this.menuItems,
   });
 
   final int cartCount;
   final int unreadMessages;
+  final List<PopupMenuEntry<String>> menuEntries;
   final ValueChanged<String> onMenuSelected;
-  final List<(String, IconData, String)> menuItems;
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +277,7 @@ class _TopBar extends StatelessWidget {
               Expanded(
                 child: TextField(
                   readOnly: true,
-                  onTap: () => context.push('/marketplace'),
+                  onTap: () => context.go('/marketplace'),
                   decoration: const InputDecoration(
                     hintText: 'Search Hubsom marketplace…',
                     prefixIcon: Icon(Icons.search),
@@ -246,13 +287,13 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               IconButton(
-                onPressed: () => context.push('/live'),
+                onPressed: () => context.go('/live'),
                 icon: const Icon(Icons.videocam_outlined),
                 tooltip: 'Live',
               ),
               IconButton(
                 tooltip: 'Messages',
-                onPressed: () => context.push('/messages'),
+                onPressed: () => context.go('/messages'),
                 icon: Badge(
                   isLabelVisible: unreadMessages > 0,
                   label: Text('$unreadMessages'),
@@ -260,7 +301,7 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               IconButton(
-                onPressed: () => context.push('/cart'),
+                onPressed: () => context.go('/cart'),
                 icon: Badge(
                   isLabelVisible: cartCount > 0,
                   label: Text('$cartCount'),
@@ -271,19 +312,7 @@ class _TopBar extends StatelessWidget {
                 tooltip: 'Menu',
                 icon: const Icon(Icons.menu),
                 onSelected: onMenuSelected,
-                itemBuilder: (_) => [
-                  for (final item in menuItems)
-                    PopupMenuItem<String>(
-                      value: item.$1,
-                      child: Row(
-                        children: [
-                          Icon(item.$2, size: 22, color: HubsomColors.forest),
-                          const SizedBox(width: 12),
-                          Text(item.$3),
-                        ],
-                      ),
-                    ),
-                ],
+                itemBuilder: (_) => menuEntries,
               ),
             ],
           ),

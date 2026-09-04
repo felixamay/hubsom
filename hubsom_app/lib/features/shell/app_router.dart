@@ -160,26 +160,32 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/account',
-        builder: (_, __) => const AuthGate(child: AccountPage()),
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AccountPage(),
         routes: [
           GoRoute(
             path: 'profile',
+            parentNavigatorKey: _rootKey,
             builder: (_, __) => const AuthGate(child: ProfilePage()),
           ),
           GoRoute(
             path: 'addresses',
+            parentNavigatorKey: _rootKey,
             builder: (_, __) => const AuthGate(child: AddressesPage()),
           ),
           GoRoute(
             path: 'following',
+            parentNavigatorKey: _rootKey,
             builder: (_, __) => const AuthGate(child: FollowingPage()),
           ),
           GoRoute(
             path: 'followers',
+            parentNavigatorKey: _rootKey,
             builder: (_, __) => const AuthGate(child: FollowersPage()),
           ),
           GoRoute(
             path: 'saved',
+            parentNavigatorKey: _rootKey,
             builder: (_, __) => const AuthGate(child: SavedPage()),
           ),
         ],
