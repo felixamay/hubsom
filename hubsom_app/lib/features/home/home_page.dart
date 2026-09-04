@@ -75,7 +75,7 @@ class HomePage extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 24, 0, 8),
+              padding: const EdgeInsets.fromLTRB(0, 40, 0, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -128,7 +128,7 @@ class HomePage extends ConsumerWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 32),
                     Row(
                       children: [
                         Text('Live now', style: _sectionTitle(context)),
@@ -211,7 +211,7 @@ class HomePage extends ConsumerWidget {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(top: 24, bottom: 8),
+              padding: const EdgeInsets.only(top: 36, bottom: 8),
               child: Row(
                 children: [
                   Text('Buy now', style: _sectionTitle(context)),
