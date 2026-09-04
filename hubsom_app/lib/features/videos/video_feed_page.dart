@@ -6,9 +6,9 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
-import '../../core/utils/money.dart';
 import '../../models/product.dart';
 import '../../models/shop_video.dart';
+import '../../widgets/commerce_cta_bar.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_demo_video_player.dart';
 
@@ -561,6 +561,13 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     context.push('/stores/$sellerId');
   }
 
+  Future<void> _buyProduct(Product product) async {
+    if (!ensureSignedIn(context, ref, message: 'Sign in to buy')) return;
+    await ref.read(cartProvider.notifier).addProduct(product, source: 'buy-now');
+    if (!mounted) return;
+    context.push('/checkout');
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.paddingOf(context).bottom + 12;
@@ -605,7 +612,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
         // Right action rail
         Positioned(
           right: 10,
-          bottom: bottomPad + 88,
+          bottom: bottomPad + (_products.isNotEmpty ? 140 : 88),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -723,80 +730,23 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
               if (_products.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: 64,
+                  height: 128,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _products.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
                     itemBuilder: (_, i) {
                       final p = _products[i];
-                      final thumb =
-                          p.images.isNotEmpty ? p.images.first : '';
-                      return InkWell(
-                        onTap: () => context.push('/products/${p.id}'),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          width: 200,
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: HubsomColors.gold.withValues(alpha: 0.65),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(7),
-                                child: thumb.isEmpty
-                                    ? Container(
-                                        width: 48,
-                                        height: 48,
-                                        color: HubsomColors.forest,
-                                        child: const Icon(
-                                          Icons.shopping_bag,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      )
-                                    : HubsomImage(
-                                        url: thumb,
-                                        width: 48,
-                                        height: 48,
-                                        fit: BoxFit.cover,
-                                      ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      p.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    Text(
-                                      formatGhs(p.effectivePrice),
-                                      style: const TextStyle(
-                                        color: HubsomColors.gold,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                      return SizedBox(
+                        width: 280,
+                        child: FeedProductShopStrip(
+                          name: p.name,
+                          priceGhs: p.effectivePrice,
+                          imageUrl:
+                              p.images.isNotEmpty ? p.images.first : null,
+                          inStock: p.stock > 0,
+                          onView: () => context.push('/products/${p.id}'),
+                          onBuy: () => _buyProduct(p),
                         ),
                       );
                     },

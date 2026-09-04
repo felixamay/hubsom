@@ -6,10 +6,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
-import '../../core/utils/money.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
 import '../../models/shop_video.dart';
+import '../../widgets/commerce_cta_bar.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_demo_video_player.dart';
 
@@ -460,25 +460,16 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
     context.push('/stores/$sellerId');
   }
 
-  Future<void> _addToCart() async {
+  Future<void> _buyNow() async {
     final product = _product;
     if (product == null) {
-      if (widget.post.productId.isNotEmpty) {
-        context.push('/products/${widget.post.productId}');
-      }
+      _openProduct();
       return;
     }
-    await ref.read(cartProvider.notifier).addProduct(product);
+    if (!ensureSignedIn(context, ref, message: 'Sign in to buy')) return;
+    await ref.read(cartProvider.notifier).addProduct(product, source: 'buy-now');
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${product.name} added to cart'),
-        action: SnackBarAction(
-          label: 'View cart',
-          onPressed: () => context.push('/cart'),
-        ),
-      ),
-    );
+    context.push('/checkout');
   }
 
   void _openProduct() {
@@ -495,7 +486,6 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
     final shownCaption =
         showMore ? '${caption.substring(0, 90)}...more' : caption;
     final me = ref.watch(authStateProvider).valueOrNull;
-    final price = _product?.effectivePrice;
     final sound = _video?.displaySound ?? 'Original sound - ${post.authorName}';
 
     return Stack(
@@ -575,7 +565,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
         // Right action rail — like / comment / save / share / follow
         Positioned(
           right: 10,
-          bottom: bottomPad + (_product != null ? 96 : 72),
+          bottom: bottomPad + (_product != null ? 140 : 72),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -707,101 +697,25 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
               ],
               if (_product != null) ...[
                 const SizedBox(height: 10),
-                InkWell(
-                  onTap: _openProduct,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: HubsomColors.gold.withValues(alpha: 0.65),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(7),
-                          child: (_product!.images.isNotEmpty)
-                              ? HubsomImage(
-                                  url: _product!.images.first,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 48,
-                                  height: 48,
-                                  color: HubsomColors.forest,
-                                  child: const Icon(
-                                    Icons.shopping_bag,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _product!.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              if (price != null)
-                                Text(
-                                  formatGhs(price),
-                                  style: const TextStyle(
-                                    color: HubsomColors.gold,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        if (_product!.stock > 0)
-                          TextButton(
-                            onPressed: _addToCart,
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.black,
-                              backgroundColor: HubsomColors.gold,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              'Add',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                FeedProductShopStrip(
+                  name: _product!.name,
+                  priceGhs: _product!.effectivePrice,
+                  imageUrl: _product!.images.isNotEmpty
+                      ? _product!.images.first
+                      : post.productImage,
+                  inStock: _product!.stock > 0,
+                  onView: _openProduct,
+                  onBuy: _buyNow,
                 ),
               ] else if (post.productId.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _openProduct,
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    backgroundColor: Colors.white,
-                  ),
-                  child: const Text('View product'),
+                CommerceCtaBar(
+                  dense: true,
+                  overlay: true,
+                  secondaryLabel: 'View product',
+                  primaryLabel: 'Buy now',
+                  onSecondary: _openProduct,
+                  onPrimary: _openProduct,
                 ),
               ],
             ],
