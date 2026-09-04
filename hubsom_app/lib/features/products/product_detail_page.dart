@@ -16,7 +16,6 @@ import '../../models/seller.dart';
 import '../../widgets/commerce_cta_bar.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
-import '../../widgets/product_demo_video_player.dart';
 
 class ProductDetailPage extends ConsumerStatefulWidget {
   const ProductDetailPage({super.key, required this.productId});
@@ -471,9 +470,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   List<_MediaSlide> _slidesFor(Product product) {
     final slides = <_MediaSlide>[];
-    if (product.showsDemoVideo) {
-      slides.add(const _MediaSlide.video());
-    }
     for (final url in product.images) {
       if (url.trim().isEmpty) continue;
       slides.add(_MediaSlide.image(url));
@@ -546,17 +542,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                   itemBuilder: (context, i) {
                     final slide = slides[i];
                     switch (slide.kind) {
-                      case _MediaKind.video:
-                        return ColoredBox(
-                          color: Colors.black,
-                          child: ProductDemoVideoPlayer(
-                            productId: product.id,
-                            remoteUrl: product.demoVideoUrl,
-                            expand: true,
-                            autoplay: false,
-                            borderRadius: 0,
-                          ),
-                        );
                       case _MediaKind.image:
                         return ColoredBox(
                           color: HubsomColors.mist,
@@ -955,11 +940,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   }
 }
 
-enum _MediaKind { video, image, placeholder }
+enum _MediaKind { image, placeholder }
 
 class _MediaSlide {
   const _MediaSlide._(this.kind, this.url);
-  const _MediaSlide.video() : this._(_MediaKind.video, null);
   const _MediaSlide.image(String url) : this._(_MediaKind.image, url);
   const _MediaSlide.placeholder() : this._(_MediaKind.placeholder, null);
 
