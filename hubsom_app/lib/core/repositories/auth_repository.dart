@@ -150,16 +150,39 @@ class AuthRepository {
   }
 
   Future<HubsomUser?> fetchProfile() async {
+    final local = currentUser();
     try {
       final res = await _api.get('/api/account/profile');
       final data = ApiResponse.asMap(res.data);
-      if (data == null || data['error'] != null) return currentUser();
-      final user = HubsomUser.fromJson(data);
+      if (data == null || data['error'] != null) return local;
+      var user = HubsomUser.fromJson(data);
+      // Keep local social graphs when the API omits or empties them.
+      if (local != null) {
+        user = user.copyWith(
+          followingSellerIds: _mergeIds(
+            user.followingSellerIds,
+            local.followingSellerIds,
+          ),
+          savedProductIds: _mergeIds(user.savedProductIds, local.savedProductIds),
+          likedProductIds: _mergeIds(user.likedProductIds, local.likedProductIds),
+          savedVideoIds: _mergeIds(user.savedVideoIds, local.savedVideoIds),
+          likedVideoIds: _mergeIds(user.likedVideoIds, local.likedVideoIds),
+          sellerId: user.sellerId ?? local.sellerId,
+        );
+      }
       await LocalStore.setUserJson(jsonEncode(user.toJson()));
       return user;
     } catch (_) {
-      return currentUser();
+      return local;
     }
+  }
+
+  static List<String> _mergeIds(List<String> primary, List<String> fallback) {
+    if (primary.isNotEmpty) {
+      final out = <String>{...primary, ...fallback};
+      return out.toList();
+    }
+    return fallback;
   }
 
   Future<HubsomUser> updateProfile(Map<String, dynamic> patch) async {

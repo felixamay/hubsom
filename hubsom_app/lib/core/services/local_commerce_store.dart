@@ -29,6 +29,7 @@ class LocalCommerceStore {
   static const _reviewsKey = 'localProductReviews';
   static const _shopVideosKey = 'localShopVideos';
   static const _videoSavesKey = 'localVideoSaves';
+  static const _sellerFollowersKey = 'localSellerFollowers';
   static const _uuid = Uuid();
 
   /// Wipe local commerce (keeps auth vault / cart / session).
@@ -104,6 +105,68 @@ class LocalCommerceStore {
     }
     await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
     return seller;
+  }
+
+  /// Followers of a seller store (user accounts that tapped Follow).
+  static List<Map<String, dynamic>> listFollowers(String sellerId) {
+    final map = _sellerFollowersMap();
+    final raw = map[sellerId];
+    if (raw is! List) return <Map<String, dynamic>>[];
+    final rows = raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    rows.sort((a, b) => '${b['at']}'.compareTo('${a['at']}'));
+    return rows;
+  }
+
+  static int followerCount(String sellerId) {
+    final listed = listFollowers(sellerId).length;
+    final seller = getSeller(sellerId);
+    final stored = seller?.followers ?? 0;
+    return listed > stored ? listed : stored;
+  }
+
+  static bool isFollowedBy(String sellerId, String userId) {
+    return listFollowers(sellerId).any((e) => '${e['userId']}' == userId);
+  }
+
+  /// Record follow/unfollow and keep seller.followers in sync.
+  static Future<int> setSellerFollowedBy({
+    required String sellerId,
+    required HubsomUser follower,
+    required bool following,
+  }) async {
+    final map = _sellerFollowersMap();
+    final rows = listFollowers(sellerId);
+    rows.removeWhere((e) => '${e['userId']}' == follower.id);
+    if (following) {
+      rows.insert(0, {
+        'userId': follower.id,
+        'name': follower.name,
+        'image': follower.image,
+        'email': follower.email,
+        'at': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
+    map[sellerId] = rows;
+    await LocalStore.setString(_sellerFollowersKey, jsonEncode(map));
+
+    final seller = getSeller(sellerId);
+    if (seller != null) {
+      await upsertSeller(seller.copyWith(followers: rows.length));
+    }
+    return rows.length;
+  }
+
+  static Map<String, dynamic> _sellerFollowersMap() {
+    final raw = LocalStore.getString(_sellerFollowersKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
   }
 
   // --- products ---

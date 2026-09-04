@@ -34,7 +34,12 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 final catalogRepositoryProvider = Provider<CatalogRepository>(
-  (ref) => CatalogRepository(ref.watch(apiClientProvider)),
+  (ref) => CatalogRepository(
+    ref.watch(apiClientProvider),
+    onUserChanged: (user) {
+      ref.read(authStateProvider.notifier).applyLocalUser(user);
+    },
+  ),
 );
 
 final liveRepositoryProvider = Provider<LiveRepository>(
@@ -167,6 +172,15 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
   Future<void> refresh() async {
     final user = await _repo.fetchProfile();
     state = AsyncValue.data(user ?? _repo.currentUser());
+  }
+
+  /// Apply a locally-updated user (follows, likes, saves) without a network round-trip.
+  void applyLocalUser(HubsomUser user) {
+    state = AsyncValue.data(user);
+  }
+
+  Future<void> reloadFromLocal() async {
+    state = AsyncValue.data(_repo.currentUser());
   }
 }
 

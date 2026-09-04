@@ -13,6 +13,9 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authStateProvider).valueOrNull;
     final cartCount = ref.watch(cartProvider).length;
+    final catalog = ref.watch(catalogRepositoryProvider);
+    final followingCount = user?.followingSellerIds.length ?? 0;
+    final followerCount = catalog.myFollowerCount();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
@@ -58,18 +61,34 @@ class DashboardPage extends ConsumerWidget {
             ),
             _stat(
               context,
-              label: 'Following accounts',
-              value: '${user?.followingSellerIds.length ?? 0}',
-              icon: Icons.storefront_outlined,
+              label: 'Following',
+              value: '$followingCount',
+              icon: Icons.person_add_alt_1_outlined,
               onTap: () {
                 if (!ensureSignedIn(
                   context,
                   ref,
-                  message: 'Sign in to see sellers you follow',
+                  message: 'Sign in to see accounts you follow',
                 )) {
                   return;
                 }
                 context.push('/account/following');
+              },
+            ),
+            _stat(
+              context,
+              label: 'Followers',
+              value: '$followerCount',
+              icon: Icons.groups_outlined,
+              onTap: () {
+                if (!ensureSignedIn(
+                  context,
+                  ref,
+                  message: 'Sign in to see your followers',
+                )) {
+                  return;
+                }
+                context.push('/account/followers');
               },
             ),
             _stat(

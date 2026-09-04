@@ -18,9 +18,13 @@ import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
 
 class CatalogRepository {
-  CatalogRepository(this._api);
+  CatalogRepository(
+    this._api, {
+    void Function(HubsomUser user)? onUserChanged,
+  }) : _onUserChanged = onUserChanged;
 
   final ApiClient _api;
+  final void Function(HubsomUser user)? _onUserChanged;
 
   Future<List<Product>> listProducts({
     String? category,
@@ -535,6 +539,39 @@ class CatalogRepository {
     return user.followingSellerIds.contains(sellerId);
   }
 
+  /// Followers of the signed-in user's store (or [sellerId] if provided).
+  List<Map<String, dynamic>> listMyFollowers({String? sellerId}) {
+    final id = sellerId ?? _currentUser()?.sellerId;
+    if (id == null || id.isEmpty) {
+      final user = _currentUser();
+      if (user == null) return const [];
+      final mine = LocalCommerceStore.listSellers()
+          .where((s) => s.ownerUserId == user.id)
+          .toList();
+      if (mine.isEmpty) return const [];
+      return LocalCommerceStore.listFollowers(mine.first.id);
+    }
+    return LocalCommerceStore.listFollowers(id);
+  }
+
+  int myFollowerCount({String? sellerId}) {
+    final id = sellerId ?? _resolveMySellerId();
+    if (id == null || id.isEmpty) return 0;
+    return LocalCommerceStore.followerCount(id);
+  }
+
+  String? _resolveMySellerId() {
+    final user = _currentUser();
+    if (user == null) return null;
+    if (user.sellerId != null && user.sellerId!.isNotEmpty) {
+      return user.sellerId;
+    }
+    for (final s in LocalCommerceStore.listSellers()) {
+      if (s.ownerUserId == user.id) return s.id;
+    }
+    return null;
+  }
+
   HubsomUser? _currentUser() {
     final raw = LocalStore.userJson;
     if (raw == null || raw.isEmpty) return null;
@@ -549,6 +586,23 @@ class CatalogRepository {
 
   Future<void> _persistUser(HubsomUser user) async {
     await LocalStore.setUserJson(jsonEncode(user.toJson()));
+    final vault = LocalStore.loadCredentialVault();
+    final key = user.email.toLowerCase();
+    final entry = vault[key];
+    if (entry is Map) {
+      entry['userJson'] = user.toJson();
+      vault[key] = entry;
+      await LocalStore.saveCredentialVault(vault);
+      try {
+        await CloudStore.putAccount(key, {
+          'salt': entry['salt'],
+          'hash': entry['hash'],
+          'userJson': user.toJson(),
+          'email': key,
+        });
+      } catch (_) {}
+    }
+    _onUserChanged?.call(user);
   }
 
   Future<void> _patchFollowing(String sellerId, bool following) async {
@@ -560,7 +614,15 @@ class CatalogRepository {
     } else {
       ids.remove(sellerId);
     }
-    await _persistUser(user.copyWith(followingSellerIds: ids));
+    final updated = user.copyWith(followingSellerIds: ids);
+    await _persistUser(updated);
+    try {
+      await LocalCommerceStore.setSellerFollowedBy(
+        sellerId: sellerId,
+        follower: updated,
+        following: following,
+      );
+    } catch (_) {}
   }
 
   Future<void> _patchSaved(String productId, bool saved) async {

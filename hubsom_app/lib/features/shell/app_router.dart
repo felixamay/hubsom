@@ -7,6 +7,7 @@ import '../../core/auth/auth_routes.dart';
 import '../../core/providers/core_providers.dart';
 import '../account/account_page.dart';
 import '../account/addresses_page.dart';
+import '../account/followers_page.dart';
 import '../account/following_page.dart';
 import '../account/profile_page.dart';
 import '../account/saved_page.dart';
@@ -172,6 +173,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'following',
             builder: (_, __) => const AuthGate(child: FollowingPage()),
+          ),
+          GoRoute(
+            path: 'followers',
+            builder: (_, __) => const AuthGate(child: FollowersPage()),
           ),
           GoRoute(
             path: 'saved',
