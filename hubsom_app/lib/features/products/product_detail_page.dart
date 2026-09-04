@@ -495,7 +495,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       );
     }
     final product = _product!;
-    final image = product.images.isNotEmpty ? product.images.first : null;
     final slides = _slidesFor(product);
     final mediaHeight =
         (MediaQuery.sizeOf(context).width * 0.95).clamp(260.0, 420.0);
