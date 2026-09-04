@@ -7,7 +7,8 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
 import '../../widgets/responsive_scaffold.dart';
 
-/// Mirrors Next.js MobileTabBar: Home / Categories / Sell / Timeline / Dashboard
+/// Footer tabs: Home / Categories / Sell / Timeline / Dashboard
+/// Header menu keeps the former Account destinations (profile, saved, wallet…).
 class MainShell extends ConsumerWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -15,10 +16,45 @@ class MainShell extends ConsumerWidget {
 
   static const _tabs = [
     (path: '/', label: 'Home', icon: Icons.home_outlined, selected: Icons.home),
-    (path: '/categories', label: 'Categories', icon: Icons.grid_view_outlined, selected: Icons.grid_view),
-    (path: '/sell', label: 'Sell', icon: Icons.storefront_outlined, selected: Icons.storefront),
-    (path: '/timeline', label: 'Timeline', icon: Icons.dynamic_feed_outlined, selected: Icons.dynamic_feed),
-    (path: '/dashboard', label: 'Dashboard', icon: Icons.insights_outlined, selected: Icons.insights),
+    (
+      path: '/categories',
+      label: 'Categories',
+      icon: Icons.grid_view_outlined,
+      selected: Icons.grid_view
+    ),
+    (
+      path: '/sell',
+      label: 'Sell',
+      icon: Icons.storefront_outlined,
+      selected: Icons.storefront
+    ),
+    (
+      path: '/timeline',
+      label: 'Timeline',
+      icon: Icons.dynamic_feed_outlined,
+      selected: Icons.dynamic_feed
+    ),
+    (
+      path: '/dashboard',
+      label: 'Dashboard',
+      icon: Icons.insights_outlined,
+      selected: Icons.insights
+    ),
+  ];
+
+  static const _menuItems = <(String value, IconData icon, String label)>[
+    ('account', Icons.person_outline, 'Account'),
+    ('profile', Icons.badge_outlined, 'Profile'),
+    ('saved', Icons.favorite_border, 'Saved products'),
+    ('following', Icons.people_outline, 'Following'),
+    ('followers', Icons.groups_outlined, 'Followers'),
+    ('wallet', Icons.account_balance_wallet_outlined, 'Wallet'),
+    ('live', Icons.videocam_outlined, 'Live shopping'),
+    ('videos', Icons.play_circle_outline, 'Watch videos'),
+    ('marketplace', Icons.storefront_outlined, 'Marketplace'),
+    ('messages', Icons.chat_bubble_outline, 'Messages'),
+    ('notifications', Icons.notifications_outlined, 'Notifications'),
+    ('settings', Icons.settings_outlined, 'Settings'),
   ];
 
   void _onTap(int index) {
@@ -26,6 +62,35 @@ class MainShell extends ConsumerWidget {
       index,
       initialLocation: index == navigationShell.currentIndex,
     );
+  }
+
+  void _onMenuSelected(BuildContext context, String value) {
+    switch (value) {
+      case 'account':
+        context.push('/account');
+      case 'profile':
+        context.push('/account/profile');
+      case 'saved':
+        context.push('/account/saved');
+      case 'following':
+        context.push('/account/following');
+      case 'followers':
+        context.push('/account/followers');
+      case 'wallet':
+        context.push('/wallet');
+      case 'live':
+        context.push('/live');
+      case 'videos':
+        context.push('/videos');
+      case 'marketplace':
+        context.push('/marketplace');
+      case 'messages':
+        context.push('/messages');
+      case 'notifications':
+        context.push('/notifications');
+      case 'settings':
+        context.push('/settings');
+    }
   }
 
   @override
@@ -60,7 +125,12 @@ class MainShell extends ConsumerWidget {
             Expanded(
               child: Column(
                 children: [
-                  _TopBar(cartCount: cartCount, unreadMessages: unreadMessages),
+                  _TopBar(
+                    cartCount: cartCount,
+                    unreadMessages: unreadMessages,
+                    onMenuSelected: (v) => _onMenuSelected(context, v),
+                    menuItems: _menuItems,
+                  ),
                   Expanded(child: navigationShell),
                 ],
               ),
@@ -78,6 +148,11 @@ class MainShell extends ConsumerWidget {
             tooltip: 'Search',
             onPressed: () => context.push('/marketplace'),
             icon: const Icon(Icons.search),
+          ),
+          IconButton(
+            tooltip: 'Live',
+            onPressed: () => context.push('/live'),
+            icon: const Icon(Icons.videocam_outlined),
           ),
           IconButton(
             tooltip: 'Messages',
@@ -100,41 +175,19 @@ class MainShell extends ConsumerWidget {
           PopupMenuButton<String>(
             tooltip: 'Menu',
             icon: const Icon(Icons.menu),
-            onSelected: (value) {
-              switch (value) {
-                case 'account':
-                  context.push('/account');
-                case 'settings':
-                  context.push('/settings');
-                case 'notifications':
-                  context.push('/notifications');
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'account',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.person_outline),
-                  title: Text('Account'),
+            onSelected: (value) => _onMenuSelected(context, value),
+            itemBuilder: (_) => [
+              for (final item in _menuItems)
+                PopupMenuItem<String>(
+                  value: item.$1,
+                  child: Row(
+                    children: [
+                      Icon(item.$2, size: 22, color: HubsomColors.forest),
+                      const SizedBox(width: 12),
+                      Text(item.$3),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'notifications',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.notifications_outlined),
-                  title: Text('Notifications'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
-                ),
-              ),
             ],
           ),
           const SizedBox(width: 4),
@@ -158,9 +211,17 @@ class MainShell extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.cartCount, required this.unreadMessages});
+  const _TopBar({
+    required this.cartCount,
+    required this.unreadMessages,
+    required this.onMenuSelected,
+    required this.menuItems,
+  });
+
   final int cartCount;
   final int unreadMessages;
+  final ValueChanged<String> onMenuSelected;
+  final List<(String, IconData, String)> menuItems;
 
   @override
   Widget build(BuildContext context) {
@@ -209,41 +270,19 @@ class _TopBar extends StatelessWidget {
               PopupMenuButton<String>(
                 tooltip: 'Menu',
                 icon: const Icon(Icons.menu),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'account':
-                      context.push('/account');
-                    case 'settings':
-                      context.push('/settings');
-                    case 'notifications':
-                      context.push('/notifications');
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'account',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.person_outline),
-                      title: Text('Account'),
+                onSelected: onMenuSelected,
+                itemBuilder: (_) => [
+                  for (final item in menuItems)
+                    PopupMenuItem<String>(
+                      value: item.$1,
+                      child: Row(
+                        children: [
+                          Icon(item.$2, size: 22, color: HubsomColors.forest),
+                          const SizedBox(width: 12),
+                          Text(item.$3),
+                        ],
+                      ),
                     ),
-                  ),
-                  PopupMenuItem(
-                    value: 'notifications',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.notifications_outlined),
-                      title: Text('Notifications'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'settings',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.settings_outlined),
-                      title: Text('Settings'),
-                    ),
-                  ),
                 ],
               ),
             ],
