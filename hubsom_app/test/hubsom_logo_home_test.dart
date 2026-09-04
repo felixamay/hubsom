@@ -27,4 +27,18 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(router.state.uri.path, '/');
   });
+
+  testWidgets('HubsomLogo wordmark renders Hubsom text', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: HubsomLogo(height: 40, showWordmark: true, linkToHome: false),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Hubsom'), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+  });
 }
