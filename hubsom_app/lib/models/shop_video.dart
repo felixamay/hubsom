@@ -46,6 +46,12 @@ class ShopVideo extends Equatable {
         u.startsWith('data:');
   }
 
+  /// True when media is on Storage or Firestore chunks (not only local Hive).
+  bool get hasPublishedMedia {
+    final u = videoUrl?.trim() ?? '';
+    return hasRemoteVideo || u.startsWith('hubsom-fs://');
+  }
+
   factory ShopVideo.fromJson(Map<String, dynamic> json) => ShopVideo(
         id: json['id'] as String,
         authorId: json['authorId'] as String? ?? '',

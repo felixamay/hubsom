@@ -12,8 +12,8 @@ import '../../models/shop_video.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
-import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
+import '../services/cloud_video_media.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
@@ -319,15 +319,23 @@ class CatalogRepository {
     await LocalCommerceStore.mergeCloudSocial();
     final list = LocalCommerceStore.listShopVideos();
     await _backfillShopVideoUrls(list);
+    final refreshed = LocalCommerceStore.listShopVideos();
+    for (final video in refreshed) {
+      await CloudVideoMedia.ensureLocalBytes(
+        videoId: video.id,
+        videoUrl: video.videoUrl,
+        mimeType: video.mimeType,
+      );
+    }
     return LocalCommerceStore.listShopVideos();
   }
 
   Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
-    final needs = list.where((v) => !v.hasRemoteVideo).take(8).toList();
+    final needs = list.where((v) => !v.hasPublishedMedia).take(8).toList();
     for (final video in needs) {
       final stored = await ProductDemoVideoStore.load(video.id);
       if (stored == null) continue;
-      final url = await CloudMedia.uploadShopVideo(
+      final url = await CloudVideoMedia.publish(
         videoId: video.id,
         bytes: stored.bytes,
         mimeType: stored.mimeType,
@@ -339,7 +347,14 @@ class CatalogRepository {
 
   Future<ShopVideo?> getShopVideo(String id) async {
     await LocalCommerceStore.mergeCloudSocial();
-    return LocalCommerceStore.getShopVideo(id);
+    final video = LocalCommerceStore.getShopVideo(id);
+    if (video == null) return null;
+    await CloudVideoMedia.ensureLocalBytes(
+      videoId: video.id,
+      videoUrl: video.videoUrl,
+      mimeType: video.mimeType,
+    );
+    return LocalCommerceStore.getShopVideo(id) ?? video;
   }
 
   Future<ShopVideo> createShopVideo({
@@ -364,7 +379,7 @@ class CatalogRepository {
       bytes: bytes,
       mimeType: mimeType,
     );
-    final remoteUrl = await CloudMedia.uploadShopVideo(
+    final remoteUrl = await CloudVideoMedia.publish(
       videoId: draft.id,
       bytes: bytes,
       mimeType: mimeType,
