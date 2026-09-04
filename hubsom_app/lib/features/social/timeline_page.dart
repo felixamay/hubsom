@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
@@ -22,18 +23,18 @@ class TimelinePage extends ConsumerStatefulWidget {
 }
 
 class _TimelinePageState extends ConsumerState<TimelinePage> {
-  List<TimelinePost> _posts = const [];
-  bool _loading = true;
+  /// Non-video timeline posts (products / shares). Videos come from [shopVideosProvider].
+  List<TimelinePost> _productPosts = const [];
+  bool _bootstrapping = true;
   String? _error;
   late final PageController _pageCtrl;
   int _index = 0;
-  bool _reloadScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _pageCtrl = PageController();
-    _load();
+    _loadProductPosts(initial: true);
   }
 
   @override
@@ -42,35 +43,66 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     super.dispose();
   }
 
-  void _scheduleReloadFromVideos() {
-    if (_reloadScheduled || !mounted) return;
-    _reloadScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _reloadScheduled = false;
-      if (mounted) _load();
-    });
+  TimelinePost _postFromVideo(ShopVideo video) {
+    Product? linked;
+    for (final id in video.productIds) {
+      linked = LocalCommerceStore.getProduct(id);
+      if (linked != null) break;
+    }
+    return TimelinePost(
+      id: 'video-${video.id}',
+      authorId: video.authorId,
+      authorName: video.authorName,
+      authorImage: video.authorImage,
+      type: 'video',
+      videoId: video.id,
+      videoUrl: video.videoUrl,
+      productId: linked?.id ??
+          (video.productIds.isNotEmpty ? video.productIds.first : video.id),
+      productName: linked?.name ??
+          (video.caption.trim().isEmpty ? 'Shop video' : video.caption.trim()),
+      productImage: linked != null && linked.images.isNotEmpty
+          ? linked.images.first
+          : video.authorImage,
+      caption: video.caption.trim().isEmpty
+          ? 'Watch ${video.authorName} on Hubsom'
+          : video.caption.trim(),
+      createdAt: video.createdAt,
+    );
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  List<TimelinePost> _composeFeed(List<ShopVideo> videos) {
+    final videoPosts = videos.map(_postFromVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final videoIds = videos.map((v) => v.id).toSet();
+    final others = _productPosts.where((p) {
+      final id = p.videoId;
+      if (id != null && id.isNotEmpty && videoIds.contains(id)) return false;
+      return true;
+    }).toList();
+    return [...videoPosts, ...others];
+  }
+
+  Future<void> _loadProductPosts({bool initial = false}) async {
+    if (initial && mounted) {
+      setState(() {
+        _bootstrapping = true;
+        _error = null;
+      });
+    }
     try {
-      final posts = await ref.read(catalogRepositoryProvider).listTimeline();
+      final all = await ref.read(catalogRepositoryProvider).listTimeline();
       if (!mounted) return;
       setState(() {
-        _posts = posts;
-        _loading = false;
-        _index = 0;
+        // Videos are owned by shopVideosProvider so Home and Timeline stay aligned.
+        _productPosts = all.where((p) => !p.isVideo).toList();
+        _bootstrapping = false;
+        _error = null;
       });
-      if (_pageCtrl.hasClients) {
-        _pageCtrl.jumpToPage(0);
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loading = false;
+        _bootstrapping = false;
         _error = '$e';
       });
     }
@@ -78,85 +110,116 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Home may sync shop videos after this IndexedStack tab first mounted.
-    // Keep Timeline in lockstep so desktop users see the same clips.
+    final videosAsync = ref.watch(shopVideosProvider);
+    final videos = videosAsync.valueOrNull ?? const <ShopVideo>[];
+    final posts = _composeFeed(videos);
+    final waitingFirstPaint =
+        _bootstrapping && posts.isEmpty && videosAsync.isLoading;
+
+    // Soft refresh product posts when opening the Timeline tab — never blank the feed.
+    ref.listen(timelineTabTickProvider, (previous, next) {
+      if (previous != next) {
+        _loadProductPosts(initial: false);
+        ref.invalidate(shopVideosProvider);
+      }
+    });
     ref.listen(shopVideosProvider, (previous, next) {
       next.whenData((videos) {
-        final videoIds = videos.map((v) => v.id).toSet();
-        final have = _posts
-            .where((p) => p.isVideo)
-            .map((p) => p.videoId)
-            .whereType<String>()
-            .toSet();
-        final missing = videoIds.any((id) => !have.contains(id));
-        if (missing || (videos.isNotEmpty && have.isEmpty)) {
-          _scheduleReloadFromVideos();
+        final wasEmpty = previous?.valueOrNull?.isEmpty ?? true;
+        if (wasEmpty && videos.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() => _index = 0);
+            if (_pageCtrl.hasClients) _pageCtrl.jumpToPage(0);
+          });
         }
       });
     });
-    ref.listen(timelineTabTickProvider, (previous, next) {
-      if (previous != next) _scheduleReloadFromVideos();
-    });
-    // Warm the same provider Home uses so cloud metadata is shared.
-    ref.watch(shopVideosProvider);
+
+    if (waitingFirstPaint) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    if (_error != null && posts.isEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, style: const TextStyle(color: Colors.white)),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => _loadProductPosts(initial: true),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (posts.isEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: _EmptyTimeline(
+          onBrowse: () => context.go('/marketplace'),
+          onAddVideo: () => context.push('/videos/upload'),
+        ),
+      );
+    }
+
+    final safeIndex = _index.clamp(0, posts.length - 1);
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_error!, style: const TextStyle(color: Colors.white)),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: _load,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _posts.isEmpty
-                  ? _EmptyTimeline(
-                      onBrowse: () => context.go('/marketplace'),
-                      onAddVideo: () => context.push('/videos/upload'),
-                    )
-                  : Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        PageView.builder(
-                          controller: _pageCtrl,
-                          scrollDirection: Axis.vertical,
-                          pageSnapping: true,
-                          allowImplicitScrolling: false,
-                          physics: const PageScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          itemCount: _posts.length,
-                          onPageChanged: (i) => setState(() => _index = i),
-                          itemBuilder: (_, i) => _TimelineSlide(
-                            key: ValueKey(_posts[i].id),
-                            post: _posts[i],
-                            active: i == _index,
-                          ),
-                        ),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: IconButton(
-                            tooltip: 'Refresh',
-                            onPressed: _loading ? null : _load,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black45,
-                              foregroundColor: Colors.white,
-                            ),
-                            icon: const Icon(Icons.refresh),
-                          ),
-                        ),
-                      ],
-                    ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _pageCtrl,
+            scrollDirection: Axis.vertical,
+            pageSnapping: true,
+            allowImplicitScrolling: true,
+            physics: const PageScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            itemCount: posts.length,
+            onPageChanged: (i) {
+              if (_index == i) return;
+              setState(() => _index = i);
+            },
+            itemBuilder: (_, i) {
+              final nearby = (i - safeIndex).abs() <= 1;
+              return _TimelineSlide(
+                key: ValueKey(posts[i].id),
+                post: posts[i],
+                active: i == safeIndex,
+                keepMedia: nearby,
+              );
+            },
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              tooltip: 'Refresh',
+              onPressed: () {
+                ref.invalidate(shopVideosProvider);
+                _loadProductPosts(initial: false);
+              },
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black45,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.refresh),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -213,10 +276,13 @@ class _TimelineSlide extends ConsumerStatefulWidget {
     super.key,
     required this.post,
     required this.active,
+    this.keepMedia = false,
   });
 
   final TimelinePost post;
   final bool active;
+  /// Keep the player mounted for the current/adjacent slides to avoid swipe flicker.
+  final bool keepMedia;
 
   @override
   ConsumerState<_TimelineSlide> createState() => _TimelineSlideState();
@@ -547,16 +613,18 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                       imageUrl: post.productImage,
                       name: post.productName,
                     ),
-                    if (widget.active)
+                    // Keep adjacent players alive; only the active slide autoplays.
+                    if (widget.active || widget.keepMedia)
                       ProductDemoVideoPlayer(
                         productId: post.videoId!,
                         remoteUrl: _video?.videoUrl ?? post.videoUrl,
                         expand: true,
-                        autoplay: true,
+                        autoplay: widget.active,
                         borderRadius: 0,
+                        showPlayOverlay: false,
                       )
                     else
-                      const ColoredBox(color: Colors.black54),
+                      const ColoredBox(color: Colors.black),
                   ],
                 )
               : _ProductHero(
