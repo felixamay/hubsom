@@ -75,7 +75,7 @@ class HomePage extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+              padding: const EdgeInsets.fromLTRB(0, 24, 0, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
