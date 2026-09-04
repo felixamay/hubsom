@@ -139,6 +139,14 @@ class SellerRepository {
       throw AuthException('Enter how many you are selling (at least 1)');
     }
 
+    final flashSale = _parseFlashSale(body);
+    if (body['flashSale'] != null && flashSale == null) {
+      throw AuthException(
+        'Flash sale needs 5–90% off and an end time in the future',
+      );
+    }
+    final priceGhs = (body['priceGhs'] as num?)?.toDouble() ?? 0;
+
     // Always write the local catalog first so Go live can see the product even
     // when Firebase Hosting has no /api/products backend.
     Product product;
@@ -148,12 +156,14 @@ class SellerRepository {
         name: body['name'] as String? ?? 'Untitled',
         description: body['description'] as String? ?? '',
         category: body['category'] as String? ?? 'miscellaneous',
-        priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? 0,
+        priceGhs: priceGhs,
+        compareAtGhs: flashSale != null ? priceGhs : null,
         stock: stock,
         images: images,
         supports: (body['supports'] as List?)?.cast<String>() ??
             const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
         hasDemoVideo: hasDemoVideo,
+        flashSale: flashSale,
       );
     } catch (e) {
       final message = '$e';
@@ -267,16 +277,35 @@ class SellerRepository {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-|-$'), '');
 
+    var clearFlash = false;
+    FlashSale? nextFlash = existing.flashSale;
+    if (body.containsKey('flashSale')) {
+      if (body['flashSale'] == null) {
+        clearFlash = true;
+        nextFlash = null;
+      } else {
+        nextFlash = _parseFlashSale(body);
+        if (nextFlash == null) {
+          throw AuthException('Enter a valid flash sale discount and end time');
+        }
+      }
+    }
+    final nextPrice =
+        (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs;
+
     final updated = existing.copyWith(
       name: name,
       description: body['description'] as String? ?? existing.description,
       category: body['category'] as String? ?? existing.category,
-      priceGhs: (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs,
+      priceGhs: nextPrice,
+      compareAtGhs: nextFlash != null ? nextPrice : existing.compareAtGhs,
       stock: nextStock,
       images: images,
       supports: (body['supports'] as List?)?.cast<String>() ?? existing.supports,
       hasDemoVideo: hasDemoVideo,
       clearDemoVideoUrl: clearDemoVideo && !hasNewVideo,
+      flashSale: nextFlash,
+      clearFlashSale: clearFlash,
       slug: slug.isEmpty ? existing.slug : slug,
     );
 
@@ -386,5 +415,21 @@ class SellerRepository {
   Future<Map<String, dynamic>> social(String sellerId) async {
     final res = await _api.get('/api/sellers/$sellerId/social');
     return ApiResponse.asMap(res.data) ?? {};
+  }
+
+  FlashSale? _parseFlashSale(Map<String, dynamic> body) {
+    final raw = body['flashSale'];
+    if (raw is! Map) return null;
+    try {
+      final sale = FlashSale.fromJson(Map<String, dynamic>.from(raw));
+      if (sale.discountPct < 5 || sale.discountPct > 90) return null;
+      if (sale.endsAt.trim().isEmpty) return null;
+      final end = DateTime.tryParse(sale.endsAt);
+      if (end == null) return null;
+      if (!end.toUtc().isAfter(DateTime.now().toUtc())) return null;
+      return sale;
+    } catch (_) {
+      return null;
+    }
   }
 }

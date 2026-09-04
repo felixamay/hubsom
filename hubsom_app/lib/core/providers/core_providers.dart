@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/cart.dart';
 import '../../models/huber.dart';
 import '../../models/product.dart';
+import '../../models/seller.dart';
+import '../../models/shop_video.dart';
 import '../../models/user.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
@@ -34,7 +36,12 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 final catalogRepositoryProvider = Provider<CatalogRepository>(
-  (ref) => CatalogRepository(ref.watch(apiClientProvider)),
+  (ref) => CatalogRepository(
+    ref.watch(apiClientProvider),
+    onUserChanged: (user) {
+      ref.read(authStateProvider.notifier).applyLocalUser(user);
+    },
+  ),
 );
 
 final liveRepositoryProvider = Provider<LiveRepository>(
@@ -168,6 +175,15 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     final user = await _repo.fetchProfile();
     state = AsyncValue.data(user ?? _repo.currentUser());
   }
+
+  /// Apply a locally-updated user (follows, likes, saves) without a network round-trip.
+  void applyLocalUser(HubsomUser user) {
+    state = AsyncValue.data(user);
+  }
+
+  Future<void> reloadFromLocal() async {
+    state = AsyncValue.data(_repo.currentUser());
+  }
 }
 
 final cartProvider = StateNotifierProvider<CartController, List<CartItem>>((ref) {
@@ -213,7 +229,7 @@ class CartController extends StateNotifier<List<CartItem>> {
     String? streamId,
   }) async {
     final qty = quantity <= 0 ? 1 : quantity;
-    final resolvedSource = product.flashSale != null && source == 'buy-now'
+    final resolvedSource = product.hasActiveFlashSale && source == 'buy-now'
         ? 'flash-sale'
         : source;
     final item = CartItem(
@@ -291,4 +307,16 @@ final streamsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
 final promotionsProvider =
     FutureProvider.autoDispose.family<List<dynamic>, String>((ref, placement) async {
   return ref.watch(catalogRepositoryProvider).listPromotions(placement);
+});
+
+final shopVideosProvider =
+    FutureProvider<List<ShopVideo>>((ref) async {
+  return ref.watch(catalogRepositoryProvider).listShopVideos();
+});
+
+/// Bump when the Timeline tab is selected so the feed reloads with latest videos.
+final timelineTabTickProvider = StateProvider<int>((ref) => 0);
+
+final sellersProvider = FutureProvider.autoDispose<List<Seller>>((ref) async {
+  return ref.watch(catalogRepositoryProvider).listSellers();
 });

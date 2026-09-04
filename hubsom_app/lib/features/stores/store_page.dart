@@ -56,9 +56,12 @@ class _StorePageState extends ConsumerState<StorePage> {
       final next = _following
           ? await catalog.unfollowSeller(seller.id)
           : await catalog.followSeller(seller.id);
-      ref.invalidate(authStateProvider);
+      final count = catalog.sellerFollowerCount(seller.id);
       if (!mounted) return;
-      setState(() => _following = next);
+      setState(() {
+        _following = next;
+        _seller = seller.copyWith(followers: count);
+      });
     } finally {
       if (mounted) setState(() => _followBusy = false);
     }

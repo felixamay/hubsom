@@ -29,6 +29,7 @@ class LocalCommerceStore {
   static const _reviewsKey = 'localProductReviews';
   static const _shopVideosKey = 'localShopVideos';
   static const _videoSavesKey = 'localVideoSaves';
+  static const _sellerFollowersKey = 'localSellerFollowers';
   static const _uuid = Uuid();
 
   /// Wipe local commerce (keeps auth vault / cart / session).
@@ -60,6 +61,14 @@ class LocalCommerceStore {
   static Seller? getSeller(String idOrSlug) {
     for (final s in listSellers()) {
       if (s.id == idOrSlug || s.slug == idOrSlug) return s;
+    }
+    return null;
+  }
+
+  static Seller? getSellerByOwnerUserId(String userId) {
+    if (userId.isEmpty) return null;
+    for (final s in listSellers()) {
+      if (s.ownerUserId == userId) return s;
     }
     return null;
   }
@@ -104,6 +113,77 @@ class LocalCommerceStore {
     }
     await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
     return seller;
+  }
+
+  /// Followers of a seller store (user accounts that tapped Follow).
+  static List<Map<String, dynamic>> listFollowers(String sellerId) {
+    final map = _sellerFollowersMap();
+    final raw = map[sellerId];
+    if (raw is! List) return <Map<String, dynamic>>[];
+    final rows = raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    rows.sort((a, b) => '${b['at']}'.compareTo('${a['at']}'));
+    return rows;
+  }
+
+  static int followerCount(String sellerId) {
+    // Prefer the follow graph — seller.followers can be stale from API/cache.
+    final listed = listFollowers(sellerId).length;
+    if (listed > 0) return listed;
+    return getSeller(sellerId)?.followers ?? 0;
+  }
+
+  static bool isFollowedBy(String sellerId, String userId) {
+    return listFollowers(sellerId).any((e) => '${e['userId']}' == userId);
+  }
+
+  /// Record follow/unfollow and keep seller.followers in sync.
+  static Future<int> setSellerFollowedBy({
+    required String sellerId,
+    required HubsomUser follower,
+    required bool following,
+  }) async {
+    final map = _sellerFollowersMap();
+    final rows = listFollowers(sellerId);
+    rows.removeWhere((e) => '${e['userId']}' == follower.id);
+    if (following) {
+      rows.insert(0, {
+        'userId': follower.id,
+        'name': follower.name,
+        'image': follower.image,
+        'email': follower.email,
+        'at': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
+    map[sellerId] = rows;
+    await LocalStore.setString(_sellerFollowersKey, jsonEncode(map));
+
+    // Keep every local seller row for this id (and slug aliases) in sync.
+    final sellers = listSellers();
+    var touched = false;
+    for (var i = 0; i < sellers.length; i++) {
+      final s = sellers[i];
+      if (s.id == sellerId || s.slug == sellerId) {
+        sellers[i] = s.copyWith(followers: rows.length);
+        touched = true;
+      }
+    }
+    if (touched) {
+      await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
+    }
+    return rows.length;
+  }
+
+  static Map<String, dynamic> _sellerFollowersMap() {
+    final raw = LocalStore.getString(_sellerFollowersKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
   }
 
   // --- products ---
@@ -159,6 +239,8 @@ class LocalCommerceStore {
     ],
     bool hasDemoVideo = false,
     String? demoVideoUrl,
+    FlashSale? flashSale,
+    double? compareAtGhs,
   }) async {
     if (images.length < 3) {
       throw StateError('Upload at least 3 product photos before publishing');
@@ -176,12 +258,14 @@ class LocalCommerceStore {
       description: description,
       category: category,
       priceGhs: priceGhs,
+      compareAtGhs: compareAtGhs,
       images: images,
       sellerId: seller.id,
       stock: stock,
       supports: supports,
       hasDemoVideo: hasDemoVideo,
       demoVideoUrl: demoVideoUrl,
+      flashSale: flashSale,
     );
     final products = listProducts();
     products.insert(0, product);
@@ -883,6 +967,8 @@ class LocalCommerceStore {
       id: 'post-${_uuid.v4().substring(0, 8)}',
       authorId: author.id,
       authorName: author.name,
+      authorImage: author.image,
+      type: 'product',
       productId: product.id,
       productName: product.name,
       productImage: product.images.isNotEmpty ? product.images.first : null,
@@ -891,6 +977,41 @@ class LocalCommerceStore {
           : caption.trim(),
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
+    return _insertTimelinePost(post);
+  }
+
+  static Future<TimelinePost> shareVideoToTimeline({
+    required ShopVideo video,
+    required HubsomUser author,
+    Product? linkedProduct,
+    String caption = '',
+  }) async {
+    final post = TimelinePost(
+      id: 'post-${_uuid.v4().substring(0, 8)}',
+      authorId: author.id,
+      authorName: author.name,
+      authorImage: author.image ?? video.authorImage,
+      type: 'video',
+      videoId: video.id,
+      videoUrl: video.videoUrl,
+      productId: linkedProduct?.id ??
+          (video.productIds.isNotEmpty ? video.productIds.first : video.id),
+      productName: linkedProduct?.name ??
+          (video.caption.trim().isEmpty ? 'Shop video' : video.caption.trim()),
+      productImage: linkedProduct?.images.isNotEmpty == true
+          ? linkedProduct!.images.first
+          : video.authorImage,
+      caption: caption.trim().isEmpty
+          ? (video.caption.trim().isEmpty
+              ? 'Watch ${video.authorName}\'s video on Hubsom'
+              : video.caption.trim())
+          : caption.trim(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    return _insertTimelinePost(post);
+  }
+
+  static Future<TimelinePost> _insertTimelinePost(TimelinePost post) async {
     final rows = _readList(_timelineKey);
     rows.insert(0, post.toJson());
     await _writeList(_timelineKey, rows);
@@ -963,7 +1084,20 @@ class LocalCommerceStore {
             if (v is Map) '${v['id']}': Map<String, dynamic>.from(v),
         };
         for (final v in videos) {
-          byId['${v['id']}'] = v;
+          final id = '${v['id']}';
+          final incoming = Map<String, dynamic>.from(v);
+          final existing = byId[id];
+          if (existing != null) {
+            final merged = <String, dynamic>{...existing, ...incoming};
+            final localUrl = '${existing['videoUrl'] ?? ''}';
+            final remoteUrl = '${incoming['videoUrl'] ?? ''}';
+            if (remoteUrl.isEmpty && localUrl.isNotEmpty) {
+              merged['videoUrl'] = localUrl;
+            }
+            byId[id] = merged;
+          } else {
+            byId[id] = incoming;
+          }
         }
         await _writeList(_shopVideosKey, byId.values.toList());
       }
@@ -1040,6 +1174,7 @@ class LocalCommerceStore {
     String caption = '',
     String soundTitle = '',
     String mimeType = 'video/mp4',
+    String? videoUrl,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
@@ -1058,6 +1193,7 @@ class LocalCommerceStore {
       productIds: productIds,
       mimeType: mimeType,
       shareCount: 0,
+      videoUrl: videoUrl,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);

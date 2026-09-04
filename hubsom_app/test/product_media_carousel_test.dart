@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hubsom_app/models/product.dart';
 
 void main() {
-  test('listed product media puts demo video ahead of images', () {
+  test('product page media carousel uses images only (no demo video)', () {
     final product = Product(
       id: 'p1',
       slug: 'p1',
@@ -17,15 +17,15 @@ void main() {
       demoVideoUrl: 'https://example.com/demo.mp4',
     );
 
+    // Product may still have demo video metadata, but the product page
+    // carousel no longer surfaces it — shop videos live in the video/timeline feeds.
     expect(product.showsDemoVideo, isTrue);
-    expect(product.images.length, 2);
 
-    // Build the same slide order the product detail carousel uses.
     final kinds = <String>[];
-    if (product.showsDemoVideo) kinds.add('video');
     for (final _ in product.images) {
       kinds.add('image');
     }
-    expect(kinds, ['video', 'image', 'image']);
+    expect(kinds, ['image', 'image']);
+    expect(kinds.contains('video'), isFalse);
   });
 }

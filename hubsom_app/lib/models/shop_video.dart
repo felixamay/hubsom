@@ -13,6 +13,7 @@ class ShopVideo extends Equatable {
     this.productIds = const [],
     this.mimeType = 'video/mp4',
     this.shareCount = 0,
+    this.videoUrl,
     required this.createdAt,
   });
 
@@ -27,12 +28,28 @@ class ShopVideo extends Equatable {
   final List<String> productIds;
   final String mimeType;
   final int shareCount;
+  /// Firebase Storage (or CDN) URL so other devices can play the clip.
+  final String? videoUrl;
   final String createdAt;
 
   String get displaySound {
     final s = soundTitle.trim();
     if (s.isNotEmpty) return s;
     return 'Original sound - $authorName';
+  }
+
+  bool get hasRemoteVideo {
+    final u = videoUrl?.trim() ?? '';
+    return u.startsWith('http://') ||
+        u.startsWith('https://') ||
+        u.startsWith('blob:') ||
+        u.startsWith('data:');
+  }
+
+  /// True when media is on Storage or Firestore chunks (not only local Hive).
+  bool get hasPublishedMedia {
+    final u = videoUrl?.trim() ?? '';
+    return hasRemoteVideo || u.startsWith('hubsom-fs://');
   }
 
   factory ShopVideo.fromJson(Map<String, dynamic> json) => ShopVideo(
@@ -46,6 +63,7 @@ class ShopVideo extends Equatable {
         productIds: (json['productIds'] as List?)?.cast<String>() ?? const [],
         mimeType: json['mimeType'] as String? ?? 'video/mp4',
         shareCount: (json['shareCount'] as num?)?.toInt() ?? 0,
+        videoUrl: json['videoUrl'] as String? ?? json['url'] as String?,
         createdAt: json['createdAt'] as String? ?? '',
       );
 
@@ -60,6 +78,7 @@ class ShopVideo extends Equatable {
         'productIds': productIds,
         'mimeType': mimeType,
         'shareCount': shareCount,
+        if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
         'createdAt': createdAt,
       };
 
@@ -70,6 +89,7 @@ class ShopVideo extends Equatable {
     String? authorSellerId,
     List<String>? productIds,
     int? shareCount,
+    String? videoUrl,
   }) =>
       ShopVideo(
         id: id,
@@ -82,9 +102,11 @@ class ShopVideo extends Equatable {
         productIds: productIds ?? this.productIds,
         mimeType: mimeType,
         shareCount: shareCount ?? this.shareCount,
+        videoUrl: videoUrl ?? this.videoUrl,
         createdAt: createdAt,
       );
 
   @override
-  List<Object?> get props => [id, authorId, productIds, shareCount, createdAt];
+  List<Object?> get props =>
+      [id, authorId, productIds, shareCount, videoUrl, createdAt];
 }

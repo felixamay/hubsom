@@ -47,6 +47,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   bool _loadingEdit = false;
   bool _existingHasVideo = false;
   bool _clearedVideo = false;
+  bool _flashEnabled = false;
+  int _flashDiscountPct = 20;
+  /// Hours until the flash sale ends (from save time).
+  int _flashDurationHours = 24;
+  DateTime? _existingFlashEndsAt;
   String? _error;
 
   bool get _isEdit =>
@@ -109,6 +114,31 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         _existingHasVideo = product.hasDemoVideo || product.showsDemoVideo;
         _clearedVideo = false;
         _demoVideo = null;
+        final sale = product.flashSale;
+        if (sale != null && sale.isActive) {
+          _flashEnabled = true;
+          _flashDiscountPct = sale.discountPct.clamp(5, 90);
+          _existingFlashEndsAt = DateTime.tryParse(sale.endsAt);
+          final end = _existingFlashEndsAt;
+          if (end != null) {
+            final hours =
+                end.toUtc().difference(DateTime.now().toUtc()).inHours;
+            if (hours <= 6) {
+              _flashDurationHours = 6;
+            } else if (hours <= 12) {
+              _flashDurationHours = 12;
+            } else if (hours <= 24) {
+              _flashDurationHours = 24;
+            } else if (hours <= 72) {
+              _flashDurationHours = 72;
+            } else {
+              _flashDurationHours = 168;
+            }
+          }
+        } else {
+          _flashEnabled = false;
+          _existingFlashEndsAt = null;
+        }
         _loadingEdit = false;
       });
     } catch (e) {
@@ -215,7 +245,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _error = null;
     });
     try {
-      final body = {
+      final body = <String, dynamic>{
         'name': _name.text.trim(),
         'description': _description.text.trim(),
         'category': _category,
@@ -229,6 +259,18 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
           'live-auction',
         ],
       };
+      if (_flashEnabled) {
+        final endsAt = DateTime.now()
+            .toUtc()
+            .add(Duration(hours: _flashDurationHours))
+            .toIso8601String();
+        body['flashSale'] = {
+          'endsAt': endsAt,
+          'discountPct': _flashDiscountPct,
+        };
+      } else {
+        body['flashSale'] = null;
+      }
       final Map<String, dynamic> saved;
       if (_isEdit) {
         saved = await ref.read(sellerRepositoryProvider).updateProduct(
@@ -573,6 +615,97 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+            Text(
+              'Flash sale',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: HubsomColors.forest,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Run a limited-time discount. It shows on the homepage Flash sales section while active.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'List as flash sale',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                _flashEnabled
+                    ? 'Buyers see −$_flashDiscountPct% until the sale ends'
+                    : 'Off — regular store price only',
+              ),
+              value: _flashEnabled,
+              activeThumbColor: HubsomColors.live,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() => _flashEnabled = v),
+            ),
+            if (_flashEnabled) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Discount: $_flashDiscountPct%',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              Slider(
+                value: _flashDiscountPct.toDouble(),
+                min: 5,
+                max: 90,
+                divisions: 17,
+                label: '$_flashDiscountPct%',
+                activeColor: HubsomColors.live,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _flashDiscountPct = v.round()),
+              ),
+              DropdownButtonFormField<int>(
+                initialValue: _flashDurationHours,
+                decoration: const InputDecoration(
+                  labelText: 'Sale ends in',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 6, child: Text('6 hours')),
+                  DropdownMenuItem(value: 12, child: Text('12 hours')),
+                  DropdownMenuItem(value: 24, child: Text('24 hours')),
+                  DropdownMenuItem(value: 72, child: Text('3 days')),
+                  DropdownMenuItem(value: 168, child: Text('7 days')),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(
+                          () => _flashDurationHours = v ?? _flashDurationHours,
+                        ),
+              ),
+              if (_existingFlashEndsAt != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Previous end: ${_existingFlashEndsAt!.toLocal()}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              Builder(
+                builder: (context) {
+                  final price = double.tryParse(_price.text.trim()) ?? 0;
+                  if (price <= 0) return const SizedBox.shrink();
+                  final sale = price * (1 - _flashDiscountPct / 100);
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Flash price ≈ GH₵ ${sale.toStringAsFixed(2)} (was GH₵ ${price.toStringAsFixed(2)})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: HubsomColors.live,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(

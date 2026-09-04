@@ -33,12 +33,39 @@ class ProductDemoVideoStore {
     await _box!.put(_mimeKey(productId), mimeType);
   }
 
-  static Future<({Uint8List bytes, String mimeType})?> load(String productId) async {
+  /// Hive on web may return [List] / [List<int>] instead of [Uint8List].
+  static Uint8List? _asBytes(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Uint8List) return raw.isEmpty ? null : raw;
+    if (raw is ByteBuffer) {
+      final view = raw.asUint8List();
+      return view.isEmpty ? null : view;
+    }
+    if (raw is List<int>) {
+      if (raw.isEmpty) return null;
+      return Uint8List.fromList(raw);
+    }
+    if (raw is List) {
+      if (raw.isEmpty) return null;
+      try {
+        return Uint8List.fromList(
+          raw.map((e) => (e as num).toInt()).toList(),
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  static Future<({Uint8List bytes, String mimeType})?> load(
+    String productId,
+  ) async {
     await init();
-    final raw = _box!.get(_bytesKey(productId));
-    if (raw is! Uint8List || raw.isEmpty) return null;
+    final bytes = _asBytes(_box!.get(_bytesKey(productId)));
+    if (bytes == null) return null;
     final mime = '${_box!.get(_mimeKey(productId)) ?? 'video/mp4'}';
-    return (bytes: raw, mimeType: mime);
+    return (bytes: bytes, mimeType: mime);
   }
 
   static Future<void> remove(String productId) async {

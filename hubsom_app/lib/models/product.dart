@@ -10,6 +10,19 @@ class FlashSale extends Equatable {
         discountPct: (json['discountPct'] as num).toInt(),
       );
 
+  Map<String, dynamic> toJson() => {
+        'endsAt': endsAt,
+        'discountPct': discountPct,
+      };
+
+  /// True while the sale window is still open.
+  bool get isActive {
+    if (discountPct <= 0) return false;
+    final end = DateTime.tryParse(endsAt);
+    if (end == null) return true;
+    return DateTime.now().toUtc().isBefore(end.toUtc());
+  }
+
   @override
   List<Object?> get props => [endsAt, discountPct];
 }
@@ -58,12 +71,15 @@ class Product extends Equatable {
   final String? demoVideoUrl;
 
   double get effectivePrice {
-    if (flashSale == null) return priceGhs;
+    if (!hasActiveFlashSale) return priceGhs;
     return priceGhs * (1 - flashSale!.discountPct / 100);
   }
 
   bool get showsDemoVideo =>
       hasDemoVideo || (demoVideoUrl != null && demoVideoUrl!.trim().isNotEmpty);
+
+  /// Active flash sale that shoppers should still see.
+  bool get hasActiveFlashSale => flashSale != null && flashSale!.isActive;
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
@@ -103,19 +119,24 @@ class Product extends Equatable {
         'rating': rating,
         'reviewCount': reviewCount,
         'tags': tags,
-        if (flashSale != null)
-          'flashSale': {
-            'endsAt': flashSale!.endsAt,
-            'discountPct': flashSale!.discountPct,
-          },
+        if (flashSale != null) 'flashSale': flashSale!.toJson(),
         'supports': supports,
         'hasDemoVideo': hasDemoVideo,
         if (demoVideoUrl != null) 'demoVideoUrl': demoVideoUrl,
       };
 
   @override
-  List<Object?> get props =>
-      [id, slug, name, priceGhs, sellerId, stock, hasDemoVideo, demoVideoUrl];
+  List<Object?> get props => [
+        id,
+        slug,
+        name,
+        priceGhs,
+        sellerId,
+        stock,
+        hasDemoVideo,
+        demoVideoUrl,
+        flashSale,
+      ];
 
   Product copyWith({
     String? name,
@@ -132,6 +153,8 @@ class Product extends Equatable {
     bool? hasDemoVideo,
     String? demoVideoUrl,
     bool clearDemoVideoUrl = false,
+    FlashSale? flashSale,
+    bool clearFlashSale = false,
     String? slug,
   }) {
     return Product(
@@ -149,7 +172,7 @@ class Product extends Equatable {
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       tags: tags ?? this.tags,
-      flashSale: flashSale,
+      flashSale: clearFlashSale ? null : (flashSale ?? this.flashSale),
       supports: supports ?? this.supports,
       hasDemoVideo: hasDemoVideo ?? this.hasDemoVideo,
       demoVideoUrl:

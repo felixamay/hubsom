@@ -77,7 +77,7 @@ class ProductCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (product.flashSale != null)
+                  if (product.hasActiveFlashSale)
                     Positioned(
                       left: 8,
                       top: 8,

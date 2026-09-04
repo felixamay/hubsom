@@ -77,6 +77,15 @@ class LocalMessageStore {
     for (final s in LocalCommerceStore.listSellers()) {
       if (s.id == peerId || s.ownerUserId == peerId) return s.name;
     }
+    // Followers / following records often have the display name.
+    for (final s in LocalCommerceStore.listSellers()) {
+      for (final f in LocalCommerceStore.listFollowers(s.id)) {
+        if ('${f['userId']}' == peerId) {
+          final n = '${f['name'] ?? ''}'.trim();
+          if (n.isNotEmpty) return n;
+        }
+      }
+    }
     final vault = LocalStore.loadCredentialVault();
     for (final entry in vault.values) {
       if (entry is! Map) continue;

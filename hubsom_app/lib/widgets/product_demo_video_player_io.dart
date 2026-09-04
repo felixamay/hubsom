@@ -16,6 +16,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.expand = false,
     this.autoplay = false,
     this.borderRadius = 12,
+    this.showPlayOverlay = true,
   });
 
   final String productId;
@@ -24,6 +25,9 @@ class ProductDemoVideoPlayer extends StatefulWidget {
   final bool expand;
   final bool autoplay;
   final double borderRadius;
+
+  /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
+  final bool showPlayOverlay;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -34,6 +38,13 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
   String? _ownedPath;
   String? _error;
   bool _ready = false;
+  bool _playing = false;
+  int _loadGen = 0;
+
+  static bool _isPlayableRemote(String? url) {
+    final u = (url ?? '').trim();
+    return u.startsWith('http://') || u.startsWith('https://');
+  }
 
   @override
   void initState() {
@@ -41,56 +52,124 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant ProductDemoVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.productId != widget.productId) {
+      _load();
+      return;
+    }
+    final oldRemote = _isPlayableRemote(oldWidget.remoteUrl)
+        ? oldWidget.remoteUrl!.trim()
+        : null;
+    final newRemote =
+        _isPlayableRemote(widget.remoteUrl) ? widget.remoteUrl!.trim() : null;
+    if (oldRemote != newRemote && newRemote != null && !_ready) {
+      _load();
+      return;
+    }
+    if (oldWidget.autoplay != widget.autoplay) {
+      _applyAutoplay();
+    }
+  }
+
+  Future<void> _applyAutoplay() async {
+    final c = _controller;
+    if (c == null || !_ready) return;
+    try {
+      if (widget.autoplay) {
+        await c.play();
+      } else {
+        await c.pause();
+      }
+    } catch (_) {}
+  }
+
   Future<void> _load() async {
+    final gen = ++_loadGen;
+    await _disposeController();
+    if (mounted) {
+      setState(() {
+        _ready = false;
+        _playing = false;
+        _error = null;
+      });
+    }
+
     try {
       late final VideoPlayerController controller;
-      final remote = widget.remoteUrl?.trim();
-      if (remote != null &&
-          remote.isNotEmpty &&
-          (remote.startsWith('http://') || remote.startsWith('https://'))) {
-        controller = VideoPlayerController.networkUrl(Uri.parse(remote));
-      } else {
-        final stored = await ProductDemoVideoStore.load(widget.productId);
-        if (stored == null) {
-          if (mounted) setState(() => _error = 'No demo video');
-          return;
-        }
+      final stored = await ProductDemoVideoStore.load(widget.productId);
+      if (!mounted || gen != _loadGen) return;
+
+      if (stored != null && stored.bytes.isNotEmpty) {
         final path = await createDemoVideoObjectUrl(
           bytes: stored.bytes,
           mimeType: stored.mimeType,
         );
         _ownedPath = path;
         controller = VideoPlayerController.file(File(path));
+      } else {
+        final remote = widget.remoteUrl?.trim();
+        if (_isPlayableRemote(remote)) {
+          controller = VideoPlayerController.networkUrl(Uri.parse(remote!));
+        } else {
+          if (mounted && gen == _loadGen) {
+            setState(() => _error = widget.expand ? null : 'No demo video');
+          }
+          return;
+        }
       }
 
       await controller.initialize();
-      controller.setLooping(true);
-      controller.addListener(() {
-        if (mounted) setState(() {});
-      });
-      if (!mounted) {
+      if (!mounted || gen != _loadGen) {
         await controller.dispose();
         return;
       }
+      await controller.setLooping(true);
+      controller.addListener(_onControllerTick);
+      _controller = controller;
       setState(() {
-        _controller = controller;
         _ready = true;
+        _playing = controller.value.isPlaying;
+        _error = null;
       });
       if (widget.autoplay) {
         await controller.play();
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not play demo video');
+      if (mounted && gen == _loadGen) {
+        setState(() => _error = widget.expand ? null : 'Could not play demo video');
+      }
+    }
+  }
+
+  void _onControllerTick() {
+    final c = _controller;
+    if (c == null || !mounted) return;
+    final playing = c.value.isPlaying;
+    if (playing != _playing) {
+      setState(() => _playing = playing);
+    }
+  }
+
+  Future<void> _disposeController() async {
+    final c = _controller;
+    _controller = null;
+    if (c != null) {
+      c.removeListener(_onControllerTick);
+      await c.dispose();
+    }
+    final path = _ownedPath;
+    _ownedPath = null;
+    if (path != null) {
+      revokeDemoVideoObjectUrl(path);
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
-    final path = _ownedPath;
-    if (path != null) {
-      revokeDemoVideoObjectUrl(path);
-    }
+    // Fire-and-forget; State.dispose cannot be async.
+    _disposeController();
     super.dispose();
   }
 
@@ -109,48 +188,51 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: widget.expand ? Colors.white : HubsomColors.forest,
+            color: widget.expand ? Colors.white54 : HubsomColors.forest,
+            strokeWidth: widget.expand ? 2 : 3,
           ),
         ),
       );
     }
     final c = _controller!;
-    final video = Stack(
-      fit: StackFit.expand,
-      alignment: Alignment.center,
-      children: [
-        ColoredBox(
-          color: Colors.black,
-          child: widget.expand
-              ? FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: c.value.size.width == 0 ? 16 : c.value.size.width,
-                    height: c.value.size.height == 0 ? 9 : c.value.size.height,
-                    child: VideoPlayer(c),
-                  ),
-                )
-              : VideoPlayer(c),
-        ),
-        IconButton(
-          iconSize: 56,
-          color: Colors.white,
-          onPressed: () {
-            setState(() {
-              if (c.value.isPlaying) {
-                c.pause();
-              } else {
-                c.play();
-              }
-            });
-          },
-          icon: Icon(
-            c.value.isPlaying
-                ? Icons.pause_circle_filled
-                : Icons.play_circle_filled,
+    void toggle() {
+      if (c.value.isPlaying) {
+        c.pause();
+      } else {
+        c.play();
+      }
+    }
+
+    final video = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: toggle,
+      child: Stack(
+        fit: StackFit.expand,
+        alignment: Alignment.center,
+        children: [
+          ColoredBox(
+            color: Colors.black,
+            child: widget.expand
+                ? FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: c.value.size.width == 0 ? 16 : c.value.size.width,
+                      height:
+                          c.value.size.height == 0 ? 9 : c.value.size.height,
+                      child: VideoPlayer(c),
+                    ),
+                  )
+                : VideoPlayer(c),
           ),
-        ),
-      ],
+          if (widget.showPlayOverlay && (!(_playing) || !widget.expand))
+            Icon(
+              _playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+              size: 56,
+              color: Colors.white,
+            ),
+        ],
+      ),
     );
 
     if (widget.expand) {

@@ -63,6 +63,35 @@ class Seller extends Equatable {
         if (ownerUserId != null) 'ownerUserId': ownerUserId,
       };
 
+  Seller copyWith({
+    String? name,
+    String? city,
+    String? region,
+    String? bio,
+    String? avatar,
+    String? cover,
+    double? rating,
+    int? followers,
+    bool? verified,
+    List<String>? categories,
+    String? ownerUserId,
+  }) =>
+      Seller(
+        id: id,
+        slug: slug,
+        name: name ?? this.name,
+        city: city ?? this.city,
+        region: region ?? this.region,
+        bio: bio ?? this.bio,
+        avatar: avatar ?? this.avatar,
+        cover: cover ?? this.cover,
+        rating: rating ?? this.rating,
+        followers: followers ?? this.followers,
+        verified: verified ?? this.verified,
+        categories: categories ?? this.categories,
+        ownerUserId: ownerUserId ?? this.ownerUserId,
+      );
+
   @override
   List<Object?> get props => [id, slug, name, followers, verified];
 }

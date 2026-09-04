@@ -13,14 +13,19 @@ import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/cloud_video_media.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
 
 class CatalogRepository {
-  CatalogRepository(this._api);
+  CatalogRepository(
+    this._api, {
+    void Function(HubsomUser user)? onUserChanged,
+  }) : _onUserChanged = onUserChanged;
 
   final ApiClient _api;
+  final void Function(HubsomUser user)? _onUserChanged;
 
   Future<List<Product>> listProducts({
     String? category,
@@ -100,31 +105,66 @@ class CatalogRepository {
       final res =
           await _api.get('/api/sellers').timeout(const Duration(seconds: 4));
       final data = ApiResponse.decode(res.data);
-      if (data == null) return local;
+      if (data == null) return _withLiveFollowerCounts(local);
       final list = data is List
           ? data
           : (data is Map && data['sellers'] is List)
               ? data['sellers'] as List
               : <dynamic>[];
-      if (list.isEmpty) return local;
-      return list
+      if (list.isEmpty) return _withLiveFollowerCounts(local);
+      final remote = list
           .map((e) => Seller.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
+      // Prefer local rows when present so follower counts / photos stick.
+      final byId = <String, Seller>{
+        for (final s in remote) s.id: s,
+      };
+      for (final s in local) {
+        byId[s.id] = s;
+      }
+      return _withLiveFollowerCounts(byId.values.toList());
     } catch (_) {
-      return local;
+      return _withLiveFollowerCounts(local);
     }
   }
 
   Future<Seller?> getSeller(String idOrSlug) async {
     final local = LocalCommerceStore.getSeller(idOrSlug);
-    if (local != null) return local;
+    if (local != null) return _withLiveFollowerCount(local);
     final sellers = await listSellers();
     try {
-      return sellers.firstWhere((s) => s.id == idOrSlug || s.slug == idOrSlug);
+      final found =
+          sellers.firstWhere((s) => s.id == idOrSlug || s.slug == idOrSlug);
+      return _withLiveFollowerCount(found);
     } catch (_) {
       return null;
     }
   }
+
+  /// Find a store owned by a Hubsom user (for follow-back / visit from Followers).
+  Future<Seller?> getSellerByOwnerUserId(String userId) async {
+    final local = LocalCommerceStore.getSellerByOwnerUserId(userId);
+    if (local != null) return _withLiveFollowerCount(local);
+    final sellers = await listSellers();
+    try {
+      final found = sellers.firstWhere((s) => s.ownerUserId == userId);
+      return _withLiveFollowerCount(found);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Seller _withLiveFollowerCount(Seller seller) {
+    final count = LocalCommerceStore.followerCount(seller.id);
+    if (count == seller.followers) return seller;
+    return seller.copyWith(followers: count);
+  }
+
+  List<Seller> _withLiveFollowerCounts(List<Seller> sellers) =>
+      sellers.map(_withLiveFollowerCount).toList();
+
+  int sellerFollowerCount(String sellerId) =>
+      LocalCommerceStore.followerCount(sellerId);
 
   Future<bool> toggleSave(String productId) async {
     try {
@@ -276,13 +316,59 @@ class CatalogRepository {
   }
 
   Future<List<ShopVideo>> listShopVideos() async {
-    await LocalCommerceStore.mergeCloudSocial();
-    return LocalCommerceStore.listShopVideos();
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    final list = LocalCommerceStore.listShopVideos();
+    // Never block the homepage/timeline on media backfill — do it in background.
+    // ignore: unawaited_futures
+    _publishAndHydrateInBackground(list);
+    return list;
+  }
+
+  Future<void> _publishAndHydrateInBackground(List<ShopVideo> list) async {
+    try {
+      await _backfillShopVideoUrls(list);
+      final refreshed = LocalCommerceStore.listShopVideos();
+      for (final video in refreshed.take(12)) {
+        await CloudVideoMedia.ensureLocalBytes(
+          videoId: video.id,
+          videoUrl: video.videoUrl,
+          mimeType: video.mimeType,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
+    final needs = list.where((v) => !v.hasPublishedMedia).take(8).toList();
+    for (final video in needs) {
+      try {
+        final stored = await ProductDemoVideoStore.load(video.id);
+        if (stored == null) continue;
+        final url = await CloudVideoMedia.publish(
+          videoId: video.id,
+          bytes: stored.bytes,
+          mimeType: stored.mimeType,
+        );
+        if (url == null || url.isEmpty) continue;
+        await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
+      } catch (_) {}
+    }
   }
 
   Future<ShopVideo?> getShopVideo(String id) async {
-    await LocalCommerceStore.mergeCloudSocial();
-    return LocalCommerceStore.getShopVideo(id);
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    var video = LocalCommerceStore.getShopVideo(id);
+    if (video == null) return null;
+    await CloudVideoMedia.ensureLocalBytes(
+      videoId: video.id,
+      videoUrl: video.videoUrl,
+      mimeType: video.mimeType,
+    );
+    return LocalCommerceStore.getShopVideo(id) ?? video;
   }
 
   Future<ShopVideo> createShopVideo({
@@ -294,7 +380,8 @@ class CatalogRepository {
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
-    final video = await LocalCommerceStore.createShopVideo(
+    // Create metadata first so we have a stable id, then upload media.
+    final draft = await LocalCommerceStore.createShopVideo(
       author: user,
       productIds: productIds,
       caption: caption,
@@ -302,10 +389,40 @@ class CatalogRepository {
       mimeType: mimeType,
     );
     await ProductDemoVideoStore.save(
-      productId: video.id,
+      productId: draft.id,
       bytes: bytes,
       mimeType: mimeType,
     );
+    final remoteUrl = await CloudVideoMedia.publish(
+      videoId: draft.id,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    final video = remoteUrl == null || remoteUrl.isEmpty
+        ? draft
+        : (await LocalCommerceStore.updateShopVideo(
+              draft.copyWith(videoUrl: remoteUrl),
+            )) ??
+            draft.copyWith(videoUrl: remoteUrl);
+    // Force metadata to cloud even if media publish failed (other devices
+    // still see the card; media hydrates when bytes become available).
+    try {
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+    } catch (_) {}
+    // Post new videos to the vertical timeline feed.
+    try {
+      Product? linked;
+      for (final id in productIds) {
+        linked = await getProduct(id);
+        if (linked != null) break;
+      }
+      await LocalCommerceStore.shareVideoToTimeline(
+        video: video,
+        author: user,
+        linkedProduct: linked,
+        caption: caption,
+      );
+    } catch (_) {}
     return video;
   }
 
@@ -387,51 +504,159 @@ class CatalogRepository {
       product = await getProduct(id);
       if (product != null) break;
     }
-    product ??= Product(
-      id: video.id,
-      sellerId: video.authorSellerId ?? video.authorId,
-      name: video.caption.trim().isEmpty
-          ? 'Shop video by ${video.authorName}'
-          : video.caption.trim(),
-      slug: video.id,
-      description: video.caption,
-      category: 'video',
-      priceGhs: 0,
-      images: const [],
-      stock: 0,
-    );
-    final post = await LocalCommerceStore.shareProductToTimeline(
-      product: product,
+    final post = await LocalCommerceStore.shareVideoToTimeline(
+      video: video,
       author: user,
-      caption: caption.trim().isEmpty
-          ? 'Watch ${video.authorName}\'s video on Hubsom'
-          : caption.trim(),
+      linkedProduct: product,
+      caption: caption,
     );
     await recordVideoShare(videoId);
     return post;
   }
 
   Future<List<TimelinePost>> listTimeline() async {
-    await LocalCommerceStore.mergeCloudSocial();
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    // Pull shop-video metadata into local cache before synthesizing the feed.
+    try {
+      await listShopVideos();
+    } catch (_) {}
+
     final local = LocalCommerceStore.listTimelinePosts();
+    final byId = <String, TimelinePost>{
+      for (final p in local) p.id: p,
+    };
     try {
       final rows = await CloudStore.listDocs(CloudStore.timelinePosts);
-      if (rows.isEmpty) return local;
-      final byId = <String, TimelinePost>{
-        for (final p in local) p.id: p,
-      };
       for (final row in rows) {
         try {
-          final p = TimelinePost.fromJson(row);
+          var p = TimelinePost.fromJson(row);
+          // Heal older cloud posts that lost type/videoId after a partial write.
+          p = _healTimelineVideoPost(p);
           byId[p.id] = p;
         } catch (_) {}
       }
-      final merged = byId.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return merged;
-    } catch (_) {
-      return local;
+    } catch (_) {}
+
+    // Surface shop videos in the vertical timeline even if not shared yet.
+    for (final video in LocalCommerceStore.listShopVideos()) {
+      final already = byId.values.any((p) => p.videoId == video.id);
+      if (already) {
+        // Enrich existing posts with remote videoUrl when missing.
+        for (final entry in byId.entries.toList()) {
+          final post = entry.value;
+          if (post.videoId == video.id &&
+              (post.videoUrl == null || post.videoUrl!.isEmpty) &&
+              video.videoUrl != null &&
+              video.videoUrl!.isNotEmpty) {
+            byId[entry.key] = TimelinePost(
+              id: post.id,
+              authorId: post.authorId,
+              authorName: post.authorName,
+              authorImage: post.authorImage,
+              type: 'video',
+              productId: post.productId,
+              productName: post.productName,
+              productImage: post.productImage,
+              videoId: post.videoId,
+              videoUrl: video.videoUrl,
+              caption: post.caption,
+              createdAt: post.createdAt,
+            );
+          }
+        }
+        continue;
+      }
+      Product? linked;
+      for (final id in video.productIds) {
+        linked = LocalCommerceStore.getProduct(id);
+        if (linked != null) break;
+      }
+      byId['video-${video.id}'] = TimelinePost(
+        id: 'video-${video.id}',
+        authorId: video.authorId,
+        authorName: video.authorName,
+        authorImage: video.authorImage,
+        type: 'video',
+        videoId: video.id,
+        videoUrl: video.videoUrl,
+        productId: linked?.id ??
+            (video.productIds.isNotEmpty ? video.productIds.first : video.id),
+        productName: linked?.name ??
+            (video.caption.trim().isEmpty ? 'Shop video' : video.caption.trim()),
+        productImage: linked?.images.isNotEmpty == true
+            ? linked!.images.first
+            : video.authorImage,
+        caption: video.caption.trim().isEmpty
+            ? 'Watch ${video.authorName} on Hubsom'
+            : video.caption.trim(),
+        createdAt: video.createdAt,
+      );
     }
+
+    // Product demo clips should also play on Timeline (bytes keyed by product id).
+    for (final entry in byId.entries.toList()) {
+      byId[entry.key] = _healTimelineVideoPost(entry.value);
+    }
+
+    final merged = byId.values.toList();
+    // Shop videos first (newest first), then other posts — so Timeline matches
+    // Home's Shop videos instead of burying clips under older product posts.
+    final videoPosts = merged.where((p) => p.isVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final otherPosts = merged.where((p) => !p.isVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [...videoPosts, ...otherPosts];
+  }
+
+  /// Restore playable video posts when cloud docs lost type/videoId, or when the
+  /// linked product has a local/remote demo clip.
+  TimelinePost _healTimelineVideoPost(TimelinePost post) {
+    if (post.isVideo) {
+      if ((post.type != 'video') ||
+          (post.videoId == null || post.videoId!.isEmpty)) {
+        return TimelinePost(
+          id: post.id,
+          authorId: post.authorId,
+          authorName: post.authorName,
+          authorImage: post.authorImage,
+          type: 'video',
+          productId: post.productId,
+          productName: post.productName,
+          productImage: post.productImage,
+          videoId: post.videoId ?? post.productId,
+          videoUrl: post.videoUrl,
+          caption: post.caption,
+          createdAt: post.createdAt,
+        );
+      }
+      return post;
+    }
+
+    final product = post.productId.isEmpty
+        ? null
+        : LocalCommerceStore.getProduct(post.productId);
+    final caption = post.caption.toLowerCase();
+    final looksLikeVideo = caption.contains('video on hubsom') ||
+        (caption.contains('watch ') && caption.contains('video'));
+    final hasDemo = product?.showsDemoVideo == true;
+    if (!looksLikeVideo && !hasDemo) return post;
+
+    return TimelinePost(
+      id: post.id,
+      authorId: post.authorId,
+      authorName: post.authorName,
+      authorImage: post.authorImage,
+      type: 'video',
+      productId: post.productId,
+      productName: post.productName,
+      productImage: post.productImage,
+      videoId: post.videoId ?? post.productId,
+      videoUrl: post.videoUrl ?? product?.demoVideoUrl,
+      caption: post.caption,
+      createdAt: post.createdAt,
+    );
   }
 
   Future<TimelinePost> shareToTimeline(String productId, {String caption = ''}) async {
@@ -507,6 +732,41 @@ class CatalogRepository {
     return user.followingSellerIds.contains(sellerId);
   }
 
+  /// Followers of the signed-in user's store (or [sellerId] if provided).
+  List<Map<String, dynamic>> listMyFollowers({String? sellerId}) {
+    final ids = _mySellerIds(sellerId);
+    if (ids.isEmpty) return const [];
+    final byUser = <String, Map<String, dynamic>>{};
+    for (final id in ids) {
+      for (final row in LocalCommerceStore.listFollowers(id)) {
+        final uid = '${row['userId']}';
+        if (uid.isEmpty) continue;
+        byUser.putIfAbsent(uid, () => row);
+      }
+    }
+    final out = byUser.values.toList()
+      ..sort((a, b) => '${b['at']}'.compareTo('${a['at']}'));
+    return out;
+  }
+
+  int myFollowerCount({String? sellerId}) {
+    return listMyFollowers(sellerId: sellerId).length;
+  }
+
+  Set<String> _mySellerIds(String? sellerId) {
+    final ids = <String>{};
+    if (sellerId != null && sellerId.isNotEmpty) ids.add(sellerId);
+    final user = _currentUser();
+    if (user == null) return ids;
+    if (user.sellerId != null && user.sellerId!.isNotEmpty) {
+      ids.add(user.sellerId!);
+    }
+    for (final s in LocalCommerceStore.listSellers()) {
+      if (s.ownerUserId == user.id) ids.add(s.id);
+    }
+    return ids;
+  }
+
   HubsomUser? _currentUser() {
     final raw = LocalStore.userJson;
     if (raw == null || raw.isEmpty) return null;
@@ -521,6 +781,23 @@ class CatalogRepository {
 
   Future<void> _persistUser(HubsomUser user) async {
     await LocalStore.setUserJson(jsonEncode(user.toJson()));
+    final vault = LocalStore.loadCredentialVault();
+    final key = user.email.toLowerCase();
+    final entry = vault[key];
+    if (entry is Map) {
+      entry['userJson'] = user.toJson();
+      vault[key] = entry;
+      await LocalStore.saveCredentialVault(vault);
+      try {
+        await CloudStore.putAccount(key, {
+          'salt': entry['salt'],
+          'hash': entry['hash'],
+          'userJson': user.toJson(),
+          'email': key,
+        });
+      } catch (_) {}
+    }
+    _onUserChanged?.call(user);
   }
 
   Future<void> _patchFollowing(String sellerId, bool following) async {
@@ -532,7 +809,15 @@ class CatalogRepository {
     } else {
       ids.remove(sellerId);
     }
-    await _persistUser(user.copyWith(followingSellerIds: ids));
+    final updated = user.copyWith(followingSellerIds: ids);
+    await _persistUser(updated);
+    try {
+      await LocalCommerceStore.setSellerFollowedBy(
+        sellerId: sellerId,
+        follower: updated,
+        following: following,
+      );
+    } catch (_) {}
   }
 
   Future<void> _patchSaved(String productId, bool saved) async {

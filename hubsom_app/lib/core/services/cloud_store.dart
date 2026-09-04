@@ -212,13 +212,27 @@ class CloudStore {
     final sdk = _db;
     if (sdk != null) {
       try {
-        final batch = sdk.batch();
-        for (final row in rows) {
-          final id = '${row['id'] ?? ''}';
-          if (id.isEmpty) continue;
-          batch.set(sdk.collection(collection).doc(id), row, SetOptions(merge: true));
+        // Firestore batches are capped (~500 ops / ~10MB). Commit in slices.
+        const sliceSize = 20;
+        for (var i = 0; i < rows.length; i += sliceSize) {
+          final slice = rows.sublist(
+            i,
+            (i + sliceSize) > rows.length ? rows.length : i + sliceSize,
+          );
+          final batch = sdk.batch();
+          var ops = 0;
+          for (final row in slice) {
+            final id = '${row['id'] ?? ''}';
+            if (id.isEmpty) continue;
+            batch.set(
+              sdk.collection(collection).doc(id),
+              row,
+              SetOptions(merge: true),
+            );
+            ops++;
+          }
+          if (ops > 0) await batch.commit();
         }
-        await batch.commit();
         return;
       } catch (e) {
         if (kDebugMode) debugPrint('CloudStore.upsertDocs sdk: $e');
@@ -228,11 +242,23 @@ class CloudStore {
       final id = '${row['id'] ?? ''}';
       if (id.isEmpty) continue;
       try {
-        await _rest.patch<dynamic>(
+        final res = await _rest.patch<dynamic>(
           '$_root/$collection/${Uri.encodeComponent(id)}',
           queryParameters: {'key': _apiKey},
           data: {'fields': encodeFields(row)},
         );
+        final code = res.statusCode ?? 0;
+        if (code < 200 || code >= 300) {
+          // Create when patch cannot update a missing doc.
+          await _rest.post<dynamic>(
+            '$_root/$collection',
+            queryParameters: {
+              'key': _apiKey,
+              'documentId': id,
+            },
+            data: {'fields': encodeFields(row)},
+          );
+        }
       } catch (e) {
         if (kDebugMode) debugPrint('CloudStore.upsertDocs rest: $e');
       }
@@ -266,7 +292,11 @@ class CloudStore {
     if (sdk != null) {
       try {
         final snap = await sdk.collection(collection).get();
-        return snap.docs.map((d) => Map<String, dynamic>.from(d.data())).toList();
+        return snap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data.putIfAbsent('id', () => d.id);
+          return data;
+        }).toList();
       } catch (e) {
         if (kDebugMode) debugPrint('CloudStore.listDocs sdk: $e');
       }
@@ -274,17 +304,21 @@ class CloudStore {
     try {
       final res = await _rest.get<dynamic>(
         '$_root/$collection',
-        queryParameters: {'key': _apiKey, 'pageSize': 100},
+        queryParameters: {'key': _apiKey, 'pageSize': 300},
       );
       final data = res.data;
       if (data is! Map) return const [];
       final docs = data['documents'];
       if (docs is! List) return const [];
-      return docs
-          .whereType<Map>()
-          .map((d) => decodeDocument(d))
-          .where((d) => d.isNotEmpty)
-          .toList();
+      return docs.whereType<Map>().map((d) {
+        final decoded = decodeDocument(d);
+        if (decoded.isEmpty) return <String, dynamic>{};
+        // REST name ends with .../documents/collection/docId
+        final name = '${d['name'] ?? ''}';
+        final docId = name.split('/').isNotEmpty ? name.split('/').last : '';
+        if (docId.isNotEmpty) decoded.putIfAbsent('id', () => docId);
+        return decoded;
+      }).where((d) => d.isNotEmpty).toList();
     } catch (e) {
       if (kDebugMode) debugPrint('CloudStore.listDocs rest: $e');
       return const [];
