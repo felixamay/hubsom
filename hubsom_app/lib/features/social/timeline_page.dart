@@ -565,7 +565,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
         // Right action rail — like / comment / save / share / follow
         Positioned(
           right: 10,
-          bottom: bottomPad + (_product != null ? 140 : 72),
+          bottom: bottomPad + (_product != null ? 108 : 72),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -710,9 +710,9 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
               ] else if (post.productId.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 CommerceCtaBar(
-                  dense: true,
+                  compact: true,
                   overlay: true,
-                  secondaryLabel: 'View product',
+                  secondaryLabel: 'View',
                   primaryLabel: 'Buy now',
                   onSecondary: _openProduct,
                   onPrimary: _openProduct,
