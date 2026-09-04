@@ -260,7 +260,8 @@ class LiveStream extends Equatable {
   final bool isMultiHost;
   final bool replayAvailable;
 
-  bool get isLive => status == 'live';
+  bool get isLive =>
+      status == 'live' && (endedAt == null || endedAt!.trim().isEmpty);
 
   factory LiveStream.fromJson(Map<String, dynamic> json) => LiveStream(
         id: json['id'] as String,

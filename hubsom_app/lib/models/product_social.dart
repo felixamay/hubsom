@@ -44,9 +44,12 @@ class TimelinePost extends Equatable {
     required this.id,
     required this.authorId,
     required this.authorName,
-    required this.productId,
-    required this.productName,
+    this.authorImage,
+    this.type = 'product',
+    this.productId = '',
+    this.productName = '',
     this.productImage,
+    this.videoId,
     this.caption = '',
     required this.createdAt,
   });
@@ -54,34 +57,53 @@ class TimelinePost extends Equatable {
   final String id;
   final String authorId;
   final String authorName;
+  final String? authorImage;
+  /// `product` | `video`
+  final String type;
   final String productId;
   final String productName;
   final String? productImage;
+  final String? videoId;
   final String caption;
   final String createdAt;
 
-  factory TimelinePost.fromJson(Map<String, dynamic> json) => TimelinePost(
-        id: json['id'] as String,
-        authorId: json['authorId'] as String? ?? '',
-        authorName: json['authorName'] as String? ?? 'Hubsom user',
-        productId: json['productId'] as String? ?? '',
-        productName: json['productName'] as String? ?? 'Product',
-        productImage: json['productImage'] as String?,
-        caption: json['caption'] as String? ?? '',
-        createdAt: json['createdAt'] as String? ?? '',
-      );
+  bool get isVideo => type == 'video' || (videoId != null && videoId!.isNotEmpty);
+
+  factory TimelinePost.fromJson(Map<String, dynamic> json) {
+    final videoId = json['videoId'] as String?;
+    final rawType = json['type'] as String?;
+    final type = (rawType != null && rawType.isNotEmpty)
+        ? rawType
+        : (videoId != null && videoId.isNotEmpty ? 'video' : 'product');
+    return TimelinePost(
+      id: json['id'] as String,
+      authorId: json['authorId'] as String? ?? '',
+      authorName: json['authorName'] as String? ?? 'Hubsom user',
+      authorImage: json['authorImage'] as String?,
+      type: type,
+      productId: json['productId'] as String? ?? '',
+      productName: json['productName'] as String? ?? 'Product',
+      productImage: json['productImage'] as String?,
+      videoId: videoId,
+      caption: json['caption'] as String? ?? '',
+      createdAt: json['createdAt'] as String? ?? '',
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'authorId': authorId,
         'authorName': authorName,
+        if (authorImage != null) 'authorImage': authorImage,
+        'type': type,
         'productId': productId,
         'productName': productName,
         if (productImage != null) 'productImage': productImage,
+        if (videoId != null) 'videoId': videoId,
         'caption': caption,
         'createdAt': createdAt,
       };
 
   @override
-  List<Object?> get props => [id, productId, authorId, createdAt];
+  List<Object?> get props => [id, type, productId, videoId, authorId, createdAt];
 }

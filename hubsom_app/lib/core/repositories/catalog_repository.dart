@@ -306,6 +306,20 @@ class CatalogRepository {
       bytes: bytes,
       mimeType: mimeType,
     );
+    // Post new videos to the vertical timeline feed.
+    try {
+      Product? linked;
+      for (final id in productIds) {
+        linked = await getProduct(id);
+        if (linked != null) break;
+      }
+      await LocalCommerceStore.shareVideoToTimeline(
+        video: video,
+        author: user,
+        linkedProduct: linked,
+        caption: caption,
+      );
+    } catch (_) {}
     return video;
   }
 
@@ -387,25 +401,11 @@ class CatalogRepository {
       product = await getProduct(id);
       if (product != null) break;
     }
-    product ??= Product(
-      id: video.id,
-      sellerId: video.authorSellerId ?? video.authorId,
-      name: video.caption.trim().isEmpty
-          ? 'Shop video by ${video.authorName}'
-          : video.caption.trim(),
-      slug: video.id,
-      description: video.caption,
-      category: 'video',
-      priceGhs: 0,
-      images: const [],
-      stock: 0,
-    );
-    final post = await LocalCommerceStore.shareProductToTimeline(
-      product: product,
+    final post = await LocalCommerceStore.shareVideoToTimeline(
+      video: video,
       author: user,
-      caption: caption.trim().isEmpty
-          ? 'Watch ${video.authorName}\'s video on Hubsom'
-          : caption.trim(),
+      linkedProduct: product,
+      caption: caption,
     );
     await recordVideoShare(videoId);
     return post;
@@ -414,24 +414,52 @@ class CatalogRepository {
   Future<List<TimelinePost>> listTimeline() async {
     await LocalCommerceStore.mergeCloudSocial();
     final local = LocalCommerceStore.listTimelinePosts();
+    final byId = <String, TimelinePost>{
+      for (final p in local) p.id: p,
+    };
     try {
       final rows = await CloudStore.listDocs(CloudStore.timelinePosts);
-      if (rows.isEmpty) return local;
-      final byId = <String, TimelinePost>{
-        for (final p in local) p.id: p,
-      };
       for (final row in rows) {
         try {
           final p = TimelinePost.fromJson(row);
           byId[p.id] = p;
         } catch (_) {}
       }
-      final merged = byId.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return merged;
-    } catch (_) {
-      return local;
+    } catch (_) {}
+
+    // Surface shop videos in the vertical timeline even if not shared yet.
+    for (final video in LocalCommerceStore.listShopVideos()) {
+      final already = byId.values.any((p) => p.videoId == video.id);
+      if (already) continue;
+      Product? linked;
+      for (final id in video.productIds) {
+        linked = LocalCommerceStore.getProduct(id);
+        if (linked != null) break;
+      }
+      byId['video-${video.id}'] = TimelinePost(
+        id: 'video-${video.id}',
+        authorId: video.authorId,
+        authorName: video.authorName,
+        authorImage: video.authorImage,
+        type: 'video',
+        videoId: video.id,
+        productId: linked?.id ??
+            (video.productIds.isNotEmpty ? video.productIds.first : video.id),
+        productName: linked?.name ??
+            (video.caption.trim().isEmpty ? 'Shop video' : video.caption.trim()),
+        productImage: linked?.images.isNotEmpty == true
+            ? linked!.images.first
+            : video.authorImage,
+        caption: video.caption.trim().isEmpty
+            ? 'Watch ${video.authorName} on Hubsom'
+            : video.caption.trim(),
+        createdAt: video.createdAt,
+      );
     }
+
+    final merged = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
   }
 
   Future<TimelinePost> shareToTimeline(String productId, {String caption = ''}) async {

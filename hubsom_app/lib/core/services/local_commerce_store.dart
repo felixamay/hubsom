@@ -883,6 +883,8 @@ class LocalCommerceStore {
       id: 'post-${_uuid.v4().substring(0, 8)}',
       authorId: author.id,
       authorName: author.name,
+      authorImage: author.image,
+      type: 'product',
       productId: product.id,
       productName: product.name,
       productImage: product.images.isNotEmpty ? product.images.first : null,
@@ -891,6 +893,40 @@ class LocalCommerceStore {
           : caption.trim(),
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
+    return _insertTimelinePost(post);
+  }
+
+  static Future<TimelinePost> shareVideoToTimeline({
+    required ShopVideo video,
+    required HubsomUser author,
+    Product? linkedProduct,
+    String caption = '',
+  }) async {
+    final post = TimelinePost(
+      id: 'post-${_uuid.v4().substring(0, 8)}',
+      authorId: author.id,
+      authorName: author.name,
+      authorImage: author.image ?? video.authorImage,
+      type: 'video',
+      videoId: video.id,
+      productId: linkedProduct?.id ??
+          (video.productIds.isNotEmpty ? video.productIds.first : video.id),
+      productName: linkedProduct?.name ??
+          (video.caption.trim().isEmpty ? 'Shop video' : video.caption.trim()),
+      productImage: linkedProduct?.images.isNotEmpty == true
+          ? linkedProduct!.images.first
+          : video.authorImage,
+      caption: caption.trim().isEmpty
+          ? (video.caption.trim().isEmpty
+              ? 'Watch ${video.authorName}\'s video on Hubsom'
+              : video.caption.trim())
+          : caption.trim(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    return _insertTimelinePost(post);
+  }
+
+  static Future<TimelinePost> _insertTimelinePost(TimelinePost post) async {
     final rows = _readList(_timelineKey);
     rows.insert(0, post.toJson());
     await _writeList(_timelineKey, rows);
