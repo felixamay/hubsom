@@ -70,49 +70,60 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Timeline',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : _error != null
               ? Center(
-                  child: Text(_error!, style: const TextStyle(color: Colors.white)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_error!, style: const TextStyle(color: Colors.white)),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _load,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
                 )
               : _posts.isEmpty
                   ? _EmptyTimeline(
                       onBrowse: () => context.go('/marketplace'),
                       onAddVideo: () => context.push('/videos/upload'),
                     )
-                  : PageView.builder(
-                      controller: _pageCtrl,
-                      scrollDirection: Axis.vertical,
-                      pageSnapping: true,
-                      allowImplicitScrolling: false,
-                      physics: const PageScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      itemCount: _posts.length,
-                      onPageChanged: (i) => setState(() => _index = i),
-                      itemBuilder: (_, i) => _TimelineSlide(
-                        key: ValueKey(_posts[i].id),
-                        post: _posts[i],
-                        active: i == _index,
-                      ),
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        PageView.builder(
+                          controller: _pageCtrl,
+                          scrollDirection: Axis.vertical,
+                          pageSnapping: true,
+                          allowImplicitScrolling: false,
+                          physics: const PageScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          itemCount: _posts.length,
+                          onPageChanged: (i) => setState(() => _index = i),
+                          itemBuilder: (_, i) => _TimelineSlide(
+                            key: ValueKey(_posts[i].id),
+                            post: _posts[i],
+                            active: i == _index,
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            tooltip: 'Refresh',
+                            onPressed: _loading ? null : _load,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.black45,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.refresh),
+                          ),
+                        ),
+                      ],
                     ),
     );
   }

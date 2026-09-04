@@ -7,7 +7,7 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
 import '../../widgets/responsive_scaffold.dart';
 
-/// Mirrors Next.js MobileTabBar: Home / Categories / Sell / Account / Dashboard
+/// Mirrors Next.js MobileTabBar: Home / Categories / Sell / Timeline / Dashboard
 class MainShell extends ConsumerWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -17,7 +17,7 @@ class MainShell extends ConsumerWidget {
     (path: '/', label: 'Home', icon: Icons.home_outlined, selected: Icons.home),
     (path: '/categories', label: 'Categories', icon: Icons.grid_view_outlined, selected: Icons.grid_view),
     (path: '/sell', label: 'Sell', icon: Icons.storefront_outlined, selected: Icons.storefront),
-    (path: '/account', label: 'Account', icon: Icons.person_outline, selected: Icons.person),
+    (path: '/timeline', label: 'Timeline', icon: Icons.dynamic_feed_outlined, selected: Icons.dynamic_feed),
     (path: '/dashboard', label: 'Dashboard', icon: Icons.insights_outlined, selected: Icons.insights),
   ];
 
@@ -97,6 +97,46 @@ class MainShell extends ConsumerWidget {
               child: const Icon(Icons.shopping_bag_outlined),
             ),
           ),
+          PopupMenuButton<String>(
+            tooltip: 'Menu',
+            icon: const Icon(Icons.menu),
+            onSelected: (value) {
+              switch (value) {
+                case 'account':
+                  context.push('/account');
+                case 'settings':
+                  context.push('/settings');
+                case 'notifications':
+                  context.push('/notifications');
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'account',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.person_outline),
+                  title: Text('Account'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'notifications',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.notifications_outlined),
+                  title: Text('Notifications'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(width: 4),
         ],
       ),
@@ -165,6 +205,46 @@ class _TopBar extends StatelessWidget {
                   label: Text('$cartCount'),
                   child: const Icon(Icons.shopping_bag_outlined),
                 ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'account':
+                      context.push('/account');
+                    case 'settings':
+                      context.push('/settings');
+                    case 'notifications':
+                      context.push('/notifications');
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'account',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.person_outline),
+                      title: Text('Account'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'notifications',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.notifications_outlined),
+                      title: Text('Notifications'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Settings'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

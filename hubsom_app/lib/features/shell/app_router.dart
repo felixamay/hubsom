@@ -142,26 +142,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/account',
-                builder: (_, __) => const AuthGate(child: AccountPage()),
-                routes: [
-                  GoRoute(
-                    path: 'profile',
-                    builder: (_, __) => const AuthGate(child: ProfilePage()),
-                  ),
-                  GoRoute(
-                    path: 'addresses',
-                    builder: (_, __) => const AuthGate(child: AddressesPage()),
-                  ),
-                  GoRoute(
-                    path: 'following',
-                    builder: (_, __) => const AuthGate(child: FollowingPage()),
-                  ),
-                  GoRoute(
-                    path: 'saved',
-                    builder: (_, __) => const AuthGate(child: SavedPage()),
-                  ),
-                ],
+                path: '/timeline',
+                builder: (_, __) => const TimelinePage(),
               ),
             ],
           ),
@@ -172,6 +154,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 builder: (_, __) => const AuthGate(child: DashboardPage()),
               ),
             ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/account',
+        builder: (_, __) => const AuthGate(child: AccountPage()),
+        routes: [
+          GoRoute(
+            path: 'profile',
+            builder: (_, __) => const AuthGate(child: ProfilePage()),
+          ),
+          GoRoute(
+            path: 'addresses',
+            builder: (_, __) => const AuthGate(child: AddressesPage()),
+          ),
+          GoRoute(
+            path: 'following',
+            builder: (_, __) => const AuthGate(child: FollowingPage()),
+          ),
+          GoRoute(
+            path: 'saved',
+            builder: (_, __) => const AuthGate(child: SavedPage()),
           ),
         ],
       ),
@@ -186,7 +190,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           hostMode: state.uri.queryParameters['host'] == '1',
         ),
       ),
-      GoRoute(path: '/timeline', builder: (_, __) => const TimelinePage()),
       GoRoute(path: '/videos', builder: (_, __) => const VideoFeedPage()),
       GoRoute(
         path: '/videos/upload',
