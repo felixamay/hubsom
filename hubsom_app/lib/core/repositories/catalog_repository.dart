@@ -531,7 +531,9 @@ class CatalogRepository {
       final rows = await CloudStore.listDocs(CloudStore.timelinePosts);
       for (final row in rows) {
         try {
-          final p = TimelinePost.fromJson(row);
+          var p = TimelinePost.fromJson(row);
+          // Heal older cloud posts that lost type/videoId after a partial write.
+          p = _healTimelineVideoPost(p);
           byId[p.id] = p;
         } catch (_) {}
       }
@@ -553,7 +555,7 @@ class CatalogRepository {
               authorId: post.authorId,
               authorName: post.authorName,
               authorImage: post.authorImage,
-              type: post.type,
+              type: 'video',
               productId: post.productId,
               productName: post.productName,
               productImage: post.productImage,
@@ -593,6 +595,11 @@ class CatalogRepository {
       );
     }
 
+    // Product demo clips should also play on Timeline (bytes keyed by product id).
+    for (final entry in byId.entries.toList()) {
+      byId[entry.key] = _healTimelineVideoPost(entry.value);
+    }
+
     final merged = byId.values.toList();
     // Shop videos first (newest first), then other posts — so Timeline matches
     // Home's Shop videos instead of burying clips under older product posts.
@@ -601,6 +608,55 @@ class CatalogRepository {
     final otherPosts = merged.where((p) => !p.isVideo).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return [...videoPosts, ...otherPosts];
+  }
+
+  /// Restore playable video posts when cloud docs lost type/videoId, or when the
+  /// linked product has a local/remote demo clip.
+  TimelinePost _healTimelineVideoPost(TimelinePost post) {
+    if (post.isVideo) {
+      if ((post.type != 'video') ||
+          (post.videoId == null || post.videoId!.isEmpty)) {
+        return TimelinePost(
+          id: post.id,
+          authorId: post.authorId,
+          authorName: post.authorName,
+          authorImage: post.authorImage,
+          type: 'video',
+          productId: post.productId,
+          productName: post.productName,
+          productImage: post.productImage,
+          videoId: post.videoId ?? post.productId,
+          videoUrl: post.videoUrl,
+          caption: post.caption,
+          createdAt: post.createdAt,
+        );
+      }
+      return post;
+    }
+
+    final product = post.productId.isEmpty
+        ? null
+        : LocalCommerceStore.getProduct(post.productId);
+    final caption = post.caption.toLowerCase();
+    final looksLikeVideo = caption.contains('video on hubsom') ||
+        (caption.contains('watch ') && caption.contains('video'));
+    final hasDemo = product?.showsDemoVideo == true;
+    if (!looksLikeVideo && !hasDemo) return post;
+
+    return TimelinePost(
+      id: post.id,
+      authorId: post.authorId,
+      authorName: post.authorName,
+      authorImage: post.authorImage,
+      type: 'video',
+      productId: post.productId,
+      productName: post.productName,
+      productImage: post.productImage,
+      videoId: post.videoId ?? post.productId,
+      videoUrl: post.videoUrl ?? product?.demoVideoUrl,
+      caption: post.caption,
+      createdAt: post.createdAt,
+    );
   }
 
   Future<TimelinePost> shareToTimeline(String productId, {String caption = ''}) async {

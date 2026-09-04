@@ -75,18 +75,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     );
   }
 
-  List<TimelinePost> _composeFeed(List<ShopVideo> videos) {
-    final videoPosts = videos.map(_postFromVideo).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final videoIds = videos.map((v) => v.id).toSet();
-    final others = _productPosts.where((p) {
-      final id = p.videoId;
-      if (id != null && id.isNotEmpty && videoIds.contains(id)) return false;
-      return true;
-    }).toList();
-    return [...videoPosts, ...others];
-  }
-
   Future<void> _loadProductPosts({bool initial = false}) async {
     if (initial && mounted) {
       setState(() {
@@ -98,8 +86,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       final all = await ref.read(catalogRepositoryProvider).listTimeline();
       if (!mounted) return;
       setState(() {
-        // Videos are owned by shopVideosProvider so Home and Timeline stay aligned.
-        _productPosts = all.where((p) => !p.isVideo).toList();
+        // Keep healed video posts from listTimeline (not only shopVideosProvider).
+        _productPosts = all;
         _bootstrapping = false;
         _error = null;
       });
@@ -110,6 +98,45 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
         _error = '$e';
       });
     }
+  }
+
+  List<TimelinePost> _composeFeed(List<ShopVideo> videos) {
+    final byId = <String, TimelinePost>{
+      for (final p in _productPosts) p.id: p,
+    };
+    for (final video in videos) {
+      final synthesized = _postFromVideo(video);
+      byId['video-${video.id}'] = synthesized;
+      for (final entry in byId.entries.toList()) {
+        final post = entry.value;
+        if (post.videoId == video.id) {
+          byId[entry.key] = TimelinePost(
+            id: post.id,
+            authorId: post.authorId,
+            authorName: post.authorName,
+            authorImage: post.authorImage,
+            type: 'video',
+            productId: post.productId.isNotEmpty
+                ? post.productId
+                : synthesized.productId,
+            productName: post.productName.isNotEmpty
+                ? post.productName
+                : synthesized.productName,
+            productImage: post.productImage ?? synthesized.productImage,
+            videoId: video.id,
+            videoUrl: video.videoUrl ?? post.videoUrl,
+            caption: post.caption,
+            createdAt: post.createdAt,
+          );
+        }
+      }
+    }
+    final merged = byId.values.toList();
+    final videoPosts = merged.where((p) => p.isVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final others = merged.where((p) => !p.isVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [...videoPosts, ...others];
   }
 
   @override
