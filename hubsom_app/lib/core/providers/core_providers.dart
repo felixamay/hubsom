@@ -314,6 +314,9 @@ final shopVideosProvider =
   return ref.watch(catalogRepositoryProvider).listShopVideos();
 });
 
+/// Bump when the Timeline tab is selected so the feed reloads with latest videos.
+final timelineTabTickProvider = StateProvider<int>((ref) => 0);
+
 final sellersProvider = FutureProvider.autoDispose<List<Seller>>((ref) async {
   return ref.watch(catalogRepositoryProvider).listSellers();
 });

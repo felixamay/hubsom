@@ -27,6 +27,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   String? _error;
   late final PageController _pageCtrl;
   int _index = 0;
+  bool _reloadScheduled = false;
 
   @override
   void initState() {
@@ -39,6 +40,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   void dispose() {
     _pageCtrl.dispose();
     super.dispose();
+  }
+
+  void _scheduleReloadFromVideos() {
+    if (_reloadScheduled || !mounted) return;
+    _reloadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reloadScheduled = false;
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
@@ -68,6 +78,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Home may sync shop videos after this IndexedStack tab first mounted.
+    // Keep Timeline in lockstep so desktop users see the same clips.
+    ref.listen(shopVideosProvider, (previous, next) {
+      next.whenData((videos) {
+        final videoIds = videos.map((v) => v.id).toSet();
+        final have = _posts
+            .where((p) => p.isVideo)
+            .map((p) => p.videoId)
+            .whereType<String>()
+            .toSet();
+        final missing = videoIds.any((id) => !have.contains(id));
+        if (missing || (videos.isNotEmpty && have.isEmpty)) {
+          _scheduleReloadFromVideos();
+        }
+      });
+    });
+    ref.listen(timelineTabTickProvider, (previous, next) {
+      if (previous != next) _scheduleReloadFromVideos();
+    });
+    // Warm the same provider Home uses so cloud metadata is shared.
+    ref.watch(shopVideosProvider);
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: _loading

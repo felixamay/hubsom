@@ -103,6 +103,8 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
             caption: _caption.text.trim(),
             soundTitle: _sound.text.trim(),
           );
+      ref.invalidate(shopVideosProvider);
+      ref.invalidate(productsProvider((category: null, q: null)));
       if (!mounted) return;
       context.pushReplacement('/videos/${video.id}');
     } catch (e) {

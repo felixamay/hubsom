@@ -64,11 +64,16 @@ class MainShell extends ConsumerWidget {
     ('settings', Icons.settings_outlined, 'Settings'),
   ];
 
-  void _onTap(int index) {
+  void _onTap(BuildContext context, WidgetRef ref, int index) {
     navigationShell.goBranch(
       index,
       initialLocation: index == navigationShell.currentIndex,
     );
+    // Timeline is an IndexedStack child — refresh when the tab is opened so
+    // shop videos synced on Home appear immediately.
+    if (index == 3) {
+      ref.read(timelineTabTickProvider.notifier).state++;
+    }
   }
 
   void _onMenuSelected(BuildContext context, String value) {
@@ -158,7 +163,7 @@ class MainShell extends ConsumerWidget {
           children: [
             NavigationRail(
               selectedIndex: navigationShell.currentIndex,
-              onDestinationSelected: _onTap,
+              onDestinationSelected: (i) => _onTap(context, ref, i),
               labelType: NavigationRailLabelType.all,
               backgroundColor: Colors.white,
               leading: const Padding(
@@ -237,7 +242,7 @@ class MainShell extends ConsumerWidget {
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: _onTap,
+        onDestinationSelected: (i) => _onTap(context, ref, i),
         destinations: [
           for (final t in _tabs)
             NavigationDestination(

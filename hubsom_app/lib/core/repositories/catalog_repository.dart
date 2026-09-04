@@ -593,9 +593,14 @@ class CatalogRepository {
       );
     }
 
-    final merged = byId.values.toList()
+    final merged = byId.values.toList();
+    // Shop videos first (newest first), then other posts — so Timeline matches
+    // Home's Shop videos instead of burying clips under older product posts.
+    final videoPosts = merged.where((p) => p.isVideo).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return merged;
+    final otherPosts = merged.where((p) => !p.isVideo).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [...videoPosts, ...otherPosts];
   }
 
   Future<TimelinePost> shareToTimeline(String productId, {String caption = ''}) async {
