@@ -104,31 +104,53 @@ class CatalogRepository {
       final res =
           await _api.get('/api/sellers').timeout(const Duration(seconds: 4));
       final data = ApiResponse.decode(res.data);
-      if (data == null) return local;
+      if (data == null) return _withLiveFollowerCounts(local);
       final list = data is List
           ? data
           : (data is Map && data['sellers'] is List)
               ? data['sellers'] as List
               : <dynamic>[];
-      if (list.isEmpty) return local;
-      return list
+      if (list.isEmpty) return _withLiveFollowerCounts(local);
+      final remote = list
           .map((e) => Seller.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
+      // Prefer local rows when present so follower counts / photos stick.
+      final byId = <String, Seller>{
+        for (final s in remote) s.id: s,
+      };
+      for (final s in local) {
+        byId[s.id] = s;
+      }
+      return _withLiveFollowerCounts(byId.values.toList());
     } catch (_) {
-      return local;
+      return _withLiveFollowerCounts(local);
     }
   }
 
   Future<Seller?> getSeller(String idOrSlug) async {
     final local = LocalCommerceStore.getSeller(idOrSlug);
-    if (local != null) return local;
+    if (local != null) return _withLiveFollowerCount(local);
     final sellers = await listSellers();
     try {
-      return sellers.firstWhere((s) => s.id == idOrSlug || s.slug == idOrSlug);
+      final found =
+          sellers.firstWhere((s) => s.id == idOrSlug || s.slug == idOrSlug);
+      return _withLiveFollowerCount(found);
     } catch (_) {
       return null;
     }
   }
+
+  Seller _withLiveFollowerCount(Seller seller) {
+    final count = LocalCommerceStore.followerCount(seller.id);
+    if (count == seller.followers) return seller;
+    return seller.copyWith(followers: count);
+  }
+
+  List<Seller> _withLiveFollowerCounts(List<Seller> sellers) =>
+      sellers.map(_withLiveFollowerCount).toList();
+
+  int sellerFollowerCount(String sellerId) =>
+      LocalCommerceStore.followerCount(sellerId);
 
   Future<bool> toggleSave(String productId) async {
     try {
@@ -541,35 +563,43 @@ class CatalogRepository {
 
   /// Followers of the signed-in user's store (or [sellerId] if provided).
   List<Map<String, dynamic>> listMyFollowers({String? sellerId}) {
-    final id = sellerId ?? _currentUser()?.sellerId;
-    if (id == null || id.isEmpty) {
-      final user = _currentUser();
-      if (user == null) return const [];
-      final mine = LocalCommerceStore.listSellers()
-          .where((s) => s.ownerUserId == user.id)
-          .toList();
-      if (mine.isEmpty) return const [];
-      return LocalCommerceStore.listFollowers(mine.first.id);
+    final ids = _mySellerIds(sellerId);
+    if (ids.isEmpty) return const [];
+    final byUser = <String, Map<String, dynamic>>{};
+    for (final id in ids) {
+      for (final row in LocalCommerceStore.listFollowers(id)) {
+        final uid = '${row['userId']}';
+        if (uid.isEmpty) continue;
+        byUser.putIfAbsent(uid, () => row);
+      }
     }
-    return LocalCommerceStore.listFollowers(id);
+    final out = byUser.values.toList()
+      ..sort((a, b) => '${b['at']}'.compareTo('${a['at']}'));
+    return out;
   }
 
   int myFollowerCount({String? sellerId}) {
-    final id = sellerId ?? _resolveMySellerId();
-    if (id == null || id.isEmpty) return 0;
-    return LocalCommerceStore.followerCount(id);
+    return listMyFollowers(sellerId: sellerId).length;
+  }
+
+  Set<String> _mySellerIds(String? sellerId) {
+    final ids = <String>{};
+    if (sellerId != null && sellerId.isNotEmpty) ids.add(sellerId);
+    final user = _currentUser();
+    if (user == null) return ids;
+    if (user.sellerId != null && user.sellerId!.isNotEmpty) {
+      ids.add(user.sellerId!);
+    }
+    for (final s in LocalCommerceStore.listSellers()) {
+      if (s.ownerUserId == user.id) ids.add(s.id);
+    }
+    return ids;
   }
 
   String? _resolveMySellerId() {
-    final user = _currentUser();
-    if (user == null) return null;
-    if (user.sellerId != null && user.sellerId!.isNotEmpty) {
-      return user.sellerId;
-    }
-    for (final s in LocalCommerceStore.listSellers()) {
-      if (s.ownerUserId == user.id) return s.id;
-    }
-    return null;
+    final ids = _mySellerIds(null);
+    if (ids.isEmpty) return null;
+    return ids.first;
   }
 
   HubsomUser? _currentUser() {

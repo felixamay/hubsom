@@ -103,7 +103,7 @@ class _FollowingPageState extends ConsumerState<FollowingPage> {
                           ),
                           title: Text(s.name),
                           subtitle: Text(
-                            '${s.city} · ${s.followers} followers',
+                            '${s.city} · ${ref.read(catalogRepositoryProvider).sellerFollowerCount(s.id)} followers',
                           ),
                           trailing: TextButton(
                             onPressed: () async {

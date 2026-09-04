@@ -121,10 +121,10 @@ class LocalCommerceStore {
   }
 
   static int followerCount(String sellerId) {
+    // Prefer the follow graph — seller.followers can be stale from API/cache.
     final listed = listFollowers(sellerId).length;
-    final seller = getSeller(sellerId);
-    final stored = seller?.followers ?? 0;
-    return listed > stored ? listed : stored;
+    if (listed > 0) return listed;
+    return getSeller(sellerId)?.followers ?? 0;
   }
 
   static bool isFollowedBy(String sellerId, String userId) {
@@ -152,9 +152,18 @@ class LocalCommerceStore {
     map[sellerId] = rows;
     await LocalStore.setString(_sellerFollowersKey, jsonEncode(map));
 
-    final seller = getSeller(sellerId);
-    if (seller != null) {
-      await upsertSeller(seller.copyWith(followers: rows.length));
+    // Keep every local seller row for this id (and slug aliases) in sync.
+    final sellers = listSellers();
+    var touched = false;
+    for (var i = 0; i < sellers.length; i++) {
+      final s = sellers[i];
+      if (s.id == sellerId || s.slug == sellerId) {
+        sellers[i] = s.copyWith(followers: rows.length);
+        touched = true;
+      }
+    }
+    if (touched) {
+      await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
     }
     return rows.length;
   }

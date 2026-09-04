@@ -68,6 +68,14 @@ void main() {
       'buyer-1',
     );
 
+    // Live count must win over a stale seller.followers field.
+    expect(
+      catalog.sellerFollowerCount(store.id),
+      1,
+    );
+    final viewed = await catalog.getSeller(store.id);
+    expect(viewed?.followers, 1);
+
     // Seller dashboard count
     await LocalStore.setUserJson(jsonEncode(sellerUser.toJson()));
     expect(catalog.myFollowerCount(sellerId: store.id), 1);
