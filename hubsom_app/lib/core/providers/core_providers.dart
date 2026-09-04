@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/cart.dart';
 import '../../models/huber.dart';
 import '../../models/product.dart';
+import '../../models/seller.dart';
+import '../../models/shop_video.dart';
 import '../../models/user.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
@@ -305,4 +307,13 @@ final streamsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
 final promotionsProvider =
     FutureProvider.autoDispose.family<List<dynamic>, String>((ref, placement) async {
   return ref.watch(catalogRepositoryProvider).listPromotions(placement);
+});
+
+final shopVideosProvider =
+    FutureProvider.autoDispose<List<ShopVideo>>((ref) async {
+  return ref.watch(catalogRepositoryProvider).listShopVideos();
+});
+
+final sellersProvider = FutureProvider.autoDispose<List<Seller>>((ref) async {
+  return ref.watch(catalogRepositoryProvider).listSellers();
 });

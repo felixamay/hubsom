@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
+import '../../core/utils/money.dart';
 import '../../models/product.dart';
 import '../../models/promotion.dart';
+import '../../models/seller.dart';
+import '../../models/shop_video.dart';
 import '../../models/stream.dart';
+import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
@@ -39,6 +44,8 @@ class HomePage extends ConsumerWidget {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
     final streamsAsync = ref.watch(streamsProvider);
     final promosAsync = ref.watch(promotionsProvider('landing'));
+    final videosAsync = ref.watch(shopVideosProvider);
+    final sellersAsync = ref.watch(sellersProvider);
 
     final products = productsAsync.when(
       data: (list) => list.whereType<Product>().toList(),
@@ -58,6 +65,24 @@ class HomePage extends ConsumerWidget {
       error: (_, __) => const <Promotion>[],
     );
 
+    final videos = videosAsync.when(
+      data: (list) => list,
+      loading: () => const <ShopVideo>[],
+      error: (_, __) => const <ShopVideo>[],
+    );
+
+    final sellers = sellersAsync.when(
+      data: (list) => list,
+      loading: () => const <Seller>[],
+      error: (_, __) => const <Seller>[],
+    );
+
+    final live = streams.where((s) => s.isLive).toList();
+    final flash = products.where((p) => p.flashSale != null).toList();
+    final auctions = streams
+        .where((s) => s.auction != null && s.auction!.remainsOnAuctions)
+        .toList();
+
     final cross = ResponsiveScaffold.isWide(context)
         ? 5
         : ResponsiveScaffold.isTablet(context)
@@ -69,6 +94,8 @@ class HomePage extends ConsumerWidget {
         ref.invalidate(productsProvider((category: null, q: null)));
         ref.invalidate(streamsProvider);
         ref.invalidate(promotionsProvider('landing'));
+        ref.invalidate(shopVideosProvider);
+        ref.invalidate(sellersProvider);
       },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -97,161 +124,504 @@ class HomePage extends ConsumerWidget {
                         child: const Text('Watch live'),
                       ),
                       OutlinedButton(
-                        onPressed: () => context.push('/videos'),
-                        child: const Text('Shop videos'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () => context.push('/videos/upload'),
-                        child: const Text('Add video'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () => context.push('/auctions'),
-                        child: const Text('Auctions'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () => context.push('/huber'),
-                        child: const Text('Hail riders'),
+                        onPressed: () => context.push('/sell'),
+                        child: const Text('Sell on Hubsom'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  PromoBanner(promotions: promos),
                 ],
               ),
             ),
           ),
+
+          // Categories — real app taxonomy (not seeded products).
           SliverToBoxAdapter(
-            child: Builder(
-              builder: (context) {
-                final live = streams.where((s) => s.isLive).toList();
-                if (live.isEmpty) return const SizedBox.shrink();
-                return Column(
+            child: _SectionHeader(
+              title: 'Categories',
+              titleStyle: _sectionTitle(context),
+              actionLabel: 'See all',
+              onAction: () => context.push('/categories'),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 96,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: hubsomCategories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final c = hubsomCategories[i];
+                  return InkWell(
+                    onTap: () => context.push('/categories/${c.slug}'),
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 76,
+                      child: Column(
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            backgroundColor: HubsomColors.mint,
+                            foregroundColor: HubsomColors.forest,
+                            child: Icon(c.icon, size: 24),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            c.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // Ads / promotions — only when API returns real promotions.
+          if (promos.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Ads',
+                titleStyle: _sectionTitle(context),
+              ),
+            ),
+            SliverToBoxAdapter(child: PromoBanner(promotions: promos)),
+          ],
+
+          // Live now
+          if (live.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Live now',
+                titleStyle: _sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/live'),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 160,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: live.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    final s = live[i];
+                    return InkWell(
+                      onTap: () => context.push('/live/${s.id}'),
+                      child: Container(
+                        width: 220,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              HubsomColors.forest,
+                              HubsomColors.blue,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              color: HubsomColors.live,
+                              child: const Text(
+                                'LIVE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              s.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '${s.viewerCount} watching',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // Flash sales — only products that actually have a flash sale.
+          if (flash.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Flash sales',
+                titleStyle: _sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/flash-sales'),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 260,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: flash.length.clamp(0, 12),
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, i) => SizedBox(
+                    width: 168,
+                    child: ProductCard(product: flash[i]),
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          // Auctions — only streams that still remain on auctions.
+          if (auctions.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Auctions',
+                titleStyle: _sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/auctions'),
+              ),
+            ),
+            ContainedAuctionStrip(streams: auctions),
+          ],
+
+          // Shop videos — only real uploaded videos.
+          if (videos.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Shop videos',
+                titleStyle: _sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/videos'),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 168,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: videos.length.clamp(0, 12),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    final v = videos[i];
+                    return InkWell(
+                      onTap: () => context.push('/videos/${v.id}'),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: 140,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: HubsomColors.mist,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.play_circle_fill,
+                              color: HubsomColors.forest,
+                              size: 36,
+                            ),
+                            const Spacer(),
+                            Text(
+                              v.caption.trim().isEmpty
+                                  ? v.authorName
+                                  : v.caption,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              v.authorName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: HubsomColors.ink.withValues(alpha: 0.65),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // Stores — only real sellers.
+          if (sellers.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: 'Stores',
+                titleStyle: _sectionTitle(context),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 108,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: sellers.length.clamp(0, 16),
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, i) {
+                    final s = sellers[i];
+                    return InkWell(
+                      onTap: () => context.push('/stores/${s.slug}'),
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 88,
+                        child: Column(
+                          children: [
+                            CircleAvatar(
+                              radius: 30,
+                              backgroundColor: HubsomColors.mint,
+                              child: ClipOval(
+                                child: HubsomImage(
+                                  url: s.avatar,
+                                  width: 60,
+                                  height: 60,
+                                  placeholder: const Icon(
+                                    Icons.storefront_outlined,
+                                    color: HubsomColors.forest,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              s.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // Buy now
+          ContainedBuyNow(
+            products: products,
+            crossAxisCount: cross,
+            titleStyle: _sectionTitle(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.titleStyle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final TextStyle titleStyle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 32, bottom: 10),
+      child: Row(
+        children: [
+          Text(title, style: titleStyle),
+          const Spacer(),
+          if (actionLabel != null && onAction != null)
+            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+        ],
+      ),
+    );
+  }
+}
+
+class ContainedAuctionStrip extends StatelessWidget {
+  const ContainedAuctionStrip({super.key, required this.streams});
+
+  final List<LiveStream> streams;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: SizedBox(
+        height: 132,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: streams.length.clamp(0, 12),
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (_, i) {
+            final s = streams[i];
+            final a = s.auction!;
+            final open = a.isOpen || s.isLive;
+            return InkWell(
+              onTap: () => open
+                  ? context.push('/live/${s.id}')
+                  : context.push('/products/${a.productId}'),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 210,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: HubsomColors.forest.withValues(alpha: 0.18),
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  color: HubsomColors.mist,
+                ),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 32),
                     Row(
                       children: [
-                        Text('Live now', style: _sectionTitle(context)),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: () => context.push('/live'),
-                          child: const Text('See all'),
+                        Icon(
+                          Icons.gavel,
+                          size: 16,
+                          color: open ? HubsomColors.live : HubsomColors.forest,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          open ? 'Bidding open' : 'Available',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color:
+                                open ? HubsomColors.live : HubsomColors.forest,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 160,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: live.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
-                        itemBuilder: (_, i) {
-                          final s = live[i];
-                          return InkWell(
-                            onTap: () => context.push('/live/${s.id}'),
-                            child: Container(
-                              width: 220,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    HubsomColors.forest,
-                                    HubsomColors.blue,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    color: HubsomColors.live,
-                                    child: const Text(
-                                      'LIVE',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    s.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${s.viewerCount} watching',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.85),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                    const Spacer(),
+                    Text(
+                      s.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Current ${formatGhs(a.currentBidGhs)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: HubsomColors.ink.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
-                );
-              },
-            ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class ContainedBuyNow extends StatelessWidget {
+  const ContainedBuyNow({
+    super.key,
+    required this.products,
+    required this.crossAxisCount,
+    required this.titleStyle,
+  });
+
+  final List<Product> products;
+  final int crossAxisCount;
+  final TextStyle titleStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _SectionHeader(
+            title: 'Buy now',
+            titleStyle: titleStyle,
+            actionLabel: 'Browse all',
+            onAction: () => context.push('/marketplace'),
           ),
+        ),
+        if (products.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(top: 36, bottom: 8),
-              child: Row(
-                children: [
-                  Text('Buy now', style: _sectionTitle(context)),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => context.push('/marketplace'),
-                    child: const Text('Browse all'),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),
+              child: Text(
+                'No products yet. Sellers can publish from Sell → New product, then go live.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 100),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.74,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => ProductCard(product: products[i]),
+                childCount: products.length.clamp(0, 12),
               ),
             ),
           ),
-          if (products.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),
-                child: Text(
-                  'No products yet. Sellers can publish from Sell → New product, then go live.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.only(bottom: 100),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: cross,
-                  mainAxisSpacing: 14,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.74,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) => ProductCard(product: products[i]),
-                  childCount: products.length.clamp(0, 12),
-                ),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
