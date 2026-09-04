@@ -222,14 +222,10 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide> {
     );
   }
 
-  void _openTarget() {
-    final post = widget.post;
-    if (post.isVideo && post.videoId != null && post.videoId!.isNotEmpty) {
-      context.push('/videos/${post.videoId}');
-      return;
-    }
-    if (post.productId.isNotEmpty) {
-      context.push('/products/${post.productId}');
+  void _openProduct() {
+    final id = widget.post.productId;
+    if (id.isNotEmpty) {
+      context.push('/products/$id');
     }
   }
 
@@ -238,38 +234,43 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide> {
     final post = widget.post;
     final bottom = MediaQuery.paddingOf(context).bottom;
     final price = _product?.effectivePrice;
+    final isVideo = post.isVideo && post.videoId != null;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Media
-        if (post.isVideo && post.videoId != null)
-          widget.active
-              ? ProductDemoVideoPlayer(
-                  productId: post.videoId!,
-                  expand: true,
-                  autoplay: true,
-                  borderRadius: 0,
-                )
-              : const ColoredBox(color: Colors.black)
-        else
+        // Media: videos play inline on the timeline (no /videos navigation).
+        if (isVideo) ...[
+          _ProductHero(imageUrl: post.productImage, name: post.productName),
+          if (widget.active)
+            ProductDemoVideoPlayer(
+              productId: post.videoId!,
+              expand: true,
+              autoplay: true,
+              borderRadius: 0,
+            )
+          else
+            const ColoredBox(color: Colors.black54),
+        ] else
           _ProductHero(imageUrl: post.productImage, name: post.productName),
 
-        // Gradients
+        // Gradients (ignore pointer so video tap-to-play still works)
         Positioned(
           left: 0,
           right: 0,
           top: 0,
           height: 140,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.55),
-                  Colors.transparent,
-                ],
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.transparent,
+                  ],
+                ),
               ),
             ),
           ),
@@ -279,15 +280,17 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide> {
           right: 0,
           bottom: 0,
           height: 280,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.82),
-                ],
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.82),
+                  ],
+                ),
               ),
             ),
           ),
@@ -386,18 +389,19 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _openTarget,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
+                  if (post.productId.isNotEmpty)
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _openProduct,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('View product'),
                       ),
-                      child: Text(post.isVideo ? 'Open video' : 'View product'),
                     ),
-                  ),
                   if (_product != null && _product!.stock > 0) ...[
-                    const SizedBox(width: 10),
+                    if (post.productId.isNotEmpty) const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton(
                         onPressed: _addToCart,

@@ -41,6 +41,33 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant ProductDemoVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.productId != widget.productId ||
+        oldWidget.remoteUrl != widget.remoteUrl) {
+      _controller?.dispose();
+      final url = _ownedUrl;
+      if (url != null) {
+        revokeDemoVideoObjectUrl(url);
+        _ownedUrl = null;
+      }
+      _controller = null;
+      _ready = false;
+      _error = null;
+      _load();
+      return;
+    }
+    final c = _controller;
+    if (c != null && oldWidget.autoplay != widget.autoplay) {
+      if (widget.autoplay) {
+        c.play();
+      } else {
+        c.pause();
+      }
+    }
+  }
+
   Future<void> _load() async {
     try {
       late final VideoPlayerController controller;
@@ -146,40 +173,46 @@ class _DemoVideoScaffold extends StatelessWidget {
       );
     }
     final c = controller!;
-    final video = Stack(
-      fit: StackFit.expand,
-      alignment: Alignment.center,
-      children: [
-        ColoredBox(
-          color: Colors.black,
-          child: expand
-              ? FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: c.value.size.width == 0 ? 16 : c.value.size.width,
-                    height: c.value.size.height == 0 ? 9 : c.value.size.height,
-                    child: VideoPlayer(c),
-                  ),
-                )
-              : VideoPlayer(c),
-        ),
-        IconButton(
-          iconSize: 56,
-          color: Colors.white,
-          onPressed: () {
-            if (c.value.isPlaying) {
-              c.pause();
-            } else {
-              c.play();
-            }
-          },
-          icon: Icon(
-            c.value.isPlaying
-                ? Icons.pause_circle_filled
-                : Icons.play_circle_filled,
+    void toggle() {
+      if (c.value.isPlaying) {
+        c.pause();
+      } else {
+        c.play();
+      }
+    }
+
+    final video = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: toggle,
+      child: Stack(
+        fit: StackFit.expand,
+        alignment: Alignment.center,
+        children: [
+          ColoredBox(
+            color: Colors.black,
+            child: expand
+                ? FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: c.value.size.width == 0 ? 16 : c.value.size.width,
+                      height:
+                          c.value.size.height == 0 ? 9 : c.value.size.height,
+                      child: VideoPlayer(c),
+                    ),
+                  )
+                : VideoPlayer(c),
           ),
-        ),
-      ],
+          // Expand/feed: show play affordance only when paused (video itself is the UI).
+          if (!c.value.isPlaying || !expand)
+            Icon(
+              c.value.isPlaying
+                  ? Icons.pause_circle_filled
+                  : Icons.play_circle_filled,
+              size: 56,
+              color: Colors.white,
+            ),
+        ],
+      ),
     );
 
     if (expand) {
