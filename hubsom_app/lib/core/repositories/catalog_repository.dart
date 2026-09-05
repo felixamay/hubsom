@@ -652,7 +652,7 @@ class CatalogRepository {
         for (final row in rows) {
           if ('${row['id']}' == streamId) {
             live = LiveStream.fromJson(row);
-            await LocalCommerceStore.upsertStream(live!);
+            await LocalCommerceStore.upsertStream(live);
             break;
           }
         }
