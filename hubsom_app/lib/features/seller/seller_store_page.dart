@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
@@ -18,8 +19,11 @@ class SellerStorePage extends ConsumerStatefulWidget {
 class _SellerStorePageState extends ConsumerState<SellerStorePage> {
   final _name = TextEditingController();
   final _bio = TextEditingController();
+  final _address = TextEditingController();
   final _city = TextEditingController();
+  String _region = AppConstants.defaultRegion;
   String _avatar = '';
+  bool _storeReady = false;
   bool _busy = false;
   bool _picking = false;
   String? _error;
@@ -38,8 +42,17 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
     if (store != null && mounted) {
       _name.text = store.name;
       _bio.text = store.bio;
+      _address.text = store.address;
       _city.text = store.city;
-      setState(() => _avatar = store.avatar);
+      setState(() {
+        _avatar = store.avatar;
+        _region = store.region.trim().isEmpty
+            ? AppConstants.defaultRegion
+            : store.region.trim();
+        _storeReady = true;
+      });
+    } else if (mounted) {
+      setState(() => _storeReady = true);
     }
   }
 
@@ -47,6 +60,7 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
   void dispose() {
     _name.dispose();
     _bio.dispose();
+    _address.dispose();
     _city.dispose();
     super.dispose();
   }
@@ -96,7 +110,13 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
     try {
       await ref.read(sellerRepositoryProvider).updateStore({
         'name': _name.text.trim(),
-        'city': _city.text.trim(),
+        'address': _address.text.trim(),
+        'city': _city.text.trim().isEmpty
+            ? AppConstants.defaultCity
+            : _city.text.trim(),
+        'region': _region.trim().isEmpty
+            ? AppConstants.defaultRegion
+            : _region.trim(),
         'bio': _bio.text.trim(),
         'avatar': _avatar,
       });
@@ -236,12 +256,55 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
             controller: _name,
             decoration: const InputDecoration(labelText: 'Store name'),
           ),
+          const SizedBox(height: 20),
+          Text(
+            'Store location',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: HubsomColors.forest,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Shown on your public store and sent to Huber riders so they see how far they are from pickup.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _address,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Street / area',
+              hintText: 'e.g. Osu Oxford Street',
+            ),
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _city,
-            decoration: const InputDecoration(labelText: 'City'),
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'City / town',
+              hintText: AppConstants.defaultCity,
+            ),
           ),
           const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            key: ValueKey('region-$_region-$_storeReady'),
+            initialValue: _region,
+            decoration: const InputDecoration(labelText: 'Region'),
+            items: [
+              for (final r in {
+                ...AppConstants.ghanaRegions,
+                if (_region.isNotEmpty) _region,
+              })
+                DropdownMenuItem(value: r, child: Text(r)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _region = value);
+            },
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _bio,
             decoration: const InputDecoration(labelText: 'Bio'),

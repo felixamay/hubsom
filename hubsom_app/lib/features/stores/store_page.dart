@@ -164,8 +164,30 @@ class _StorePageState extends ConsumerState<StorePage> {
                       ),
                       const SizedBox(height: 4),
                       Text(seller.bio),
+                      if (seller.displayLocation.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 16,
+                              color: HubsomColors.forest,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                seller.displayLocation,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       Text(
-                        '${seller.city}, ${seller.region} · ★ ${seller.rating.toStringAsFixed(1)} · ${seller.followers} followers',
+                        '★ ${seller.rating.toStringAsFixed(1)} · ${seller.followers} followers',
                       ),
                       const SizedBox(height: 10),
                       FilledButton.tonal(

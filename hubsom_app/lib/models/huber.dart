@@ -253,6 +253,7 @@ class HuberOffer extends Equatable {
     this.pickupLongitude,
     this.dropoffLatitude,
     this.dropoffLongitude,
+    this.pickupDistanceKm,
   });
 
   final String id;
@@ -277,8 +278,19 @@ class HuberOffer extends Equatable {
   final double? pickupLongitude;
   final double? dropoffLatitude;
   final double? dropoffLongitude;
+  /// Straight-line km from the rider's city to the seller pickup.
+  final double? pickupDistanceKm;
 
   bool get isOpen => status == 'sent' || status == 'queued';
+
+  String get pickupDistanceLabel {
+    final km = pickupDistanceKm;
+    if (km == null) return '';
+    if (km < 0.1) return 'Under 100 m to pickup';
+    if (km < 1) return '${(km * 1000).round()} m to pickup';
+    if (km < 10) return '${km.toStringAsFixed(1)} km to pickup';
+    return '${km.round()} km to pickup';
+  }
 
   bool get isExpired {
     if (!isOpen) return false;
@@ -315,6 +327,7 @@ class HuberOffer extends Equatable {
         pickupLongitude: (json['pickupLongitude'] as num?)?.toDouble(),
         dropoffLatitude: (json['dropoffLatitude'] as num?)?.toDouble(),
         dropoffLongitude: (json['dropoffLongitude'] as num?)?.toDouble(),
+        pickupDistanceKm: (json['pickupDistanceKm'] as num?)?.toDouble(),
       );
 
   HuberOffer copyWith({String? status}) => HuberOffer(
@@ -340,6 +353,7 @@ class HuberOffer extends Equatable {
         pickupLongitude: pickupLongitude,
         dropoffLatitude: dropoffLatitude,
         dropoffLongitude: dropoffLongitude,
+        pickupDistanceKm: pickupDistanceKm,
       );
 
   Map<String, dynamic> toJson() => {
@@ -365,6 +379,7 @@ class HuberOffer extends Equatable {
         if (pickupLongitude != null) 'pickupLongitude': pickupLongitude,
         if (dropoffLatitude != null) 'dropoffLatitude': dropoffLatitude,
         if (dropoffLongitude != null) 'dropoffLongitude': dropoffLongitude,
+        if (pickupDistanceKm != null) 'pickupDistanceKm': pickupDistanceKm,
       };
 
   @override

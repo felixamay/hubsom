@@ -7,6 +7,7 @@ import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/ghana_places.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
@@ -66,12 +67,21 @@ class SellerRepository {
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
     final current = await LocalCommerceStore.ensureSellerForUser(user);
+    final city = body['city'] as String? ?? current.city;
+    final region = body['region'] as String? ?? current.region;
+    final address = body['address'] as String? ?? current.address;
+    final pin = GhanaPlaces.resolve(
+      address: address,
+      city: city,
+      region: region,
+    );
     final updated = Seller(
       id: current.id,
       slug: current.slug,
       name: body['name'] as String? ?? current.name,
-      city: body['city'] as String? ?? current.city,
-      region: body['region'] as String? ?? current.region,
+      city: city,
+      region: region,
+      address: address,
       bio: body['bio'] as String? ?? current.bio,
       avatar: body['avatar'] as String? ?? current.avatar,
       cover: body['cover'] as String? ?? current.cover,
@@ -81,6 +91,8 @@ class SellerRepository {
       categories: (body['categories'] as List?)?.cast<String>() ??
           current.categories,
       ownerUserId: current.ownerUserId,
+      latitude: pin.latitude,
+      longitude: pin.longitude,
     );
     final saved = await LocalCommerceStore.upsertSeller(updated);
     try {

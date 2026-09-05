@@ -679,7 +679,11 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       _seller!.name,
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    subtitle: Text('${_seller!.city}, ${_seller!.region}'),
+                    subtitle: Text(
+                      _seller!.displayLocation.isEmpty
+                          ? '${_seller!.city}, ${_seller!.region}'
+                          : _seller!.displayLocation,
+                    ),
                     trailing: FilledButton.tonal(
                       onPressed: _followBusy ? null : _toggleFollow,
                       child: Text(_following ? 'Following' : 'Follow'),
