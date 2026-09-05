@@ -98,7 +98,7 @@ class SellPage extends ConsumerWidget {
         ],
         const SizedBox(height: 24),
         if (user != null && (user.isHuber || user.role == 'admin'))
-          _tile(context, Icons.two_wheeler, 'Huber driver hub', '/huber')
+          _tile(context, Icons.two_wheeler, 'Hail Rider hub', '/huber')
         else
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -107,7 +107,7 @@ class SellPage extends ConsumerWidget {
               color: HubsomColors.huberNavy,
             ),
             title: const Text(
-              'Drive with Huber',
+              'Drive as a Hail Rider',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: const Text(

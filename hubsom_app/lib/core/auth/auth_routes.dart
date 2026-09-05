@@ -17,6 +17,26 @@ abstract final class AuthRoutes {
     '/auth/sign-up',
   };
 
+  /// Account, wallet, messages, and seller tools — menu + route locked.
+  static const signedInExact = <String>{
+    '/account',
+    '/account/profile',
+    '/account/addresses',
+    '/account/following',
+    '/account/followers',
+    '/account/saved',
+    '/wallet',
+    '/wallet/gifts',
+    '/gifts',
+    '/messages',
+    '/notifications',
+    '/settings',
+    '/dashboard',
+    '/sell',
+    '/checkout',
+    '/videos/upload',
+  };
+
   static const publicPrefixes = <String>[
     '/categories/',
     '/products/',
@@ -33,6 +53,15 @@ abstract final class AuthRoutes {
 
   static bool isPublic(String location) {
     final path = location.split('?').first;
+    if (signedInExact.contains(path) ||
+        path.startsWith('/account/') ||
+        path.startsWith('/wallet/') ||
+        path.startsWith('/messages/') ||
+        path.startsWith('/seller') ||
+        path.startsWith('/sell/') ||
+        path.startsWith('/huber')) {
+      return false;
+    }
     if (publicExact.contains(path)) return true;
     for (final p in publicPrefixes) {
       if (path.startsWith(p)) return true;

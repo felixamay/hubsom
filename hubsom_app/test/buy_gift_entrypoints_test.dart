@@ -56,12 +56,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Gift points'), findsOneWidget);
-    expect(find.text('Buy gift points'), findsOneWidget);
-
-    await tester.tap(find.text('Buy gift points'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Sign in for personalized activity.'), findsOneWidget);
+    expect(find.text('Gift points'), findsNothing);
+    expect(find.text('Buy gift points'), findsNothing);
   });
 
   testWidgets('buy gift page lists point packs', (tester) async {

@@ -129,7 +129,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   onPressed: () => context.push(
                     '/auth/sign-up?role=huber&callbackUrl=${Uri.encodeComponent('/huber')}',
                   ),
-                  child: const Text('Create Huber driver account'),
+                  child: const Text('Create Hail Rider account'),
                 ),
               ],
             ),

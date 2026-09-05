@@ -139,7 +139,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/sell', builder: (_, __) => const SellPage()),
+              GoRoute(
+                path: '/sell',
+                builder: (_, __) => const AuthGate(
+                  message: 'Sign in to sell on Hubsom',
+                  child: SellPage(),
+                ),
+              ),
             ],
           ),
           StatefulShellBranch(
@@ -163,7 +169,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/account',
         parentNavigatorKey: _rootKey,
-        builder: (_, __) => const AccountPage(),
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to view your account',
+          child: AccountPage(),
+        ),
         routes: [
           GoRoute(
             path: 'profile',
@@ -364,7 +373,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => AuthGate(
           requireHuber: true,
-          message: 'Sign in with your Huber driver account',
+          message: 'Sign in with your Hail Rider account',
           child: HuberShell(navigationShell: navigationShell),
         ),
         branches: [
