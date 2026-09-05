@@ -158,7 +158,7 @@ class LocalCommerceStore {
         'at': DateTime.now().toUtc().toIso8601String(),
       });
     }
-    map[sellerId] = rows;
+    map[sellerId] = await StorageMedia.externalizeTree(rows) as List;
     await LocalStore.setString(_sellerFollowersKey, jsonEncode(map));
 
     // Keep every local seller row for this id (and slug aliases) in sync.
@@ -271,7 +271,7 @@ class LocalCommerceStore {
     final products = listProducts();
     products.insert(0, product);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
-    return product;
+    return getProduct(id) ?? product;
   }
 
   static Future<Product> updateProduct(Product product) async {
@@ -407,7 +407,7 @@ class LocalCommerceStore {
         sellerId: s.sellerId,
         status: s.status,
         channelName: s.channelName,
-        cover: StorageMedia.persistable(s.cover),
+        cover: s.isLive ? StorageMedia.persistable(s.cover) : '',
         viewerCount: s.viewerCount,
         peakViewers: s.peakViewers,
         startedAt: s.startedAt,
@@ -466,7 +466,7 @@ class LocalCommerceStore {
     }
     next = next.where((s) => s.isLive).toList();
     await _trimStaleLiveExtras({for (final s in next) s.id});
-    await LocalStore.evictVolatileCaches();
+    await LocalStore.reclaimQuota();
     try {
       await write();
       return;
@@ -1502,6 +1502,7 @@ class LocalCommerceStore {
   }
 
   static Future<void> _writeList(String key, List<dynamic> list) async {
-    await LocalStore.setString(key, jsonEncode(list));
+    final compact = await StorageMedia.externalizeTree(list);
+    await LocalStore.setString(key, jsonEncode(compact));
   }
 }

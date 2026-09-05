@@ -8,9 +8,11 @@ import 'core/config/app_config.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/firebase_bootstrap.dart';
 import 'core/services/cloud_store.dart';
+import 'core/services/local_blob_store.dart';
 import 'core/services/local_commerce_store.dart';
 import 'core/services/local_store.dart';
 import 'core/services/product_demo_video_store.dart';
+import 'core/services/storage_media.dart';
 import 'core/theme/hubsom_theme.dart';
 import 'features/shell/app_router.dart';
 
@@ -22,7 +24,10 @@ Future<void> main() async {
   AppConfig.load();
   await Hive.initFlutter();
   await LocalStore.init();
+  await LocalBlobStore.init();
+  LocalStore.quotaMigrator = StorageMedia.migratePrefsBlobs;
   await ProductDemoVideoStore.init();
+  await StorageMedia.migratePrefsBlobs();
   await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();
   await CloudStore.hydrateLocalCache();
