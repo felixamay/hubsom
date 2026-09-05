@@ -570,6 +570,94 @@ class LocalCommerceStore {
     return updateStream(streamId, productIds: merged);
   }
 
+  /// Start (or switch to) an auction on a catalog product without ending the live.
+  static Future<LiveStream> startAuctionOnLive({
+    required String streamId,
+    required HubsomUser user,
+    required String productId,
+    double? startingBidGhs,
+    double? askingPriceGhs,
+    int durationSeconds = 30,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null || !stream.isLive) {
+      throw StateError('Go live first to start an auction.');
+    }
+    final seller = await ensureSellerForUser(user);
+    if (stream.sellerId != seller.id) {
+      throw StateError('Only the host can start an auction.');
+    }
+    final product = getProduct(productId);
+    if (product == null || product.sellerId != seller.id) {
+      throw StateError('Auction items must come from your catalog.');
+    }
+
+    final current = stream.auction;
+    if (current != null &&
+        current.productId == productId &&
+        (current.isOpen || current.awaitingExtend)) {
+      throw StateError('This item is already on auction.');
+    }
+
+    // Close the previous lot without ending the show.
+    if (current != null && current.orderId == null && current.status != 'sold') {
+      if (current.isOpen) {
+        await updateStream(
+          streamId,
+          auction: current.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+        );
+      }
+      await finalizeAuction(streamId);
+    }
+
+    final live = getStream(streamId) ?? stream;
+    final productIds = <String>{...live.productIds, productId}.toList();
+    final start =
+        (startingBidGhs != null && startingBidGhs > 0)
+            ? startingBidGhs
+            : product.priceGhs * 0.5;
+    final ask =
+        (askingPriceGhs != null && askingPriceGhs > 0)
+            ? askingPriceGhs
+            : product.priceGhs;
+    final durationSecs = durationSeconds.clamp(1, 30);
+
+    final auction = LiveAuction(
+      id: 'auction-${_uuid.v4().substring(0, 8)}',
+      productId: productId,
+      startingBidGhs: start,
+      currentBidGhs: start,
+      minIncrementGhs: (start * 0.05).clamp(1, 50),
+      endsAt: DateTime.now()
+          .add(Duration(seconds: durationSecs))
+          .toUtc()
+          .toIso8601String(),
+      status: 'open',
+      askingPriceGhs: ask,
+    );
+
+    final updated = await updateStream(
+      streamId,
+      productIds: productIds,
+      pinnedProductId: productId,
+      auction: auction,
+    );
+    if (updated == null) throw StateError('Live show not found');
+
+    await sendChat(
+      streamId: streamId,
+      user: user,
+      text:
+          '🔨 ${product.name} is now on auction — starting ${start.toStringAsFixed(0)} GHS',
+    );
+    return updated;
+  }
+
   /// Restart the auction clock (e.g. when asking price was not met).
   static Future<LiveAuction> extendAuction({
     required String streamId,

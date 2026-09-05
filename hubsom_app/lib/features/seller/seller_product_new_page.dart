@@ -48,6 +48,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   int _flashDurationHours = 24;
   DateTime? _existingFlashEndsAt;
   String? _error;
+  bool _auctionOnSave = false;
 
   bool get _isEdit =>
       widget.productId != null && widget.productId!.trim().isNotEmpty;
@@ -263,12 +264,25 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
           liveId.isNotEmpty &&
           id.isNotEmpty) {
         try {
-          await ref.read(liveRepositoryProvider).addProducts(liveId, [id]);
-          await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
+          if (_auctionOnSave) {
+            await ref.read(liveRepositoryProvider).startAuction(
+                  streamId: liveId,
+                  productId: id,
+                );
+          } else {
+            await ref.read(liveRepositoryProvider).addProducts(liveId, [id]);
+            await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
+          }
         } catch (_) {}
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product added to your live show')),
+          SnackBar(
+            content: Text(
+              _auctionOnSave
+                  ? 'Product is now on auction in your live show'
+                  : 'Product added for sale on your live show',
+            ),
+          ),
         );
         context.go('/live/$liveId?host=1');
         return;
@@ -315,9 +329,18 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
-                  'This product will be published and pinned on your live show as soon as you save it.',
+                  'This product will join your live show as soon as you save it. You do not need to end the live first.',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Put on auction now'),
+                subtitle: const Text(
+                  'Start bidding on this listing. Leave off to sell at the listed price.',
+                ),
+                value: _auctionOnSave,
+                onChanged: (v) => setState(() => _auctionOnSave = v),
               ),
               const SizedBox(height: 12),
             ],

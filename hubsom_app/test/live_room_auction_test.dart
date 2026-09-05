@@ -10,6 +10,7 @@ import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
+import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/models/stream.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -213,6 +214,107 @@ void main() {
     expect(updated.productIds, contains(extra.id));
   });
 
+  test('host can auction another listed product without ending live', () async {
+    final stream = await goLive();
+    final firstLot = stream.auction!.id;
+    final extra = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Beaded bag',
+      description: 'Next lot',
+      category: 'fashion',
+      priceGhs: 90,
+      stock: 2,
+      images: const ['a', 'b', 'c'],
+    );
+
+    final next = await LocalCommerceStore.startAuctionOnLive(
+      streamId: stream.id,
+      user: seller,
+      productId: extra.id,
+    );
+
+    expect(next.isLive, isTrue);
+    expect(next.status, 'live');
+    expect(next.endedAt, isNull);
+    expect(next.productIds, contains(stream.productIds.first));
+    expect(next.productIds, contains(extra.id));
+    expect(next.pinnedProductId, extra.id);
+    expect(next.auction, isNotNull);
+    expect(next.auction!.productId, extra.id);
+    expect(next.auction!.isOpen, isTrue);
+    expect(next.auction!.id, isNot(firstLot));
+    expect(next.isLiveAuction, isTrue);
+
+    expect(
+      () => LocalCommerceStore.startAuctionOnLive(
+        streamId: stream.id,
+        user: seller,
+        productId: extra.id,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('sell-only live can start an auction later', () async {
+    final product = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Wax print',
+      description: 'Buy now first',
+      category: 'fashion',
+      priceGhs: 120,
+      stock: 4,
+      images: const ['a', 'b', 'c'],
+    );
+    final stream = await LocalCommerceStore.createStream(
+      user: seller,
+      title: 'Sell then auction',
+      productIds: [product.id],
+      pinnedProductId: product.id,
+    );
+    expect(stream.auction, isNull);
+    expect(stream.isLive, isTrue);
+
+    final next = await LocalCommerceStore.startAuctionOnLive(
+      streamId: stream.id,
+      user: seller,
+      productId: product.id,
+    );
+    expect(next.isLive, isTrue);
+    expect(next.auction?.productId, product.id);
+    expect(next.auction?.isOpen, isTrue);
+    expect(next.pinnedProductId, product.id);
+  });
+
+  test('switching lots finalizes a winning bid then keeps the show live', () async {
+    final stream = await goLive();
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    final extra = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Second lot',
+      description: 'After a sale',
+      category: 'fashion',
+      priceGhs: 70,
+      stock: 1,
+      images: const ['a', 'b', 'c'],
+    );
+
+    final next = await LocalCommerceStore.startAuctionOnLive(
+      streamId: stream.id,
+      user: seller,
+      productId: extra.id,
+    );
+    expect(next.isLive, isTrue);
+    expect(next.auction!.productId, extra.id);
+    expect(next.auction!.isOpen, isTrue);
+
+    final orders = LocalHuberStore.listOrders();
+    expect(orders.any((o) => o.streamId == stream.id), isTrue);
+  });
+
   test('host can create a real product and attach it to a live show', () async {
     final stream = await goLive();
     await LocalStore.setSessionToken('host-sess');
@@ -233,6 +335,24 @@ void main() {
     final pinned = await live.pinProduct(stream.id, created.id);
     expect(withProduct.productIds, contains(created.id));
     expect(pinned.pinnedProductId, created.id);
+
+    final extra = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Auction drop',
+      description: 'Listed then auctioned mid-live',
+      category: 'fashion',
+      priceGhs: 80,
+      stock: 2,
+      images: const ['a', 'b', 'c'],
+    );
+    final auctioned = await live.startAuction(
+      streamId: stream.id,
+      productId: extra.id,
+    );
+    expect(auctioned.isLive, isTrue);
+    expect(auctioned.productIds, contains(extra.id));
+    expect(auctioned.auction?.productId, extra.id);
+    expect(auctioned.auction?.isOpen, isTrue);
     // Seller repo still available for create path used by UI.
     expect(SellerRepository(ApiClient()), isNotNull);
   });
