@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
 import '../../models/promotion.dart';
+import '../../models/purchase_offer.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
@@ -16,6 +17,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
 import '../services/local_commerce_store.dart';
+import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
 
@@ -672,6 +674,38 @@ class CatalogRepository {
       product: product,
       caption: caption,
     );
+  }
+
+  Future<List<PurchaseOffer>> listPurchaseOffers() async {
+    if (!CloudStore.useNetwork) {
+      return LocalPurchaseOfferStore.all();
+    }
+    try {
+      final res = await _api
+          .get(
+            '/api/promotions',
+            queryParameters: {'placement': 'offers'},
+          )
+          .timeout(const Duration(seconds: 4));
+      final data = ApiResponse.decode(res.data);
+      if (data != null) {
+        final list = data is List
+            ? data
+            : (data is Map && data['promotions'] is List)
+                ? data['promotions'] as List
+                : <dynamic>[];
+        final remote = list
+            .map(
+              (e) =>
+                  PurchaseOffer.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
+            .where((o) => o.id.isNotEmpty && o.title.isNotEmpty)
+            .toList();
+        await LocalPurchaseOfferStore.mergeRemote(remote);
+      }
+    } catch (_) {}
+    await LocalPurchaseOfferStore.pullCloud();
+    return LocalPurchaseOfferStore.all();
   }
 
   Future<List<Promotion>> listPromotions(String placement) async {

@@ -34,6 +34,7 @@ abstract final class AuthRoutes {
     '/settings/password',
     '/settings/passkeys',
     '/dashboard',
+    '/admin/offers',
     '/sell',
     '/checkout',
     '/videos/upload',
@@ -61,7 +62,8 @@ abstract final class AuthRoutes {
         path.startsWith('/messages/') ||
         path.startsWith('/seller') ||
         path.startsWith('/sell/') ||
-        path.startsWith('/huber')) {
+        path.startsWith('/huber') ||
+        path.startsWith('/admin')) {
       return false;
     }
     if (publicExact.contains(path)) return true;
@@ -85,6 +87,11 @@ abstract final class AuthRoutes {
   static bool requiresHuber(String location) {
     final path = location.split('?').first;
     return path == '/huber' || path.startsWith('/huber/');
+  }
+
+  static bool requiresAdmin(String location) {
+    final path = location.split('?').first;
+    return path == '/admin' || path.startsWith('/admin/');
   }
 
   static bool isSellerRole(String? role) =>

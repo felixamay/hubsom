@@ -6,6 +6,7 @@ import '../../core/auth/auth_gate.dart';
 import '../../core/auth/auth_routes.dart';
 import '../../core/providers/core_providers.dart';
 import '../account/account_page.dart';
+import '../admin/admin_offers_page.dart';
 import '../account/addresses_page.dart';
 import '../account/followers_page.dart';
 import '../account/following_page.dart';
@@ -108,6 +109,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       if (loggedIn && AuthRoutes.requiresHuber(path)) {
         if (!user.isHuber && user.role != 'admin') {
+          return '/account';
+        }
+      }
+
+      if (loggedIn && AuthRoutes.requiresAdmin(path)) {
+        if (user.role != 'admin') {
           return '/account';
         }
       }
@@ -330,6 +337,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AuthGate(
           message: 'Sign in to manage passkeys',
           child: PasskeysPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/admin/offers',
+        builder: (_, __) => const AuthGate(
+          requireAdmin: true,
+          message: 'Sign in as admin to send purchase offers',
+          child: AdminOffersPage(),
         ),
       ),
       GoRoute(path: '/auth/sign-in', builder: (_, __) => const SignInPage()),
