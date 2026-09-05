@@ -16,9 +16,11 @@ import '../../core/services/live_webrtc_signal_store.dart';
 import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
+import '../../models/live_gift.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/live_gift_burst.dart';
 import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
@@ -55,6 +57,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   int _likeCount = 0;
   int _shareCount = 0;
   final _floating = <_FloatRx>[];
+  final _giftFx = <_GiftFx>[];
+  final _seenGiftChatIds = <String>{};
+  final _skipIncomingGiftIds = <String>{};
+  bool _seededGiftChat = false;
   Timer? _poll;
   Timer? _tick;
   late final AnimationController _pulse;
@@ -195,6 +201,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         pinned = pin;
         _catalog = catalog;
       });
+      _seedGiftChat(messages);
 
       if (join) {
         // Non-blocking: web uses a stub so this must never freeze the UI.
@@ -273,7 +280,47 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
             .isFollowingSeller(next.sellerId);
       });
       if (wasOpen != isOpen) _startPoll();
+      _playNewGiftChats(messages);
     } catch (_) {}
+  }
+
+  void _seedGiftChat(List<ChatMessage> messages) {
+    if (_seededGiftChat) return;
+    _seenGiftChatIds.addAll(messages.map((m) => m.id));
+    _seededGiftChat = true;
+  }
+
+  void _playNewGiftChats(List<ChatMessage> messages) {
+    if (!_seededGiftChat) {
+      _seedGiftChat(messages);
+      return;
+    }
+    final me = ref.read(authStateProvider).valueOrNull?.id;
+    for (final m in messages) {
+      if (!_seenGiftChatIds.add(m.id)) continue;
+      final gift = GiftCatalog.parseFromChat(m.text);
+      if (gift == null) continue;
+      if (m.userId == me && _skipIncomingGiftIds.remove(gift.id)) continue;
+      _enqueueGiftFx(gift, m.displayName);
+    }
+  }
+
+  void _enqueueGiftFx(LiveGift gift, String senderName) {
+    if (_giftFx.length >= 3) {
+      final oldest = _giftFx.removeAt(0);
+      oldest.controller.dispose();
+    }
+    final entry = _GiftFx(
+      id: 'gfx-${DateTime.now().microsecondsSinceEpoch}',
+      gift: gift,
+      senderName: senderName,
+      controller: AnimationController(vsync: this, duration: gift.fxDuration),
+    );
+    setState(() => _giftFx.add(entry));
+    entry.controller.forward().whenComplete(() {
+      entry.controller.dispose();
+      if (mounted) setState(() => _giftFx.removeWhere((e) => e.id == entry.id));
+    });
   }
 
   String get _liveLink {
@@ -448,29 +495,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       hostMode: _isHost,
     );
     if (gift == null || !mounted) return;
-    // sendGift already wrote chat + a reaction; this float is local-only.
-    final x = 0.18 + (gift.id.hashCode.abs() % 55) / 100;
-    final entry = _FloatRx(
-      id: 'gift-${gift.id}-${DateTime.now().microsecondsSinceEpoch}',
-      emoji: gift.emoji,
-      x: x,
-      controller: AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 2200),
-      ),
-    );
-    setState(() => _floating.add(entry));
-    entry.controller.forward().whenComplete(() {
-      entry.controller.dispose();
-      if (mounted) {
-        setState(() => _floating.removeWhere((e) => e.id == entry.id));
-      }
-    });
+    final me = ref.read(authStateProvider).valueOrNull;
+    _skipIncomingGiftIds.add(gift.id);
+    _enqueueGiftFx(gift, me?.name ?? 'You');
     await _refreshQuiet();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sent ${gift.emoji} ${gift.name}')),
-    );
   }
 
   Future<void> _endLive() async {
@@ -814,6 +842,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     for (final f in _floating) {
       f.controller.dispose();
     }
+    for (final g in _giftFx) {
+      g.controller.dispose();
+    }
     _agora?.leave();
     super.dispose();
   }
@@ -873,25 +904,46 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 animation: f.controller,
                 builder: (_, __) {
                   final t = f.controller.value;
+                  final width = MediaQuery.sizeOf(context).width;
                   return Positioned(
-                    right: 18 + (MediaQuery.sizeOf(context).width * 0.02),
+                    left: width * f.x.clamp(0.08, 0.82),
                     bottom: 110 + (260 * t),
                     child: Opacity(
                       opacity: (1 - t).clamp(0, 1),
                       child: Transform.scale(
                         scale: 0.85 + (0.35 * (1 - t)),
-                        child: Icon(
-                          Icons.favorite,
-                          color: Colors.pinkAccent.withValues(alpha: 0.95),
-                          size: 34,
-                          shadows: const [
-                            Shadow(blurRadius: 8, color: Colors.black45),
-                          ],
-                        ),
+                        child: f.emoji == '❤️' || f.emoji == '♥'
+                            ? Icon(
+                                Icons.favorite,
+                                color: Colors.pinkAccent.withValues(alpha: 0.95),
+                                size: 34,
+                                shadows: const [
+                                  Shadow(blurRadius: 8, color: Colors.black45),
+                                ],
+                              )
+                            : Text(
+                                f.emoji,
+                                style: const TextStyle(
+                                  fontSize: 34,
+                                  shadows: [
+                                    Shadow(blurRadius: 8, color: Colors.black45),
+                                  ],
+                                ),
+                              ),
                       ),
                     ),
                   );
                 },
+              );
+            }),
+            ..._giftFx.map((g) {
+              return AnimatedBuilder(
+                animation: g.controller,
+                builder: (_, __) => LiveGiftBurst(
+                  gift: g.gift,
+                  senderName: g.senderName,
+                  progress: g.controller.value,
+                ),
               );
             }),
             // TikTok-style top chrome: host + Follow | viewers + close
@@ -2280,5 +2332,18 @@ class _FloatRx {
   final String id;
   final String emoji;
   final double x;
+  final AnimationController controller;
+}
+
+class _GiftFx {
+  _GiftFx({
+    required this.id,
+    required this.gift,
+    required this.senderName,
+    required this.controller,
+  });
+  final String id;
+  final LiveGift gift;
+  final String senderName;
   final AnimationController controller;
 }
