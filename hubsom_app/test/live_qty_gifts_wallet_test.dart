@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/repositories/live_repository.dart';
@@ -10,9 +13,12 @@ import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/gift_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
+import 'package:hubsom_app/features/wallet/received_gifts_page.dart';
+import 'package:hubsom_app/features/wallet/wallet_page.dart';
 import 'package:hubsom_app/models/live_gift.dart';
 import 'package:hubsom_app/models/stream.dart';
 import 'package:hubsom_app/models/user.dart';
+import 'package:hubsom_app/widgets/live_gift_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -174,7 +180,54 @@ void main() {
       'withdraw',
     );
   });
+
+  testWidgets('host gift tiles are tappable', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: LiveGiftSheet(
+              streamId: 'live-missing',
+              hostMode: true,
+              onSent: _noopGift,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Rose'), findsOneWidget);
+    expect(find.text('Buy gift points'), findsOneWidget);
+    final rose = tester.widget<InkWell>(
+      find.ancestor(of: find.text('Rose'), matching: find.byType(InkWell)).first,
+    );
+    expect(rose.onTap, isNotNull);
+  });
+
+  testWidgets('wallet opens received gifts and withdraw', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/wallet',
+      routes: [
+        GoRoute(path: '/wallet', builder: (_, __) => const WalletPage()),
+        GoRoute(
+          path: '/wallet/gifts',
+          builder: (_, __) => const ReceivedGiftsPage(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Received gifts & withdraw'), findsOneWidget);
+    await tester.tap(find.text('Received gifts & withdraw'));
+    await tester.pumpAndSettle();
+    expect(find.text('Received gifts'), findsWidgets);
+    expect(find.text('Withdraw to wallet'), findsOneWidget);
+  });
 }
+
+void _noopGift(LiveGift gift) {}
 
 Future<void> _putVault(HubsomUser user) async {
   final vault = LocalStore.loadCredentialVault();
