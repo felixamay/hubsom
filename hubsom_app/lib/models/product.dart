@@ -47,6 +47,7 @@ class Product extends Equatable {
     this.supports = const [],
     this.hasDemoVideo = false,
     this.demoVideoUrl,
+    this.auctionOnly = false,
   });
 
   final String id;
@@ -69,6 +70,10 @@ class Product extends Equatable {
   final bool hasDemoVideo;
   /// Remote/demo URL when not stored locally in Hive.
   final String? demoVideoUrl;
+  /// Live-auction lot — created separately and hidden from the public store.
+  final bool auctionOnly;
+
+  bool get isAuctionLot => auctionOnly;
 
   double get effectivePrice {
     if (!hasActiveFlashSale) return priceGhs;
@@ -102,6 +107,7 @@ class Product extends Equatable {
         supports: (json['supports'] as List?)?.cast<String>() ?? const [],
         hasDemoVideo: json['hasDemoVideo'] as bool? ?? false,
         demoVideoUrl: json['demoVideoUrl'] as String?,
+        auctionOnly: json['auctionOnly'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -123,6 +129,7 @@ class Product extends Equatable {
         'supports': supports,
         'hasDemoVideo': hasDemoVideo,
         if (demoVideoUrl != null) 'demoVideoUrl': demoVideoUrl,
+        if (auctionOnly) 'auctionOnly': true,
       };
 
   @override
@@ -136,6 +143,7 @@ class Product extends Equatable {
         hasDemoVideo,
         demoVideoUrl,
         flashSale,
+        auctionOnly,
       ];
 
   Product copyWith({
@@ -156,6 +164,7 @@ class Product extends Equatable {
     FlashSale? flashSale,
     bool clearFlashSale = false,
     String? slug,
+    bool? auctionOnly,
   }) {
     return Product(
       id: id,
@@ -177,6 +186,7 @@ class Product extends Equatable {
       hasDemoVideo: hasDemoVideo ?? this.hasDemoVideo,
       demoVideoUrl:
           clearDemoVideoUrl ? null : (demoVideoUrl ?? this.demoVideoUrl),
+      auctionOnly: auctionOnly ?? this.auctionOnly,
     );
   }
 }

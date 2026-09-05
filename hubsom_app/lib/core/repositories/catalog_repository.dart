@@ -56,10 +56,12 @@ class CatalogRepository {
           .timeout(const Duration(seconds: 4));
 
       final raw = res.data;
-      if (ApiResponse.isHtml(raw)) return local;
+      if (ApiResponse.isHtml(raw)) {
+        return local.where((p) => !p.isAuctionLot).toList();
+      }
 
       final data = ApiResponse.decode(raw);
-      if (data == null) return local;
+      if (data == null) return local.where((p) => !p.isAuctionLot).toList();
 
       final list = data is List
           ? data
@@ -67,7 +69,7 @@ class CatalogRepository {
               ? data['products'] as List
               : <dynamic>[];
 
-      if (list.isEmpty) return local;
+      if (list.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
       final products = <Product>[];
       for (final e in list) {
@@ -75,17 +77,17 @@ class CatalogRepository {
           products.add(Product.fromJson(Map<String, dynamic>.from(e)));
         }
       }
-      if (products.isEmpty) return local;
+      if (products.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
       await LocalStore.cacheJson(
         'products',
         products.map((p) => p.toJson()).toList(),
       );
-      return products;
+      return products.where((p) => !p.isAuctionLot).toList();
     } on DioException {
-      return local;
+      return local.where((p) => !p.isAuctionLot).toList();
     } catch (_) {
-      return local;
+      return local.where((p) => !p.isAuctionLot).toList();
     }
   }
 

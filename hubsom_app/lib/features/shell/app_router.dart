@@ -349,6 +349,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           child: SellerProductNewPage(
             returnTo: state.uri.queryParameters['returnTo'],
             addToLiveStreamId: state.uri.queryParameters['addToLive'],
+            auctionLot: state.uri.queryParameters['kind'] == 'auction',
           ),
         ),
       ),

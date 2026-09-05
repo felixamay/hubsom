@@ -1519,7 +1519,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                           ),
                           subtitle: _isHost
                               ? const Text(
-                                  'Auction lots auto-continue until quantity is gone. Sell or auction any listed product anytime.',
+                                  'Tap a store product to sell it. Tap an auction lot to start bidding. Lots stay hidden from your store.',
                                 )
                               : null,
                           trailing: IconButton(
@@ -1530,20 +1530,40 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                         if (_isHost)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  final returnTo = Uri.encodeComponent(
-                                    '/live/${widget.streamId}?host=1',
-                                  );
-                                  context.push(
-                                    '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
-                                  );
-                                },
-                                icon: const Icon(Icons.add_box_outlined),
-                                label: const Text('Create product for this live'),
-                              ),
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () {
+                                      final returnTo = Uri.encodeComponent(
+                                        '/live/${widget.streamId}?host=1',
+                                      );
+                                      context.push(
+                                        '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=store',
+                                      );
+                                    },
+                                    icon: const Icon(Icons.add_box_outlined),
+                                    label: const Text('Create store product'),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final returnTo = Uri.encodeComponent(
+                                        '/live/${widget.streamId}?host=1',
+                                      );
+                                      context.push(
+                                        '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=auction',
+                                      );
+                                    },
+                                    icon: const Icon(Icons.gavel),
+                                    label: const Text('Create auction lot'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         Expanded(
@@ -1559,9 +1579,19 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                 ),
                               ...bag.map((p) {
+                                final selling = pinned?.id == p.id &&
+                                    !p.isAuctionLot;
+                                final onAuction = _isCurrentAuctionLot(p);
                                 return ListTile(
-                                  onTap: () => context.push('/products/${p.id}'),
-                                  isThreeLine: _isHost,
+                                  onTap: _isHost
+                                      ? (p.isAuctionLot
+                                          ? () => _auctionProductOnLive(p)
+                                          : () => _pin(p))
+                                      : (p.isAuctionLot
+                                          ? null
+                                          : () =>
+                                              context.push('/products/${p.id}')),
+                                  isThreeLine: true,
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: SizedBox(
@@ -1579,33 +1609,41 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                   title: Text(p.name),
                                   subtitle: Text(
-                                    '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} for sale',
+                                    p.isAuctionLot
+                                        ? '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} auction lot · hidden from store'
+                                        : '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} for sale',
                                   ),
                                   trailing: _isHost
-                                      ? _HostLiveActions(
-                                          sellLabel: pinned?.id == p.id
-                                              ? 'Selling'
-                                              : 'Sell',
-                                          auctionLabel:
-                                              _isCurrentAuctionLot(p)
+                                      ? Text(
+                                          p.isAuctionLot
+                                              ? (onAuction
                                                   ? 'On auction'
-                                                  : 'Auction',
-                                          onSell: () => _pin(p),
-                                          onAuction: _auctionBusy ||
-                                                  _isCurrentAuctionLot(p)
-                                              ? null
-                                              : () => _auctionProductOnLive(p),
-                                        )
-                                      : FilledButton(
-                                          onPressed: _offeredQty(p) <= 0
-                                              ? null
-                                              : () => _buy(p),
-                                          child: Text(
-                                            _offeredQty(p) <= 0
-                                                ? 'Sold out'
-                                                : 'Buy',
+                                                  : 'Tap to sell')
+                                              : (selling
+                                                  ? 'Selling'
+                                                  : 'Tap to sell'),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 12,
                                           ),
-                                        ),
+                                        )
+                                      : (p.isAuctionLot
+                                          ? const Text(
+                                              'Bid live',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            )
+                                          : FilledButton(
+                                              onPressed: _offeredQty(p) <= 0
+                                                  ? null
+                                                  : () => _buy(p),
+                                              child: Text(
+                                                _offeredQty(p) <= 0
+                                                    ? 'Sold out'
+                                                    : 'Buy',
+                                              ),
+                                            )),
                                 );
                               }),
                               if (_isHost) ...[
@@ -1613,7 +1651,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                 const Padding(
                                   padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
                                   child: Text(
-                                    'Your catalog — sell or auction without ending live',
+                                    'Your catalog — tap a product to start selling',
                                     style:
                                         TextStyle(fontWeight: FontWeight.w700),
                                   ),
@@ -1643,14 +1681,30 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                                 '/live/${widget.streamId}?host=1',
                                               );
                                               context.push(
-                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
+                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=store',
                                               );
                                             },
                                             icon: const Icon(
                                               Icons.add_box_outlined,
                                             ),
                                             label: const Text(
-                                              'Create product now',
+                                              'Create store product',
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          OutlinedButton.icon(
+                                            onPressed: () {
+                                              final returnTo =
+                                                  Uri.encodeComponent(
+                                                '/live/${widget.streamId}?host=1',
+                                              );
+                                              context.push(
+                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=auction',
+                                              );
+                                            },
+                                            icon: const Icon(Icons.gavel),
+                                            label: const Text(
+                                              'Create auction lot',
                                             ),
                                           ),
                                         ],
@@ -1664,8 +1718,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                       )
                                       .map(
                                         (p) => ListTile(
-                                          onTap: () =>
-                                              context.push('/products/${p.id}'),
+                                          onTap: p.isAuctionLot
+                                              ? () => _auctionProductOnLive(p)
+                                              : () => _addProductToLive(p),
                                           isThreeLine: true,
                                           leading: ClipRRect(
                                             borderRadius:
@@ -1685,17 +1740,18 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                           ),
                                           title: Text(p.name),
                                           subtitle: Text(
-                                            '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
+                                            p.isAuctionLot
+                                                ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot · hidden from store'
+                                                : '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
                                           ),
-                                          trailing: _HostLiveActions(
-                                            sellLabel: 'Sell',
-                                            auctionLabel: 'Auction',
-                                            onSell: () =>
-                                                _addProductToLive(p),
-                                            onAuction: _auctionBusy
-                                                ? null
-                                                : () =>
-                                                    _auctionProductOnLive(p),
+                                          trailing: Text(
+                                            p.isAuctionLot
+                                                ? 'Tap to sell'
+                                                : 'Tap to sell',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1710,51 +1766,6 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HostLiveActions extends StatelessWidget {
-  const _HostLiveActions({
-    required this.sellLabel,
-    required this.auctionLabel,
-    required this.onSell,
-    required this.onAuction,
-  });
-
-  final String sellLabel;
-  final String auctionLabel;
-  final VoidCallback onSell;
-  final VoidCallback? onAuction;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 96,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextButton(
-            onPressed: onSell,
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(sellLabel),
-          ),
-          FilledButton(
-            onPressed: onAuction,
-            style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(auctionLabel),
-          ),
-        ],
       ),
     );
   }

@@ -162,20 +162,37 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
           IconButton(
             tooltip: 'New product',
             onPressed: () async {
-              await context.push('/seller/products/new');
+              await context.push('/seller/products/new?kind=store');
               if (mounted) _load();
             },
             icon: const Icon(Icons.add),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await context.push('/seller/products/new');
-          if (mounted) _load();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('New product'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'auction-lot',
+            onPressed: () async {
+              await context.push('/seller/products/new?kind=auction');
+              if (mounted) _load();
+            },
+            icon: const Icon(Icons.gavel),
+            label: const Text('Auction lot'),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.extended(
+            heroTag: 'store-product',
+            onPressed: () async {
+              await context.push('/seller/products/new?kind=store');
+              if (mounted) _load();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Store product'),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -203,14 +220,20 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'List a product to sell via store, live, or auction.',
+                              'Store products appear in your shop. Auction lots stay hidden — tap them on live to sell.',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 16),
                             FilledButton(
-                              onPressed: () =>
-                                  context.push('/seller/products/new'),
-                              child: const Text('Create product'),
+                              onPressed: () => context
+                                  .push('/seller/products/new?kind=store'),
+                              child: const Text('Create store product'),
+                            ),
+                            const SizedBox(height: 8),
+                            OutlinedButton(
+                              onPressed: () => context
+                                  .push('/seller/products/new?kind=auction'),
+                              child: const Text('Create auction lot'),
                             ),
                           ],
                         ),
@@ -268,12 +291,24 @@ class _SellerProductsPageState extends ConsumerState<SellerProductsPage> {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
+                                            p.isAuctionLot
+                                                ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot'
+                                                : '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
                                             style: const TextStyle(
                                               color: HubsomColors.forest,
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
+                                          if (p.isAuctionLot) ...[
+                                            const SizedBox(height: 4),
+                                            const Text(
+                                              'Hidden from store · tap on live to sell',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
                                           if (p.hasActiveFlashSale) ...[
                                             const SizedBox(height: 4),
                                             Text(
