@@ -100,4 +100,27 @@ class MapsService {
       '&route=${from.latitude},${from.longitude};${to.latitude},${to.longitude}',
     );
   }
+
+  /// Google Maps turn-by-turn. Omit [from] so the rider's device GPS is origin.
+  static Uri googleMapsDirectionsUri({
+    LatLng? from,
+    required LatLng to,
+  }) {
+    return Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      if (from != null) 'origin': '${from.latitude},${from.longitude}',
+      'destination': '${to.latitude},${to.longitude}',
+      'travelmode': 'driving',
+    });
+  }
+
+  static List<Uri> directionUris({
+    LatLng? from,
+    required LatLng to,
+  }) {
+    return [
+      googleMapsDirectionsUri(from: from, to: to),
+      osmDirectionsUri(from ?? to, to),
+    ];
+  }
 }

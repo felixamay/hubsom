@@ -91,6 +91,7 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
   }
 
   Future<void> _advance() async {
+    final previousStatus = _delivery?.status;
     setState(() {
       _busy = true;
       _error = null;
@@ -101,6 +102,13 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
       if (!mounted) return;
       setState(() => _delivery = next);
       await _refreshRoute();
+      if (previousStatus == 'accepted' || previousStatus == 'picked_up') {
+        final toPickup = MapsService.navigatingToPickup(next.status);
+        await OsmNavMap.launchDirections(
+          from: _rider,
+          to: toPickup ? _pickup : _dropoff,
+        );
+      }
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Bad state: ', ''));
     } finally {
