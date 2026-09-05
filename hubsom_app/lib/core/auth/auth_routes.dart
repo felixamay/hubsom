@@ -32,6 +32,7 @@ abstract final class AuthRoutes {
     '/notifications',
     '/settings',
     '/settings/password',
+    '/settings/passkeys',
     '/dashboard',
     '/sell',
     '/checkout',

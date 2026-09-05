@@ -63,6 +63,7 @@ void main() {
     expect(AuthRoutes.isPublic('/huber'), isFalse);
     expect(AuthRoutes.isPublic('/settings'), isFalse);
     expect(AuthRoutes.isPublic('/settings/password'), isFalse);
+    expect(AuthRoutes.isPublic('/settings/passkeys'), isFalse);
     expect(AuthRoutes.isPublic('/'), isTrue);
     expect(AuthRoutes.isPublic('/live'), isTrue);
     expect(AuthRoutes.isPublic('/marketplace'), isTrue);

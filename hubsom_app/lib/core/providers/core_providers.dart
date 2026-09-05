@@ -6,6 +6,8 @@ import '../../models/product.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
 import '../../models/user.dart';
+import '../auth/passkey_bridge.dart';
+import '../auth/passkey_models.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
 import '../repositories/huber_repository.dart';
@@ -32,8 +34,15 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+final passkeyBridgeProvider = Provider<PasskeyBridge>(
+  (ref) => PasskeyBridge.instance,
+);
+
 final authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => AuthRepository(ref.watch(apiClientProvider)),
+  (ref) => AuthRepository(
+    ref.watch(apiClientProvider),
+    passkeys: ref.watch(passkeyBridgeProvider),
+  ),
 );
 
 final catalogRepositoryProvider = Provider<CatalogRepository>(
@@ -176,6 +185,26 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
       newPassword: newPassword,
     );
   }
+
+  Future<void> signInWithPasskey({String? email}) async {
+    state = const AsyncValue.loading();
+    try {
+      final user = await _repo.signInWithPasskey(email: email);
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = const AsyncValue.data(null);
+      Error.throwWithStackTrace(e, st);
+    }
+  }
+
+  Future<PasskeyRecord> registerPasskey() => _repo.registerPasskey();
+
+  Future<void> removePasskey(String credentialId) =>
+      _repo.removePasskey(credentialId);
+
+  List<PasskeyRecord> listPasskeys() => _repo.listPasskeys();
+
+  bool get passkeysSupported => _repo.passkeysSupported;
 
   Future<void> signOut() async {
     await _repo.signOut();
