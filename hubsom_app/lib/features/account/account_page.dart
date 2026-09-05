@@ -126,6 +126,12 @@ class AccountPage extends ConsumerWidget {
               ),
               _link(
                 context,
+                Icons.card_giftcard_outlined,
+                'Buy gift points',
+                '/gifts',
+              ),
+              _link(
+                context,
                 Icons.notifications_outlined,
                 'Notifications',
                 '/notifications',

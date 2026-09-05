@@ -8,7 +8,10 @@ import '../models/live_gift.dart';
 
 /// Buy live-gift points with wallet or a payment rail.
 class GiftPointsSheet extends ConsumerStatefulWidget {
-  const GiftPointsSheet({super.key});
+  const GiftPointsSheet({super.key, this.popOnSuccess = true});
+
+  /// When false, stay on the current page after a successful purchase.
+  final bool popOnSuccess;
 
   static Future<bool> show(BuildContext context) async {
     final bought = await showModalBottomSheet<bool>(
@@ -50,7 +53,9 @@ class _GiftPointsSheetState extends ConsumerState<GiftPointsSheet> {
       ref.read(authStateProvider.notifier).applyLocalUser(user);
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context, true);
+      if (widget.popOnSuccess) {
+        Navigator.pop(context, true);
+      }
       messenger.showSnackBar(
         SnackBar(
           content: Text(

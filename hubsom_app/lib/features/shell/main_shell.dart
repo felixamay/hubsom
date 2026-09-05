@@ -51,13 +51,14 @@ class MainShell extends ConsumerWidget {
     ('sell', Icons.add_business_outlined, 'Sell'),
   ];
 
-  static const _accountItems = <(String value, IconData icon, String label)>[
+  static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
     ('profile', Icons.badge_outlined, 'Profile'),
     ('saved', Icons.favorite_border, 'Saved products'),
     ('following', Icons.people_outline, 'Following'),
     ('followers', Icons.groups_outlined, 'Followers'),
     ('wallet', Icons.account_balance_wallet_outlined, 'Wallet'),
+    ('gifts', Icons.card_giftcard_outlined, 'Buy gift points'),
     ('videos', Icons.play_circle_outline, 'Watch videos'),
     ('messages', Icons.chat_bubble_outline, 'Messages'),
     ('notifications', Icons.notifications_outlined, 'Notifications'),
@@ -98,6 +99,7 @@ class MainShell extends ConsumerWidget {
       'following' => '/account/following',
       'followers' => '/account/followers',
       'wallet' => '/wallet',
+      'gifts' => '/gifts',
       'videos' => '/videos',
       'messages' => '/messages',
       'notifications' => '/notifications',
@@ -146,7 +148,7 @@ class MainShell extends ConsumerWidget {
           ),
         ),
       ),
-      for (final item in _accountItems)
+      for (final item in accountMenuItems)
         PopupMenuItem<String>(
           value: item.$1,
           child: Row(
