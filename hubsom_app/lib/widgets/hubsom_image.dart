@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../core/services/local_blob_store.dart';
+
 /// Renders http(s) images and `data:` URLs (local product uploads).
 class HubsomImage extends StatelessWidget {
   const HubsomImage({
@@ -22,8 +24,8 @@ class HubsomImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final src = url?.trim() ?? '';
-    if (src.isEmpty) {
+    final src = LocalBlobStore.resolve(url?.trim()) ?? url?.trim() ?? '';
+    if (src.isEmpty || LocalBlobStore.isRef(src)) {
       return placeholder ??
           Container(
             width: width,
