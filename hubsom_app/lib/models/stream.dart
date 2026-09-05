@@ -277,6 +277,10 @@ class LiveStream extends Equatable {
   /// Open bidding on a show that is actually live — closed / unsold lots stay off Auctions.
   bool get isLiveAuction => isLive && auction != null && auction!.isOpen;
 
+  /// Clock is running or the host can still extend — otherwise treat as a fixed-price sale.
+  bool get hasActiveAuction =>
+      auction != null && (auction!.isOpen || auction!.awaitingExtend);
+
   /// Remaining units for sale on this show. Falls back to [fallback] for older streams.
   int offeredQty(String productId, {int fallback = 0}) {
     final qty = productQuantities[productId];
