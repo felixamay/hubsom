@@ -19,6 +19,7 @@ class CloudStore {
   static const accounts = 'accounts';
   static const hubers = 'hubers';
   static const offers = 'huberOffers';
+  static const purchaseOffers = 'purchaseOffers';
   static const deliveries = 'huberDeliveries';
   static const orders = 'orders';
   static const shipments = 'shipments';

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_huber_store.dart';
+import '../../core/services/local_purchase_offer_store.dart';
+import '../../models/purchase_offer.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/order.dart';
@@ -48,6 +50,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     setState(() => _loadingPurchases = true);
     try {
       final orders = await ref.read(orderRepositoryProvider).buyerOrders();
+      try {
+        await ref.read(catalogRepositoryProvider).listPurchaseOffers();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _purchases = orders;
@@ -112,7 +117,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
     final purchases = _purchases.where((o) => !o.isAuctionWin).toList();
     final bids = _wonBidsForUser(user, streams, _purchases);
-    final offers = _offersForUser(user, purchases);
+    final offers = LocalPurchaseOfferStore.forPurchases(purchases);
 
     final tabBar = TabBar(
       controller: _tabs,
@@ -177,7 +182,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                     context,
                     label: 'Offers',
                     value: '${offers.length}',
-                    icon: Icons.local_shipping_outlined,
+                    icon: Icons.local_offer_outlined,
                     onTap: () => _tabs.animateTo(2),
                   ),
                   _stat(
@@ -245,14 +250,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   List<Widget> _activitySlivers({
     required List<Order> purchases,
     required List<_BidRow> bids,
-    required List<_OfferRow> offers,
+    required List<PurchaseOffer> offers,
     required HubsomUser user,
   }) {
     switch (_tabs.index) {
       case 1:
         return _BidsTab.slivers(bids);
       case 2:
-        return _OffersTab.slivers(offers);
+        return _OffersTab.slivers(offers, purchases);
       case 3:
         return [
           _SavedSliver(user: user),
@@ -339,19 +344,6 @@ class _BidRow {
   final String? orderId;
 }
 
-class _OfferRow {
-  const _OfferRow({
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    this.feeGhs,
-  });
-
-  final String title;
-  final String subtitle;
-  final String status;
-  final double? feeGhs;
-}
 
 bool _userWonAuction(LiveAuction auction, HubsomUser user) {
   if (!auction.isSold) return false;
@@ -472,52 +464,6 @@ List<_BidRow> _wonBidsForUser(
   return list;
 }
 
-List<_OfferRow> _offersForUser(HubsomUser user, List<Order> purchases) {
-  final rows = <_OfferRow>[];
-  final purchaseIds = purchases.map((o) => o.id).toSet();
-  final shipments = LocalHuberStore.listShipments();
-  final offers = LocalHuberStore.listOffers();
-
-  for (final offer in offers) {
-    final shipment = LocalHuberStore.getShipment(offer.shipmentId);
-    final forBuyer = shipment != null &&
-        shipment.orderIds.any(purchaseIds.contains);
-    final forRider = user.isHuber &&
-        (offer.huberId == user.huberId || offer.huberId == user.id);
-    final forSeller = user.sellerId != null &&
-        shipment?.sellerId == user.sellerId;
-    if (!forBuyer && !forRider && !forSeller) continue;
-    rows.add(
-      _OfferRow(
-        title: forRider
-            ? 'Hail Rider offer · ${offer.sellerName}'
-            : 'Delivery offer · ${offer.huberName}',
-        subtitle: [
-          if (offer.pickupCity.isNotEmpty) 'Pickup ${offer.pickupCity}',
-          if (offer.dropoffCity.isNotEmpty) 'drop ${offer.dropoffCity}',
-        ].join(' · '),
-        status: offer.status,
-        feeGhs: offer.offeredFeeGhs,
-      ),
-    );
-  }
-
-  for (final shipment in shipments) {
-    final forBuyer = shipment.orderIds.any(purchaseIds.contains);
-    final forSeller =
-        user.sellerId != null && shipment.sellerId == user.sellerId;
-    if (!forBuyer && !forSeller) continue;
-    if (offers.any((o) => o.shipmentId == shipment.id)) continue;
-    rows.add(
-      _OfferRow(
-        title: 'Shipment ${shipment.id}',
-        subtitle: '${shipment.orderIds.length} order(s)',
-        status: shipment.status,
-      ),
-    );
-  }
-  return rows;
-}
 
 class _PurchasesTab {
   static List<Widget> slivers({
@@ -649,12 +595,15 @@ class _BidsTab {
 }
 
 class _OffersTab {
-  static List<Widget> slivers(List<_OfferRow> offers) {
+  static List<Widget> slivers(
+    List<PurchaseOffer> offers,
+    List<Order> purchases,
+  ) {
     if (offers.isEmpty) {
       return [
         const SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(child: Text('No delivery offers yet')),
+          child: Center(child: Text('No offers yet')),
         ),
       ];
     }
@@ -666,6 +615,7 @@ class _OffersTab {
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, i) {
             final offer = offers[i];
+            final reason = offer.reasonFor(purchases);
             return Card(
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -680,18 +630,36 @@ class _OffersTab {
                       const SizedBox(height: 4),
                       Text(offer.subtitle),
                     ],
-                    if (offer.feeGhs != null) ...[
+                    if (reason.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        formatGhs(offer.feeGhs!),
+                        reason,
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           color: HubsomColors.forest,
                         ),
                       ),
                     ],
+                    if (offer.discountPct > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '−${offer.discountPct}% for you',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    _ProgressTrack(status: offer.status),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton(
+                        onPressed: () {
+                          final href = offer.href.trim();
+                          if (href.startsWith('/')) {
+                            context.push(href);
+                          }
+                        },
+                        child: Text(offer.ctaLabel),
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -13,12 +13,14 @@ class AuthGate extends ConsumerWidget {
     required this.child,
     this.requireSeller = false,
     this.requireHuber = false,
+    this.requireAdmin = false,
     this.message = 'Sign in to continue',
   });
 
   final Widget child;
   final bool requireSeller;
   final bool requireHuber;
+  final bool requireAdmin;
   final String message;
 
   @override
@@ -68,6 +70,17 @@ class AuthGate extends ConsumerWidget {
             title: 'Seller access required',
             message:
                 'This area is for Hubsom sellers. Update your account role or open a store.',
+            primaryLabel: 'Account',
+            onPrimary: () => context.go('/account'),
+            secondaryLabel: 'Home',
+            onSecondary: () => context.go('/'),
+          );
+        }
+
+        if (requireAdmin && user.role != 'admin') {
+          return _LockedScaffold(
+            title: 'Admin access required',
+            message: 'Only Hubsom admin can send purchase offers.',
             primaryLabel: 'Account',
             onPrimary: () => context.go('/account'),
             secondaryLabel: 'Home',

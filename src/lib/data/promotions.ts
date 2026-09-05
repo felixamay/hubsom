@@ -19,7 +19,8 @@ function normalizePlacement(p: string): PromoPlacement | null {
     p === "landing" ||
     p === "marketplace" ||
     p === "category" ||
-    p === "product"
+    p === "product" ||
+    p === "offers"
   ) {
     return p;
   }
@@ -176,7 +177,7 @@ function validateInput(input: AdminPromotionInput) {
   );
   if (!placements.length) {
     throw new Error(
-      "Select at least one placement: landing, marketplace, category, or product",
+      "Select at least one placement: landing, marketplace, category, product, or offers",
     );
   }
 

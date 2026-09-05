@@ -34,6 +34,12 @@ export async function GET(request: Request) {
         label: "Product pages",
         description: "Optionally target specific product ids",
       },
+      {
+        id: "offers",
+        label: "Dashboard offers",
+        description:
+          "Sent to users who purchased matching products or categories",
+      },
     ],
     categories: CATEGORIES.map((c) => ({
       slug: c.slug,

@@ -121,7 +121,7 @@ void main() {
     expect(find.text('Welcome back, Ama Buyer.'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Purchases (1)'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Bids (0)'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Offers (1)'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Offers (0)'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Saved (0)'), findsOneWidget);
     expect(find.text('Kente tote'), findsOneWidget);
     expect(find.text('Paid'), findsOneWidget);
@@ -133,9 +133,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No lots won yet'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(Tab, 'Offers (1)'));
+    await tester.tap(find.widgetWithText(Tab, 'Offers (0)'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Shipment'), findsOneWidget);
+    expect(find.text('No offers yet'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(Tab, 'Saved (0)'));
     await tester.pumpAndSettle();
@@ -192,7 +192,7 @@ void main() {
 
     await tester.tap(find.text('Offers'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Shipment'), findsWidgets);
+    expect(find.text('No offers yet'), findsOneWidget);
 
     await tester.tap(find.text('Purchases'));
     await tester.pumpAndSettle();
