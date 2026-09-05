@@ -78,15 +78,15 @@ class LiveAuction extends Equatable {
   }
 
   bool get isOpen {
-    if (status != 'open') return false;
+    if (status != 'open' || isSold) return false;
     final left = timeLeft;
-    return left == null || left > Duration.zero;
+    return left != null && left > Duration.zero;
   }
 
   bool get isSold => status == 'sold' || orderId != null;
 
-  /// Closed without a sale — product stays on Auctions (not history).
-  bool get remainsOnAuctions => !isSold;
+  /// Only a clock that is still running belongs on Auctions.
+  bool get remainsOnAuctions => isOpen;
 
   bool get needsFinalize =>
       orderId == null &&
@@ -263,7 +263,7 @@ class LiveStream extends Equatable {
   bool get isLive =>
       status == 'live' && (endedAt == null || endedAt!.trim().isEmpty);
 
-  /// Open bidding on a show that is actually live — not ended or leftover lots.
+  /// Open bidding on a show that is actually live — closed / unsold lots stay off Auctions.
   bool get isLiveAuction => isLive && auction != null && auction!.isOpen;
 
   factory LiveStream.fromJson(Map<String, dynamic> json) => LiveStream(

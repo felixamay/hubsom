@@ -328,6 +328,10 @@ class LocalCommerceStore {
     return list;
   }
 
+  /// Auctions page / Home strip — live open lots only.
+  static List<LiveStream> listLiveAuctions() =>
+      listStreams().where((s) => s.isLiveAuction).toList();
+
   static LiveStream? getStream(String id) {
     for (final s in listStreams()) {
       if (s.id == id) return s;
