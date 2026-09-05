@@ -373,7 +373,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => AuthGate(
           requireHuber: true,
-          message: 'Sign in with your Huber driver account',
+          message: 'Sign in with your Hail Rider account',
           child: HuberShell(navigationShell: navigationShell),
         ),
         branches: [

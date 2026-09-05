@@ -126,7 +126,7 @@ class DashboardPage extends ConsumerWidget {
             contentPadding: EdgeInsets.zero,
             leading:
                 const Icon(Icons.two_wheeler, color: HubsomColors.huberNavy),
-            title: const Text('Huber driver hub'),
+            title: const Text('Hail Rider hub'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.go('/huber'),
           ),
