@@ -306,6 +306,17 @@ void main() {
     final endedShow = LocalCommerceStore.getStream(stream.id)!;
     expect(endedShow.auction?.status, 'closed');
     expect(endedShow.auction?.remainsOnAuctions, isTrue);
+    expect(endedShow.isLiveAuction, isFalse);
     expect(LocalCommerceStore.getProduct(open.productId), isNotNull);
+  });
+
+  test('isLiveAuction is only true for an open auction on a live show', () async {
+    final stream = await goLive();
+    expect(stream.isLive, isTrue);
+    expect(stream.auction?.isOpen, isTrue);
+    expect(stream.isLiveAuction, isTrue);
+
+    await LocalCommerceStore.updateStream(stream.id, end: true);
+    expect(LocalCommerceStore.getStream(stream.id)!.isLiveAuction, isFalse);
   });
 }

@@ -11,7 +11,7 @@ import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 
-/// Browse live auctions and closed-but-unsold lots (products stay here, not in history).
+/// Browse auctions that are live right now — ended lots are not listed.
 class AuctionsPage extends ConsumerStatefulWidget {
   const AuctionsPage({super.key});
 
@@ -47,25 +47,13 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
   Widget build(BuildContext context) {
     final streamsAsync = ref.watch(streamsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Auctions')),
+      appBar: AppBar(title: const Text('Live auctions')),
       body: streamsAsync.when(
         data: (raw) {
-          final streams = raw.cast<LiveStream>();
-          final withAuction = streams
-              .where((s) => s.auction != null && s.auction!.remainsOnAuctions)
-              .toList();
+          final live = raw.cast<LiveStream>().where((s) => s.isLiveAuction).toList();
+          unawaited(_loadProducts(live));
 
-          final live = withAuction
-              .where((s) => s.auction!.isOpen || s.isLive)
-              .toList();
-          final available = withAuction
-              .where((s) => !s.auction!.isOpen && !s.isLive)
-              .toList();
-
-          // Sold auctions are excluded — they become orders, not auction history.
-          unawaited(_loadProducts([...live, ...available]));
-
-          if (live.isEmpty && available.isEmpty) {
+          if (live.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -75,14 +63,14 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
                     const Icon(Icons.gavel, size: 48, color: HubsomColors.forest),
                     const SizedBox(height: 12),
                     Text(
-                      'No auctions yet',
+                      'No live auctions right now',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'When a live auction closes without a sale, the product stays here so shoppers can still find it.',
+                      'When a seller goes live with bidding, the auction shows here.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -105,50 +93,24 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
               children: [
-                if (live.isNotEmpty) ...[
-                  Text(
-                    'Live bidding',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                Text(
+                  'Live bidding',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Open now — join the show to place a bid.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 10),
+                for (final s in live)
+                  _AuctionTile(
+                    stream: s,
+                    product: _products[s.auction!.productId],
+                    onTap: () => context.push('/live/${s.id}'),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Open now — join the show to place a bid.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final s in live)
-                    _AuctionTile(
-                      stream: s,
-                      product: _products[s.auction!.productId],
-                      live: true,
-                      onTap: () => context.push('/live/${s.id}'),
-                    ),
-                  const SizedBox(height: 22),
-                ],
-                if (available.isNotEmpty) ...[
-                  Text(
-                    'Available on Auctions',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Auction closed without a sale — products stay listed here, not in auction history.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final s in available)
-                    _AuctionTile(
-                      stream: s,
-                      product: _products[s.auction!.productId],
-                      live: false,
-                      onTap: () =>
-                          context.push('/products/${s.auction!.productId}'),
-                    ),
-                ],
               ],
             ),
           );
@@ -164,13 +126,11 @@ class _AuctionTile extends StatelessWidget {
   const _AuctionTile({
     required this.stream,
     required this.product,
-    required this.live,
     required this.onTap,
   });
 
   final LiveStream stream;
   final Product? product;
-  final bool live;
   final VoidCallback onTap;
 
   @override
@@ -179,11 +139,6 @@ class _AuctionTile extends StatelessWidget {
     final image =
         product?.images.isNotEmpty == true ? product!.images.first : null;
     final title = product?.name ?? stream.title;
-    final subtitle = live
-        ? 'Current ${formatGhs(a.currentBidGhs)} · ${a.bidderCount} bidders'
-        : a.status == 'reserve_not_met'
-            ? 'Ask not met · last ${formatGhs(a.currentBidGhs)} · view product'
-            : 'Closed · last ${formatGhs(a.currentBidGhs)} · still available';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -230,17 +185,13 @@ class _AuctionTile extends StatelessWidget {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: live
-                                ? HubsomColors.live.withValues(alpha: 0.15)
-                                : HubsomColors.mint,
+                            color: HubsomColors.live.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(99),
                           ),
-                          child: Text(
-                            live ? 'LIVE AUCTION' : 'AVAILABLE',
+                          child: const Text(
+                            'LIVE AUCTION',
                             style: TextStyle(
-                              color: live
-                                  ? HubsomColors.live
-                                  : HubsomColors.forest,
+                              color: HubsomColors.live,
                               fontWeight: FontWeight.w800,
                               fontSize: 10,
                             ),
@@ -255,7 +206,7 @@ class _AuctionTile extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          subtitle,
+                          'Current ${formatGhs(a.currentBidGhs)} · ${a.bidderCount} bidders',
                           style: const TextStyle(
                             color: Colors.black54,
                             fontSize: 13,
@@ -264,10 +215,7 @@ class _AuctionTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(
-                    live ? Icons.videocam : Icons.chevron_right,
-                    color: HubsomColors.forest,
-                  ),
+                  const Icon(Icons.videocam, color: HubsomColors.forest),
                 ],
               ),
             ),

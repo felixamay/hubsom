@@ -263,6 +263,9 @@ class LiveStream extends Equatable {
   bool get isLive =>
       status == 'live' && (endedAt == null || endedAt!.trim().isEmpty);
 
+  /// Open bidding on a show that is actually live — not ended or leftover lots.
+  bool get isLiveAuction => isLive && auction != null && auction!.isOpen;
+
   factory LiveStream.fromJson(Map<String, dynamic> json) => LiveStream(
         id: json['id'] as String,
         title: json['title'] as String? ?? '',
