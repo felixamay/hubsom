@@ -17,6 +17,7 @@ import '../services/agora_service.dart';
 import '../services/api_client.dart';
 import '../services/cloud_store.dart';
 import '../services/local_store.dart';
+import '../services/location_service.dart';
 import '../services/maps_service.dart';
 import '../services/notification_service.dart';
 import '../services/payment_service.dart';
@@ -79,6 +80,10 @@ final agoraServiceProvider = Provider<AgoraService>(
 );
 
 final mapsServiceProvider = Provider<MapsService>((ref) => MapsService());
+
+final locationServiceProvider = Provider<LocationService>(
+  (ref) => LocationService(),
+);
 
 final paymentServiceProvider = Provider<PaymentService>(
   (ref) => PaymentService(ref.watch(apiClientProvider)),

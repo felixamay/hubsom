@@ -15,7 +15,12 @@ class SettingsPage extends ConsumerWidget {
           ListTile(title: const Text('API base URL'), subtitle: Text(AppConfig.apiBaseUrl)),
           ListTile(title: const Text('Firebase'), subtitle: Text(AppConfig.firebaseEnabled ? 'Enabled' : 'Optional / disabled')),
           ListTile(title: const Text('Agora'), subtitle: Text(AppConfig.agoraAppId.isEmpty ? 'Not configured' : 'Configured')),
-          ListTile(title: const Text('Maps'), subtitle: const Text('flutter_map · OpenStreetMap · ORS / OSRM / GraphHopper')),
+          const ListTile(
+            title: Text('Maps'),
+            subtitle: Text(
+              'flutter_map · OpenStreetMap · rider GPS navigation to seller store and buyer',
+            ),
+          ),
           SwitchListTile(
             title: const Text('Push notifications'),
             value: true,

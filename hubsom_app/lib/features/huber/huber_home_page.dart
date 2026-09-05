@@ -53,8 +53,25 @@ class _HuberHomePageState extends ConsumerState<HuberHomePage> {
       _error = null;
     });
     try {
-      final updated =
-          await ref.read(huberRepositoryProvider).setOnline(profile, next);
+      double? lat;
+      double? lng;
+      if (next) {
+        try {
+          final pin = await ref.read(locationServiceProvider).current();
+          lat = pin.latitude;
+          lng = pin.longitude;
+        } catch (e) {
+          if (mounted) {
+            setState(() => _error = '$e');
+          }
+        }
+      }
+      final updated = await ref.read(huberRepositoryProvider).setOnline(
+            profile,
+            next,
+            latitude: lat,
+            longitude: lng,
+          );
       if (!mounted) return;
       setState(() => _profile = updated);
       if (next) context.go('/huber/hub');

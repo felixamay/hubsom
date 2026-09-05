@@ -22,8 +22,18 @@ class HuberRepository {
   List<HuberDelivery> completed(HuberProfile driver) =>
       LocalHuberStore.completedFor(driver.id);
 
-  Future<HuberProfile> setOnline(HuberProfile driver, bool online) =>
-      LocalHuberStore.setOnline(driver.id, online);
+  Future<HuberProfile> setOnline(
+    HuberProfile driver,
+    bool online, {
+    double? latitude,
+    double? longitude,
+  }) =>
+      LocalHuberStore.setOnline(
+        driver.id,
+        online,
+        latitude: latitude,
+        longitude: longitude,
+      );
 
   Future<HuberProfile> verifyIdentity({
     required HuberProfile driver,
@@ -34,6 +44,19 @@ class HuberRepository {
         huberId: driver.id,
         idType: idType,
         idNumber: idNumber,
+      );
+
+  Future<HuberProfile> updateLocation(
+    HuberProfile driver, {
+    required double latitude,
+    required double longitude,
+  }) =>
+      LocalHuberStore.upsertProfile(
+        driver.copyWith(
+          latitude: latitude,
+          longitude: longitude,
+          updatedAt: DateTime.now().toUtc().toIso8601String(),
+        ),
       );
 
   Future<HuberDelivery> acceptOffer(String offerId, HuberProfile driver) =>

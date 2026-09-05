@@ -6,6 +6,8 @@ import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/payment_service.dart';
 import '../../core/utils/money.dart';
+import '../../models/user.dart';
+import '../../widgets/gps_pin_card.dart';
 
 class CheckoutPage extends ConsumerStatefulWidget {
   const CheckoutPage({super.key});
@@ -23,6 +25,9 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   final _selected = <String>{'mtn-momo'};
   bool _busy = false;
   String? _result;
+  GeoLocation? _gps;
+  bool _gpsBusy = false;
+  String? _gpsError;
 
   @override
   void dispose() {
@@ -34,9 +39,31 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     super.dispose();
   }
 
+  Future<void> _useGps() async {
+    setState(() {
+      _gpsBusy = true;
+      _gpsError = null;
+    });
+    try {
+      final pin = await ref.read(locationServiceProvider).current();
+      if (!mounted) return;
+      setState(() => _gps = pin);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _gpsError = '$e');
+    } finally {
+      if (mounted) setState(() => _gpsBusy = false);
+    }
+  }
+
   Future<void> _placeOrder() async {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return;
+    if (_gps == null) {
+      setState(() => _result = 'Allow your location so riders can navigate to you.');
+      await _useGps();
+      if (_gps == null) return;
+    }
     setState(() { _busy = true; _result = null; });
     try {
       final res = await ref.read(paymentServiceProvider).checkout(
@@ -47,6 +74,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           'line1': _line1.text.trim(),
           'city': _city.text.trim(),
           'region': _region.text.trim(),
+          'location': _gps!.toJson(),
         },
         paymentMethods: _selected.toList(),
       );
@@ -81,6 +109,16 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: _region, decoration: const InputDecoration(labelText: 'Region'))),
           ]),
+          const SizedBox(height: 12),
+          GpsPinCard(
+            title: 'Delivery GPS pin',
+            subtitle:
+                'Allow location so Huber riders can navigate to your door on OpenStreetMap.',
+            pin: _gps,
+            busy: _gpsBusy,
+            error: _gpsError,
+            onUseLocation: _useGps,
+          ),
           const SizedBox(height: 20),
           Text('Payment', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),

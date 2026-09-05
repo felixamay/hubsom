@@ -74,6 +74,8 @@ class SellerRepository {
       address: address,
       city: city,
       region: region,
+      latitude: (body['latitude'] as num?)?.toDouble(),
+      longitude: (body['longitude'] as num?)?.toDouble(),
     );
     final updated = Seller(
       id: current.id,

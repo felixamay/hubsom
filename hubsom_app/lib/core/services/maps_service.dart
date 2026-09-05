@@ -51,4 +51,53 @@ class MapsService {
         .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
         .toList();
   }
+
+  /// Road route with a straight-line fallback if every router is unreachable.
+  Future<List<LatLng>> routeBetween(LatLng from, LatLng to) async {
+    try {
+      final pts = await routeOpenRouteService(from, to);
+      if (pts.length >= 2) return pts;
+    } catch (_) {}
+    try {
+      final pts = await routeOsrm(from, to);
+      if (pts.length >= 2) return pts;
+    } catch (_) {}
+    return [from, to];
+  }
+
+  /// Seller store first, then the buyer after pickup.
+  static LatLng navigationTarget({
+    required String status,
+    required LatLng pickup,
+    required LatLng dropoff,
+  }) {
+    switch (status) {
+      case 'picked_up':
+      case 'en_route_dropoff':
+      case 'arrived_dropoff':
+      case 'delivered':
+        return dropoff;
+      default:
+        return pickup;
+    }
+  }
+
+  static bool navigatingToPickup(String status) {
+    switch (status) {
+      case 'picked_up':
+      case 'en_route_dropoff':
+      case 'arrived_dropoff':
+      case 'delivered':
+        return false;
+      default:
+        return true;
+    }
+  }
+
+  static Uri osmDirectionsUri(LatLng from, LatLng to) {
+    return Uri.parse(
+      'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car'
+      '&route=${from.latitude},${from.longitude};${to.latitude},${to.longitude}',
+    );
+  }
 }

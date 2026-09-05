@@ -128,7 +128,19 @@ class _HuberHubNowPageState extends ConsumerState<HuberHubNowPage> {
                   context.push('/huber/verify');
                   return;
                 }
-                await ref.read(huberRepositoryProvider).setOnline(_profile!, true);
+                double? lat;
+                double? lng;
+                try {
+                  final pin = await ref.read(locationServiceProvider).current();
+                  lat = pin.latitude;
+                  lng = pin.longitude;
+                } catch (_) {}
+                await ref.read(huberRepositoryProvider).setOnline(
+                      _profile!,
+                      true,
+                      latitude: lat,
+                      longitude: lng,
+                    );
                 await _reload();
               },
               child: const Text('Hub Now', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),

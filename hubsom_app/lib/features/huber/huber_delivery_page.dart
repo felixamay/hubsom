@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/location_service.dart';
 import '../../core/services/maps_service.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/huber.dart';
+import '../../widgets/osm_nav_map.dart';
 
 class HuberDeliveryPage extends ConsumerStatefulWidget {
   const HuberDeliveryPage({super.key, required this.deliveryId});
@@ -25,17 +26,68 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
   final _pod = TextEditingController();
   bool _busy = false;
   String? _error;
+  LatLng? _rider;
+  List<LatLng> _route = const [];
+  bool _locBusy = false;
 
   @override
   void initState() {
     super.initState();
     _delivery = ref.read(huberRepositoryProvider).deliveryById(widget.deliveryId);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNavigation());
   }
 
   @override
   void dispose() {
     _pod.dispose();
     super.dispose();
+  }
+
+  LatLng get _pickup => LatLng(
+        _delivery?.pickupLatitude ?? MapsService.defaultCenter.latitude,
+        _delivery?.pickupLongitude ?? MapsService.defaultCenter.longitude,
+      );
+
+  LatLng get _dropoff => LatLng(
+        _delivery?.dropoffLatitude ?? _pickup.latitude + 0.02,
+        _delivery?.dropoffLongitude ?? _pickup.longitude + 0.02,
+      );
+
+  Future<void> _loadNavigation() async {
+    setState(() => _locBusy = true);
+    try {
+      final pin = await ref.read(locationServiceProvider).current();
+      _rider = pin.latLng;
+      final user = ref.read(authStateProvider).valueOrNull;
+      if (user != null) {
+        final huber = ref.read(huberRepositoryProvider).profileFor(user);
+        if (huber != null) {
+          await ref.read(huberRepositoryProvider).updateLocation(
+                huber,
+                latitude: pin.latitude,
+                longitude: pin.longitude,
+              );
+        }
+      }
+    } catch (e) {
+      _error = '$e';
+    }
+    await _refreshRoute();
+    if (mounted) setState(() => _locBusy = false);
+  }
+
+  Future<void> _refreshRoute() async {
+    final d = _delivery;
+    if (d == null) return;
+    final toPickup = MapsService.navigatingToPickup(d.status);
+    final from = _rider ?? (toPickup ? _pickup : _dropoff);
+    final to = toPickup ? _pickup : _dropoff;
+    try {
+      final pts = await ref.read(mapsServiceProvider).routeBetween(from, to);
+      if (mounted) setState(() => _route = pts);
+    } catch (_) {
+      if (mounted) setState(() => _route = [from, to]);
+    }
   }
 
   Future<void> _advance() async {
@@ -48,6 +100,7 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
           await ref.read(huberRepositoryProvider).advanceDelivery(widget.deliveryId);
       if (!mounted) return;
       setState(() => _delivery = next);
+      await _refreshRoute();
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Bad state: ', ''));
     } finally {
@@ -90,14 +143,7 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
       );
     }
 
-    final pickup = LatLng(
-      d.pickupLatitude ?? MapsService.defaultCenter.latitude,
-      d.pickupLongitude ?? MapsService.defaultCenter.longitude,
-    );
-    final dropoff = LatLng(
-      d.dropoffLatitude ?? pickup.latitude + 0.02,
-      d.dropoffLongitude ?? pickup.longitude + 0.02,
-    );
+    final toPickup = MapsService.navigatingToPickup(d.status);
     final showPod = d.status == 'arrived_dropoff';
 
     return Scaffold(
@@ -118,39 +164,39 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
           Text('Customer: ${d.customerName}'),
           Text('Drop-off: ${d.dropoffAddress}'),
           Text(formatGhs(d.feeGhs), style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(
+            toPickup
+                ? 'Navigate to the seller store first.'
+                : 'Package on board — navigate to the buyer.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 200,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: FlutterMap(
-                options: MapOptions(initialCenter: pickup, initialZoom: 12),
-                children: [
-                  TileLayer(
-                    urlTemplate: MapsService.osmTileUrl,
-                    userAgentPackageName: 'com.hubsom.app',
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: pickup,
-                        width: 36,
-                        height: 36,
-                        child: const Icon(Icons.store, color: HubsomColors.forest),
-                      ),
-                      Marker(
-                        point: dropoff,
-                        width: 36,
-                        height: 36,
-                        child: const Icon(Icons.location_pin, color: HubsomColors.live, size: 32),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+          OsmNavMap(
+            pickup: _pickup,
+            dropoff: _dropoff,
+            rider: _rider,
+            route: _route,
+            navigateToPickup: toPickup,
+            pickupLabel: d.pickupAddress,
+            dropoffLabel: d.dropoffAddress,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _locBusy ? null : _loadNavigation,
+              icon: _locBusy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location),
+              label: Text(_rider == null ? 'Share my GPS' : 'Refresh my GPS'),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           if (d.status != 'delivered' && !showPod)
             FilledButton(
               onPressed: _busy ? null : _advance,

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/ghana_places.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/maps_service.dart';
-import '../../core/theme/hubsom_colors.dart';
+import '../../widgets/osm_nav_map.dart';
 
-/// Delivery tracking / Locate buyer pin — OpenStreetMap (no Google Maps).
+/// Delivery tracking — OpenStreetMap route from seller store to buyer GPS.
 class DeliveryMapPage extends ConsumerStatefulWidget {
   const DeliveryMapPage({super.key, required this.shipmentId});
   final String shipmentId;
@@ -17,9 +18,12 @@ class DeliveryMapPage extends ConsumerStatefulWidget {
 }
 
 class _DeliveryMapPageState extends ConsumerState<DeliveryMapPage> {
+  LatLng pickup = MapsService.defaultCenter;
   LatLng destination = MapsService.defaultCenter;
   List<LatLng> route = [];
   String status = 'loading';
+  String pickupLabel = 'Seller store';
+  String dropoffLabel = 'Buyer';
 
   @override
   void initState() {
@@ -34,10 +38,34 @@ class _DeliveryMapPageState extends ConsumerState<DeliveryMapPage> {
       final loc = match?.destination.location;
       if (loc != null) {
         destination = LatLng(loc.latitude, loc.longitude);
+      } else if (match != null) {
+        final pin = GhanaPlaces.resolve(
+          address: match.destination.line1,
+          city: match.destination.city,
+          region: match.destination.region,
+        );
+        destination = pin;
       }
+      dropoffLabel = match?.destination.line1 ?? 'Buyer';
+
+      final seller = match == null
+          ? null
+          : LocalCommerceStore.getSeller(match.sellerId);
+      if (seller != null) {
+        pickup = GhanaPlaces.resolve(
+          address: seller.address,
+          city: seller.city,
+          region: seller.region,
+          latitude: seller.latitude,
+          longitude: seller.longitude,
+        );
+        pickupLabel = seller.displayLocation.isNotEmpty
+            ? seller.displayLocation
+            : 'Seller store';
+      }
+
       final maps = ref.read(mapsServiceProvider);
-      final from = MapsService.defaultCenter;
-      route = await maps.routeOpenRouteService(from, destination);
+      route = await maps.routeBetween(pickup, destination);
       if (mounted) setState(() => status = match?.status ?? 'ready');
     } catch (_) {
       if (mounted) setState(() => status = 'map');
@@ -52,36 +80,23 @@ class _DeliveryMapPageState extends ConsumerState<DeliveryMapPage> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Center(child: Text(status, style: const TextStyle(fontWeight: FontWeight.w700))),
+            child: Center(
+              child: Text(status, style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
           ),
         ],
       ),
-      body: FlutterMap(
-        options: MapOptions(initialCenter: destination, initialZoom: 13),
-        children: [
-          TileLayer(
-            urlTemplate: MapsService.osmTileUrl,
-            userAgentPackageName: 'com.hubsom.app',
-          ),
-          if (route.isNotEmpty)
-            PolylineLayer(polylines: [
-              Polyline(points: route, color: HubsomColors.blue, strokeWidth: 4),
-            ]),
-          MarkerLayer(markers: [
-            Marker(
-              point: MapsService.defaultCenter,
-              width: 40,
-              height: 40,
-              child: const Icon(Icons.store, color: HubsomColors.forest),
-            ),
-            Marker(
-              point: destination,
-              width: 40,
-              height: 40,
-              child: const Icon(Icons.location_pin, color: HubsomColors.live, size: 36),
-            ),
-          ]),
-        ],
+      body: Padding(
+        padding: const EdgeInsets.all(12),
+        child: OsmNavMap(
+          pickup: pickup,
+          dropoff: destination,
+          route: route,
+          navigateToPickup: false,
+          height: MediaQuery.sizeOf(context).height - 140,
+          pickupLabel: pickupLabel,
+          dropoffLabel: dropoffLabel,
+        ),
       ),
     );
   }

@@ -122,7 +122,12 @@ class LocalHuberStore {
     return upsertProfile(created);
   }
 
-  static Future<HuberProfile> setOnline(String huberId, bool online) async {
+  static Future<HuberProfile> setOnline(
+    String huberId,
+    bool online, {
+    double? latitude,
+    double? longitude,
+  }) async {
     final profile = profileById(huberId);
     if (profile == null) {
       throw StateError('Huber profile not found');
@@ -133,6 +138,8 @@ class LocalHuberStore {
     return upsertProfile(
       profile.copyWith(
         availability: online ? 'available' : 'offline',
+        latitude: latitude,
+        longitude: longitude,
         updatedAt: DateTime.now().toUtc().toIso8601String(),
       ),
     );
@@ -285,8 +292,16 @@ class LocalHuberStore {
             source: 'map-pin',
           ),
         );
-    final dest = shipping.location == null
-        ? OrderShipping(
+    final destPin = GhanaPlaces.resolve(
+      address: shipping.line1,
+      city: shipping.city,
+      region: shipping.region,
+      latitude: shipping.location?.latitude,
+      longitude: shipping.location?.longitude,
+    );
+    final dest = shipping.location != null
+        ? shipping
+        : OrderShipping(
             recipientName: shipping.recipientName,
             phone: shipping.phone,
             line1: shipping.line1,
@@ -295,13 +310,12 @@ class LocalHuberStore {
             region: shipping.region,
             notes: shipping.notes,
             label: shipping.label,
-            location: const GeoLocation(
-              latitude: 5.6037,
-              longitude: -0.187,
-              source: 'map-pin',
+            location: GeoLocation(
+              latitude: destPin.latitude,
+              longitude: destPin.longitude,
+              source: 'place-fallback',
             ),
-          )
-        : shipping;
+          );
     final now = DateTime.now().toUtc().toIso8601String();
     final created = await saveShipment(
       Shipment(
@@ -402,6 +416,8 @@ class LocalHuberStore {
       final riderPoint = GhanaPlaces.resolve(
         city: rider.city,
         region: rider.region,
+        latitude: rider.latitude,
+        longitude: rider.longitude,
       );
       final km = GhanaPlaces.distanceKm(riderPoint, pickup);
       offers.add(
