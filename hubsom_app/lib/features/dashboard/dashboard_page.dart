@@ -110,8 +110,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       );
     }
 
-    final bids = _bidsForUser(user, streams);
-    final offers = _offersForUser(user, _purchases);
+    final purchases = _purchases.where((o) => !o.isAuctionWin).toList();
+    final bids = _wonBidsForUser(user, streams, _purchases);
+    final offers = _offersForUser(user, purchases);
 
     final tabBar = TabBar(
       controller: _tabs,
@@ -120,7 +121,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       labelColor: HubsomColors.forest,
       indicatorColor: HubsomColors.forest,
       tabs: [
-        Tab(text: 'Purchases (${_purchases.length})'),
+        Tab(text: 'Purchases (${purchases.length})'),
         Tab(text: 'Bids (${bids.length})'),
         Tab(text: 'Offers (${offers.length})'),
         Tab(text: 'Saved (${user.savedProductIds.length})'),
@@ -161,7 +162,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   _stat(
                     context,
                     label: 'Purchases',
-                    value: '${_purchases.length}',
+                    value: '${purchases.length}',
                     icon: Icons.receipt_long_outlined,
                     onTap: () => _tabs.animateTo(0),
                   ),
@@ -231,6 +232,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             delegate: _PinnedTabBarDelegate(tabBar),
           ),
           ..._activitySlivers(
+            purchases: purchases,
             bids: bids,
             offers: offers,
             user: user,
@@ -241,6 +243,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   }
 
   List<Widget> _activitySlivers({
+    required List<Order> purchases,
     required List<_BidRow> bids,
     required List<_OfferRow> offers,
     required HubsomUser user,
@@ -257,7 +260,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       default:
         return _PurchasesTab.slivers(
           loading: _loadingPurchases,
-          orders: _purchases,
+          orders: purchases,
         );
     }
   }
@@ -325,7 +328,7 @@ class _BidRow {
     required this.productName,
     required this.amountGhs,
     required this.status,
-    required this.winning,
+    this.orderId,
   });
 
   final String streamId;
@@ -333,7 +336,7 @@ class _BidRow {
   final String productName;
   final double amountGhs;
   final String status;
-  final bool winning;
+  final String? orderId;
 }
 
 class _OfferRow {
@@ -350,41 +353,123 @@ class _OfferRow {
   final double? feeGhs;
 }
 
-List<_BidRow> _bidsForUser(HubsomUser user, List<LiveStream> streams) {
-  final rows = <_BidRow>[];
-  for (final stream in streams) {
-    final auction = stream.auction;
-    if (auction == null) continue;
-    final mine = auction.recentBids
-        .where(
-          (b) =>
-              b.bidderId == user.id ||
-              b.bidderName.toLowerCase() == user.name.toLowerCase(),
-        )
-        .toList();
-    if (mine.isEmpty) continue;
-    mine.sort((a, b) => b.at.compareTo(a.at));
-    final latest = mine.first;
-    final product = LocalCommerceStore.getProduct(auction.productId);
-    final winning = auction.highestBidderId == user.id ||
-        auction.highestBidder == user.name;
-    final status = auction.isSold
-        ? (winning ? 'Won' : 'Ended')
-        : auction.isOpen
-            ? (winning ? 'Winning' : 'Outbid')
-            : (winning ? 'Highest bid' : 'Ended');
-    rows.add(
+bool _userWonAuction(LiveAuction auction, HubsomUser user) {
+  if (!auction.isSold) return false;
+  if (auction.highestBidderId != null && auction.highestBidderId == user.id) {
+    return true;
+  }
+  final email = user.email.trim().toLowerCase();
+  if (email.isNotEmpty &&
+      auction.highestBidderEmail != null &&
+      auction.highestBidderEmail!.trim().toLowerCase() == email) {
+    return true;
+  }
+  if (auction.highestBidder != null &&
+      auction.highestBidder!.trim().toLowerCase() == user.name.trim().toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
+Order? _orderForWin({
+  required HubsomUser user,
+  required List<Order> orders,
+  LiveStream? stream,
+  LiveAuction? auction,
+}) {
+  final orderId = auction?.orderId;
+  if (orderId != null && orderId.isNotEmpty) {
+    final stored = LocalHuberStore.getOrder(orderId);
+    Order? fromList;
+    for (final o in orders) {
+      if (o.id == orderId) {
+        fromList = o;
+        break;
+      }
+    }
+    if (stored != null && fromList != null) {
+      return stored.preferFulfillment(fromList);
+    }
+    return stored ?? fromList;
+  }
+  if (stream != null) {
+    for (final o in orders) {
+      if (o.streamId == stream.id && o.isAuctionWin && o.isBoughtBy(user)) {
+        return o;
+      }
+    }
+  }
+  if (auction != null) {
+    final fallback = LocalHuberStore.getOrder('ord_auc_${auction.id}');
+    if (fallback != null && fallback.isBoughtBy(user)) return fallback;
+  }
+  return null;
+}
+
+List<_BidRow> _wonBidsForUser(
+  HubsomUser user,
+  List<LiveStream> streams,
+  List<Order> buyerOrders,
+) {
+  final rows = <String, _BidRow>{};
+
+  void addRow(_BidRow row) {
+    final key = row.orderId ?? '${row.streamId}:${row.productName}';
+    rows[key] = row;
+  }
+
+  for (final order in buyerOrders.where((o) => o.isAuctionWin)) {
+    final live = LocalHuberStore.getOrder(order.id)?.preferFulfillment(order) ??
+        order;
+    final stream = live.streamId == null
+        ? null
+        : LocalCommerceStore.getStream(live.streamId!);
+    final name = live.lines.isEmpty
+        ? 'Auction win'
+        : live.lines.map((l) => l.name).join(', ');
+    addRow(
       _BidRow(
-        streamId: stream.id,
-        title: stream.title,
-        productName: product?.name ?? 'Auction lot',
-        amountGhs: latest.amountGhs,
-        status: status,
-        winning: winning,
+        streamId: live.streamId ?? '',
+        title: stream?.title ?? 'Live auction',
+        productName: name,
+        amountGhs: live.subtotalGhs,
+        status: live.status,
+        orderId: live.id,
       ),
     );
   }
-  return rows;
+
+  final seenStreams = {
+    for (final s in streams) s.id: s,
+    for (final s in LocalCommerceStore.listStreams()) s.id: s,
+  };
+  for (final stream in seenStreams.values) {
+    final auction = stream.auction;
+    if (auction == null || !_userWonAuction(auction, user)) continue;
+    final order = _orderForWin(
+      user: user,
+      orders: buyerOrders,
+      stream: stream,
+      auction: auction,
+    );
+    final product = LocalCommerceStore.getProduct(auction.productId);
+    addRow(
+      _BidRow(
+        streamId: stream.id,
+        title: stream.title,
+        productName: order?.lines.isNotEmpty == true
+            ? order!.lines.map((l) => l.name).join(', ')
+            : (product?.name ?? 'Auction lot'),
+        amountGhs: order?.subtotalGhs ?? auction.currentBidGhs,
+        status: order?.status ?? 'paid',
+        orderId: order?.id ?? auction.orderId,
+      ),
+    );
+  }
+
+  final list = rows.values.toList();
+  list.sort((a, b) => b.amountGhs.compareTo(a.amountGhs));
+  return list;
 }
 
 List<_OfferRow> _offersForUser(HubsomUser user, List<Order> purchases) {
@@ -506,7 +591,7 @@ class _BidsTab {
       return [
         const SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(child: Text('No bids yet')),
+          child: Center(child: Text('No lots won yet')),
         ),
       ];
     }
@@ -519,18 +604,41 @@ class _BidsTab {
           itemBuilder: (context, i) {
             final bid = bids[i];
             return Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.gavel,
-                  color: bid.winning ? HubsomColors.gold : HubsomColors.forest,
+              child: InkWell(
+                onTap: bid.streamId.isEmpty
+                    ? null
+                    : () => context.push('/live/${bid.streamId}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bid.productName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${formatGhs(bid.amountGhs)} · Won · ${_statusLabel(bid.status)}',
+                        style: const TextStyle(
+                          color: HubsomColors.forest,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (bid.title.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          bid.title,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      _ProgressTrack(status: bid.status),
+                    ],
+                  ),
                 ),
-                title: Text(bid.productName),
-                subtitle: Text('${bid.title} · ${bid.status}'),
-                trailing: Text(
-                  formatGhs(bid.amountGhs),
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                onTap: () => context.push('/live/${bid.streamId}'),
               ),
             );
           },
