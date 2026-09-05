@@ -84,8 +84,8 @@ class OrderShipping extends Equatable {
         phone: json['phone'] as String? ?? '',
         line1: json['line1'] as String? ?? '',
         line2: json['line2'] as String?,
-        city: json['city'] as String? ?? 'Accra',
-        region: json['region'] as String? ?? 'Greater Accra',
+        city: json['city'] as String? ?? '',
+        region: json['region'] as String? ?? '',
         notes: json['notes'] as String?,
         label: json['label'] as String?,
         location: json['location'] != null

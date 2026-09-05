@@ -31,6 +31,9 @@ class GeoLocation extends Equatable {
         if (capturedAt != null) 'capturedAt': capturedAt,
       };
 
+  String get coordinateLabel =>
+      '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
+
   @override
   List<Object?> get props => [latitude, longitude, accuracyM, source, capturedAt];
 }
@@ -63,8 +66,8 @@ class UserAddress extends Equatable {
         label: json['label'] as String? ?? 'Home',
         line1: json['line1'] as String? ?? '',
         line2: json['line2'] as String?,
-        city: json['city'] as String? ?? 'Accra',
-        region: json['region'] as String? ?? 'Greater Accra',
+        city: json['city'] as String? ?? '',
+        region: json['region'] as String? ?? '',
         phone: json['phone'] as String?,
         isDefault: json['isDefault'] as bool?,
         location: json['location'] != null
@@ -83,6 +86,37 @@ class UserAddress extends Equatable {
         if (isDefault != null) 'isDefault': isDefault,
         if (location != null) 'location': location!.toJson(),
       };
+
+  factory UserAddress.fromGps({
+    required String id,
+    required GeoLocation location,
+    String label = 'Home',
+    String? phone,
+    bool isDefault = true,
+    String? city,
+    String? region,
+  }) {
+    return UserAddress(
+      id: id,
+      label: label,
+      line1: location.coordinateLabel,
+      city: city ?? '',
+      region: region ?? '',
+      phone: phone,
+      isDefault: isDefault,
+      location: location,
+    );
+  }
+
+  String get displayLine {
+    if (location != null) return location!.coordinateLabel;
+    if (line1.trim().isNotEmpty) return line1.trim();
+    return [city, region].where((e) => e.trim().isNotEmpty).join(', ');
+  }
+
+  String get displayArea {
+    return [city, region].where((e) => e.trim().isNotEmpty).join(', ');
+  }
 
   @override
   List<Object?> get props => [id, label, line1, line2, city, region, phone, isDefault, location];
