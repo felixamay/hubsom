@@ -61,6 +61,7 @@ void main() {
     return LocalCommerceStore.createStream(
       user: seller,
       title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
     );

@@ -92,6 +92,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Saturday live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
     );
@@ -124,6 +125,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Kettle live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
     );

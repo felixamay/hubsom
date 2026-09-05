@@ -490,6 +490,7 @@ class LocalCommerceStore {
     required HubsomUser user,
     required String title,
     String description = '',
+    required String cover,
     required List<String> productIds,
     Map<String, int>? productQuantities,
     String? pinnedProductId,
@@ -561,6 +562,11 @@ class LocalCommerceStore {
       );
     }
 
+    final persistedCover = await _persistLiveCover(cover);
+    if (persistedCover.isEmpty) {
+      throw StateError('Add a thumbnail for Watch live and Live now');
+    }
+
     final id = 'live-${_uuid.v4().substring(0, 8)}';
     final now = DateTime.now().toUtc().toIso8601String();
     final stream = LiveStream(
@@ -570,11 +576,7 @@ class LocalCommerceStore {
       sellerId: seller.id,
       status: 'live',
       channelName: 'hubsom-$id',
-      cover: StorageMedia.persistable(
-        getProduct(pin)?.images.isNotEmpty == true
-            ? getProduct(pin)!.images.first
-            : '',
-      ),
+      cover: persistedCover,
       viewerCount: 1,
       peakViewers: 1,
       startedAt: now,
@@ -1687,6 +1689,17 @@ class LocalCommerceStore {
   }
 
   // --- helpers ---
+
+  /// Persist a seller-picked live thumbnail as a blob ref or short URL.
+  static Future<String> _persistLiveCover(String? raw) async {
+    final v = raw?.trim() ?? '';
+    if (v.isEmpty) return '';
+    if (StorageMedia.isInlineData(v)) {
+      final stored = await StorageMedia.externalizeTree(v);
+      return StorageMedia.persistable(stored is String ? stored : '');
+    }
+    return StorageMedia.persistable(v);
+  }
 
   static List<dynamic> _readList(String key) {
     final raw = LocalStore.getString(key);

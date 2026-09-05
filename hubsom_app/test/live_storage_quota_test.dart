@@ -60,10 +60,12 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Sunday live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
       auctionProductId: product.id,
     );
+    expect(stream.cover, 'https://cdn.hubsom.test/live-thumb.jpg');
     expect(StorageMedia.isInlineData(stream.cover), isFalse);
     expect(stream.cover.contains('data:image'), isFalse);
     expect(StorageMedia.isInlineData(stream.hosts.first.avatar), isFalse);
@@ -130,6 +132,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
     );
