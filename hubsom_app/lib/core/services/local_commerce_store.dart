@@ -13,6 +13,7 @@ import '../../models/user.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'storage_media.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
 class LocalCommerceStore {
@@ -397,8 +398,85 @@ class LocalCommerceStore {
     return null;
   }
 
+  static const _maxEndedStreams = 8;
+
+  static LiveStream _compactStream(LiveStream s) => LiveStream(
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        sellerId: s.sellerId,
+        status: s.status,
+        channelName: s.channelName,
+        cover: StorageMedia.persistable(s.cover),
+        viewerCount: s.viewerCount,
+        peakViewers: s.peakViewers,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        recordingUrl: s.recordingUrl,
+        productIds: s.productIds,
+        pinnedProductId: s.pinnedProductId,
+        hosts: [
+          for (final h in s.hosts)
+            StreamHost(
+              id: h.id,
+              name: h.name,
+              role: h.role,
+              avatar: StorageMedia.persistable(h.avatar),
+            ),
+        ],
+        auction: s.auction,
+        categories: s.categories,
+        latencyMs: s.latencyMs,
+        isMultiHost: s.isMultiHost,
+        replayAvailable: s.replayAvailable,
+      );
+
+  static List<LiveStream> _pruneStreams(List<LiveStream> streams) {
+    final live = streams.where((s) => s.isLive).toList();
+    final ended = streams.where((s) => !s.isLive).toList()
+      ..sort((a, b) => (b.startedAt ?? '').compareTo(a.startedAt ?? ''));
+    return [...live, ...ended.take(_maxEndedStreams)];
+  }
+
+  static Future<void> _trimStaleLiveExtras(Set<String> keepIds) async {
+    try {
+      final chat = _chatMap();
+      chat.removeWhere((id, _) => !keepIds.contains(id));
+      await _saveChat(chat);
+    } catch (_) {}
+    try {
+      final raw = LocalStore.getString(_reactionsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        map.removeWhere((id, _) => !keepIds.contains(id));
+        await LocalStore.setString(_reactionsKey, jsonEncode(map));
+      }
+    } catch (_) {}
+  }
+
   static Future<void> _saveStreams(List<LiveStream> streams) async {
-    await _writeList(_streamsKey, streams.map((s) => s.toJson()).toList());
+    var next = _pruneStreams(streams.map(_compactStream).toList());
+    Future<void> write() =>
+        _writeList(_streamsKey, next.map((s) => s.toJson()).toList());
+    try {
+      await write();
+      return;
+    } catch (e) {
+      if (!'$e'.toLowerCase().contains('quota')) rethrow;
+    }
+    next = next.where((s) => s.isLive).toList();
+    await _trimStaleLiveExtras({for (final s in next) s.id});
+    await LocalStore.evictVolatileCaches();
+    try {
+      await write();
+      return;
+    } catch (e) {
+      if (!'$e'.toLowerCase().contains('quota')) rethrow;
+    }
+    if (next.isNotEmpty) {
+      next = [next.first];
+      await write();
+    }
   }
 
   static Future<LiveStream> createStream({
@@ -461,9 +539,11 @@ class LocalCommerceStore {
       sellerId: seller.id,
       status: 'live',
       channelName: 'hubsom-$id',
-      cover: getProduct(pin)?.images.isNotEmpty == true
-          ? getProduct(pin)!.images.first
-          : '',
+      cover: StorageMedia.persistable(
+        getProduct(pin)?.images.isNotEmpty == true
+            ? getProduct(pin)!.images.first
+            : '',
+      ),
       viewerCount: 1,
       peakViewers: 1,
       startedAt: now,
@@ -474,7 +554,7 @@ class LocalCommerceStore {
           id: user.id,
           name: user.name,
           role: 'host',
-          avatar: user.image ?? '',
+          avatar: StorageMedia.persistable(user.image),
         ),
       ],
       auction: auction,

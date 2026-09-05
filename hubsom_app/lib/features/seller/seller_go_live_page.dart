@@ -113,7 +113,13 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
       ).toString();
       context.go(dest);
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (mounted) {
+        setState(() {
+          _error = '$e'
+              .replaceFirst('Bad state: ', '')
+              .replaceFirst('Exception: ', '');
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

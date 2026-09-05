@@ -63,8 +63,20 @@ class LocalStore {
     } catch (e) {
       final message = '$e'.toLowerCase();
       if (message.contains('quota')) {
+        final freed = await evictVolatileCaches();
+        if (freed > 0) {
+          try {
+            if (value == null || value.isEmpty) {
+              await _prefs.remove(dest);
+            } else {
+              await _prefs.setString(dest, value);
+            }
+            return;
+          } catch (_) {}
+        }
         throw StateError(
-          'Browser storage quota exceeded while saving "$key". Free space or use smaller photos.',
+          'Browser storage is full while saving "$key". '
+          'Ended older live shows were cleared — try Go live again.',
         );
       }
       rethrow;
@@ -88,6 +100,18 @@ class LocalStore {
     try {
       await _box?.put(key, value);
     } catch (_) {}
+  }
+
+  /// Drop cache_* keys so a live start can replace a bulky streams list.
+  static Future<int> evictVolatileCaches() async {
+    var n = 0;
+    final keys = _prefs.getKeys().toList();
+    for (final key in keys) {
+      if (!key.startsWith('${_prefix}cache_')) continue;
+      await _prefs.remove(key);
+      n++;
+    }
+    return n;
   }
 
   static Future<void> remove(String key) async {
