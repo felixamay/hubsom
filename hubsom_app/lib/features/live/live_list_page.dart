@@ -16,14 +16,16 @@ class LiveListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final streamsAsync = ref.watch(streamsProvider);
+    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(liveOnly ? 'Watch live' : 'Live shopping'),
         actions: [
-          TextButton(
-            onPressed: () => context.push('/seller/go-live'),
-            child: const Text('Go live'),
-          ),
+          if (signedIn)
+            TextButton(
+              onPressed: () => context.push('/seller/go-live'),
+              child: const Text('Go live'),
+            ),
         ],
       ),
       body: streamsAsync.when(
@@ -51,15 +53,19 @@ class LiveListPage extends ConsumerWidget {
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Check back soon, or go live from Seller hub.',
+                      Text(
+                        signedIn
+                            ? 'Check back soon, or go live from Seller hub.'
+                            : 'Check back soon for a live show.',
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () => context.push('/seller/go-live'),
-                        child: const Text('Go live'),
-                      ),
+                      if (signedIn) ...[
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => context.push('/seller/go-live'),
+                          child: const Text('Go live'),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -85,15 +91,19 @@ class LiveListPage extends ConsumerWidget {
                   children: [
                     const Text('No live shows yet'),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Sellers can start a show from Seller hub → Go live.',
+                    Text(
+                      signedIn
+                          ? 'Sellers can start a show from Seller hub → Go live.'
+                          : 'Check back soon for a live show.',
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => context.push('/seller/go-live'),
-                      child: const Text('Go live'),
-                    ),
+                    if (signedIn) ...[
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => context.push('/seller/go-live'),
+                        child: const Text('Go live'),
+                      ),
+                    ],
                   ],
                 ),
               ),
