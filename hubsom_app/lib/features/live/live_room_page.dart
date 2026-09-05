@@ -311,7 +311,11 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       return;
     }
     try {
-      await ref.read(catalogRepositoryProvider).shareLiveToTimeline(s.id);
+      await ref.read(catalogRepositoryProvider).shareLiveToTimeline(
+            s.id,
+            stream: s,
+          );
+      ref.read(timelineTabTickProvider.notifier).state++;
       if (!mounted) return;
       setState(() => _shareCount += 1);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -319,7 +323,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
           content: const Text('Shared to your timeline'),
           action: SnackBarAction(
             label: 'View',
-            onPressed: () => context.push('/timeline'),
+            onPressed: () => context.go('/timeline'),
           ),
         ),
       );

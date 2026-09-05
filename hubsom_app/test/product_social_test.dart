@@ -104,5 +104,46 @@ void main() {
     expect(post.productId, product.id);
     final timeline = await catalog.listTimeline();
     expect(timeline.any((p) => p.id == post.id && p.isLivePost), isTrue);
+    expect(timeline.first.isLivePost, isTrue);
+    expect(timeline.first.streamId, stream.id);
+  });
+
+  test('shared live stays a live post even when the product has a demo clip',
+      () async {
+    final product = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Demo kettle',
+      description: 'Clips',
+      category: 'home',
+      priceGhs: 70,
+      stock: 3,
+      images: const ['a', 'b', 'c'],
+      hasDemoVideo: true,
+      demoVideoUrl: 'https://cdn.hubsom.test/kettle.mp4',
+    );
+    final stream = await LocalCommerceStore.createStream(
+      user: seller,
+      title: 'Kettle live',
+      productIds: [product.id],
+      pinnedProductId: product.id,
+    );
+    await LocalCommerceStore.createShopVideo(
+      author: seller,
+      productIds: [product.id],
+      caption: 'Kettle clip',
+    );
+    await LocalStore.setUserJson(jsonEncode(buyer.toJson()));
+    final catalog = CatalogRepository(ApiClient());
+    final post = await catalog.shareLiveToTimeline(stream.id);
+    expect(post.isLivePost, isTrue);
+    expect(post.isVideo, isFalse);
+
+    final feed = await catalog.listTimeline();
+    final shared = feed.firstWhere((p) => p.id == post.id);
+    expect(shared.isLivePost, isTrue);
+    expect(shared.type, 'live');
+    expect(shared.streamId, stream.id);
+    expect(feed.first.isLivePost, isTrue);
+    expect(feed.any((p) => p.isVideo), isTrue);
   });
 }

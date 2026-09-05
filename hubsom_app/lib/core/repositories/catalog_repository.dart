@@ -9,6 +9,7 @@ import '../../models/promotion.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
+import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
@@ -546,23 +547,14 @@ class CatalogRepository {
         // Enrich existing posts with remote videoUrl when missing.
         for (final entry in byId.entries.toList()) {
           final post = entry.value;
-          if (post.videoId == video.id &&
+          if (!post.isLivePost &&
+              post.videoId == video.id &&
               (post.videoUrl == null || post.videoUrl!.isEmpty) &&
               video.videoUrl != null &&
               video.videoUrl!.isNotEmpty) {
-            byId[entry.key] = TimelinePost(
-              id: post.id,
-              authorId: post.authorId,
-              authorName: post.authorName,
-              authorImage: post.authorImage,
+            byId[entry.key] = post.copyWith(
               type: 'video',
-              productId: post.productId,
-              productName: post.productName,
-              productImage: post.productImage,
-              videoId: post.videoId,
               videoUrl: video.videoUrl,
-              caption: post.caption,
-              createdAt: post.createdAt,
             );
           }
         }
@@ -600,35 +592,19 @@ class CatalogRepository {
       byId[entry.key] = _healTimelineVideoPost(entry.value);
     }
 
-    final merged = byId.values.toList();
-    // Shop videos first (newest first), then other posts — so Timeline matches
-    // Home's Shop videos instead of burying clips under older product posts.
-    final videoPosts = merged.where((p) => p.isVideo).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final otherPosts = merged.where((p) => !p.isVideo).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return [...videoPosts, ...otherPosts];
+    return TimelinePost.rankForFeed(byId.values);
   }
 
   /// Restore playable video posts when cloud docs lost type/videoId, or when the
   /// linked product has a local/remote demo clip.
   TimelinePost _healTimelineVideoPost(TimelinePost post) {
+    if (post.isLivePost) return post;
     if (post.isVideo) {
       if ((post.type != 'video') ||
           (post.videoId == null || post.videoId!.isEmpty)) {
-        return TimelinePost(
-          id: post.id,
-          authorId: post.authorId,
-          authorName: post.authorName,
-          authorImage: post.authorImage,
+        return post.copyWith(
           type: 'video',
-          productId: post.productId,
-          productName: post.productName,
-          productImage: post.productImage,
           videoId: post.videoId ?? post.productId,
-          videoUrl: post.videoUrl,
-          caption: post.caption,
-          createdAt: post.createdAt,
         );
       }
       return post;
@@ -643,19 +619,10 @@ class CatalogRepository {
     final hasDemo = product?.showsDemoVideo == true;
     if (!looksLikeVideo && !hasDemo) return post;
 
-    return TimelinePost(
-      id: post.id,
-      authorId: post.authorId,
-      authorName: post.authorName,
-      authorImage: post.authorImage,
+    return post.copyWith(
       type: 'video',
-      productId: post.productId,
-      productName: post.productName,
-      productImage: post.productImage,
       videoId: post.videoId ?? post.productId,
       videoUrl: post.videoUrl ?? product?.demoVideoUrl,
-      caption: post.caption,
-      createdAt: post.createdAt,
     );
   }
 
@@ -674,18 +641,31 @@ class CatalogRepository {
   Future<TimelinePost> shareLiveToTimeline(
     String streamId, {
     String caption = '',
+    LiveStream? stream,
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to share to your timeline');
-    final stream = LocalCommerceStore.getStream(streamId);
-    if (stream == null) throw StateError('Live show not found');
+    var live = stream ?? LocalCommerceStore.getStream(streamId);
+    if (live == null) {
+      try {
+        final rows = await CloudStore.listDocs(CloudStore.streams);
+        for (final row in rows) {
+          if ('${row['id']}' == streamId) {
+            live = LiveStream.fromJson(row);
+            await LocalCommerceStore.upsertStream(live!);
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+    if (live == null) throw StateError('Live show not found');
     Product? product;
-    final pinId = stream.pinnedProductId ?? stream.auction?.productId;
+    final pinId = live.pinnedProductId ?? live.auction?.productId;
     if (pinId != null && pinId.isNotEmpty) {
       product = await getProduct(pinId);
     }
     return LocalCommerceStore.shareLiveToTimeline(
-      stream: stream,
+      stream: live,
       author: user,
       product: product,
       caption: caption,

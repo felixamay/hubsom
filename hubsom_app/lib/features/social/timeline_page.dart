@@ -12,11 +12,12 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../models/product_social.dart';
 import '../../models/shop_video.dart';
+import '../../models/stream.dart';
 import '../../widgets/commerce_cta_bar.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_demo_video_player.dart';
 
-/// Vertical, one-at-a-time timeline of posted products and shop videos.
+/// Vertical, one-at-a-time timeline of shared lives, shop videos, and products.
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key});
 
@@ -83,14 +84,29 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       });
     }
     try {
+      String? topLiveId(Iterable<TimelinePost> posts) {
+        for (final p in posts) {
+          if (p.isLivePost) return p.id;
+        }
+        return null;
+      }
+
+      final prevTopLive = topLiveId(_productPosts);
       final all = await ref.read(catalogRepositoryProvider).listTimeline();
       if (!mounted) return;
+      final nextTopLive = topLiveId(all);
       setState(() {
         // Keep healed video posts from listTimeline (not only shopVideosProvider).
         _productPosts = all;
         _bootstrapping = false;
         _error = null;
       });
+      if (nextTopLive != null && (initial || nextTopLive != prevTopLive)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_pageCtrl.hasClients) return;
+          _pageCtrl.jumpToPage(0);
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -109,12 +125,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       byId['video-${video.id}'] = synthesized;
       for (final entry in byId.entries.toList()) {
         final post = entry.value;
+        if (post.isLivePost) continue;
         if (post.videoId == video.id) {
-          byId[entry.key] = TimelinePost(
-            id: post.id,
-            authorId: post.authorId,
-            authorName: post.authorName,
-            authorImage: post.authorImage,
+          byId[entry.key] = post.copyWith(
             type: 'video',
             productId: post.productId.isNotEmpty
                 ? post.productId
@@ -125,18 +138,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
             productImage: post.productImage ?? synthesized.productImage,
             videoId: video.id,
             videoUrl: video.videoUrl ?? post.videoUrl,
-            caption: post.caption,
-            createdAt: post.createdAt,
           );
         }
       }
     }
-    final merged = byId.values.toList();
-    final videoPosts = merged.where((p) => p.isVideo).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final others = merged.where((p) => !p.isVideo).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return [...videoPosts, ...others];
+    return TimelinePost.rankForFeed(byId.values);
   }
 
   @override
@@ -325,6 +331,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   Product? _product;
   ShopVideo? _video;
+  LiveStream? _stream;
   bool _liked = false;
   bool _saved = false;
   bool _following = false;
@@ -400,7 +407,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
   }
 
   Future<void> _bootstrap() async {
-    await Future.wait([_loadProduct(), _loadVideo()]);
+    await Future.wait([_loadProduct(), _loadVideo(), _loadStream()]);
     if (!mounted) return;
     _syncSocial();
   }
@@ -414,6 +421,19 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
     final p = await ref.read(catalogRepositoryProvider).getProduct(id);
     if (!mounted) return;
     setState(() => _product = p);
+  }
+
+  Future<void> _loadStream() async {
+    if (!_isLivePost) {
+      if (mounted) setState(() => _stream = null);
+      return;
+    }
+    final id = widget.post.streamId;
+    if (id == null || id.isEmpty) return;
+    var s = LocalCommerceStore.getStream(id);
+    s ??= await ref.read(liveRepositoryProvider).getStream(id);
+    if (!mounted) return;
+    setState(() => _stream = s);
   }
 
   Future<void> _loadVideo() async {
@@ -603,9 +623,16 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
       await _shareLink();
       return;
     }
-    final pid = widget.post.productId;
-    if (pid.isEmpty) return;
-    await ref.read(catalogRepositoryProvider).shareToTimeline(pid);
+    final catalog = ref.read(catalogRepositoryProvider);
+    final liveId = widget.post.streamId;
+    if (_isLivePost && liveId != null && liveId.isNotEmpty) {
+      await catalog.shareLiveToTimeline(liveId);
+    } else {
+      final pid = widget.post.productId;
+      if (pid.isEmpty) return;
+      await catalog.shareToTimeline(pid);
+    }
+    ref.read(timelineTabTickProvider.notifier).state++;
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Shared to your timeline')),
@@ -675,8 +702,9 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                 )
               : _ProductHero(
                   imageUrl: post.productImage,
-                  name: post.productName,
+                  name: _stream?.title ?? post.productName,
                   live: _isLivePost,
+                  liveOn: _stream?.isLive ?? true,
                 ),
         ),
 
@@ -1175,10 +1203,12 @@ class _ProductHero extends StatelessWidget {
     required this.imageUrl,
     required this.name,
     this.live = false,
+    this.liveOn = true,
   });
   final String? imageUrl;
   final String name;
   final bool live;
+  final bool liveOn;
 
   @override
   Widget build(BuildContext context) {
@@ -1220,12 +1250,12 @@ class _ProductHero extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: HubsomColors.live,
+              color: liveOn ? HubsomColors.live : Colors.black54,
               borderRadius: BorderRadius.circular(99),
             ),
-            child: const Text(
-              'LIVE',
-              style: TextStyle(
+            child: Text(
+              liveOn ? 'LIVE' : 'ENDED',
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w900,
                 fontSize: 12,
