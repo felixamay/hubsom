@@ -109,6 +109,8 @@ class HubsomUser extends Equatable {
     this.addresses = const [],
     this.emailVerified = false,
     this.walletBalanceGhs = 0,
+    this.giftPoints = 0,
+    this.giftEarningsGhs = 0,
   });
 
   final String id;
@@ -130,6 +132,10 @@ class HubsomUser extends Equatable {
   final List<UserAddress> addresses;
   final bool emailVerified;
   final double walletBalanceGhs;
+  /// Spendable live-gift coins purchased by the viewer.
+  final int giftPoints;
+  /// Host earnings from gifts received on live shows.
+  final double giftEarningsGhs;
 
   factory HubsomUser.fromJson(Map<String, dynamic> json) => HubsomUser(
         id: json['id'] as String,
@@ -154,6 +160,8 @@ class HubsomUser extends Equatable {
             const [],
         emailVerified: json['emailVerified'] as bool? ?? false,
         walletBalanceGhs: (json['walletBalanceGhs'] as num?)?.toDouble() ?? 0,
+        giftPoints: (json['giftPoints'] as num?)?.toInt() ?? 0,
+        giftEarningsGhs: (json['giftEarningsGhs'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -176,6 +184,8 @@ class HubsomUser extends Equatable {
         'addresses': addresses.map((a) => a.toJson()).toList(),
         'emailVerified': emailVerified,
         'walletBalanceGhs': walletBalanceGhs,
+        'giftPoints': giftPoints,
+        'giftEarningsGhs': giftEarningsGhs,
       };
 
   HubsomUser copyWith({
@@ -196,6 +206,8 @@ class HubsomUser extends Equatable {
     List<UserAddress>? addresses,
     bool? emailVerified,
     double? walletBalanceGhs,
+    int? giftPoints,
+    double? giftEarningsGhs,
   }) =>
       HubsomUser(
         id: id,
@@ -217,6 +229,8 @@ class HubsomUser extends Equatable {
         addresses: addresses ?? this.addresses,
         emailVerified: emailVerified ?? this.emailVerified,
         walletBalanceGhs: walletBalanceGhs ?? this.walletBalanceGhs,
+        giftPoints: giftPoints ?? this.giftPoints,
+        giftEarningsGhs: giftEarningsGhs ?? this.giftEarningsGhs,
       );
 
   bool get isHuber =>
@@ -237,5 +251,7 @@ class HubsomUser extends Equatable {
         savedVideoIds,
         likedVideoIds,
         walletBalanceGhs,
+        giftPoints,
+        giftEarningsGhs,
       ];
 }

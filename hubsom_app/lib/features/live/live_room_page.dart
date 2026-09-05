@@ -19,6 +19,7 @@ import '../../core/utils/money.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
@@ -437,17 +438,35 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     if (!ensureSignedIn(context, ref, message: 'Sign in to send a gift')) {
       return;
     }
-    try {
-      await ref.read(liveRepositoryProvider).sendChat(
-            widget.streamId,
-            'sent a 🎁 gift',
-          );
-      await _react();
-      await _refreshQuiet();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
+    final gift = await LiveGiftSheet.show(
+      context,
+      streamId: widget.streamId,
+      hostMode: _isHost,
+    );
+    if (gift == null || !mounted) return;
+    // sendGift already wrote chat + a reaction; this float is local-only.
+    final x = 0.18 + (gift.id.hashCode.abs() % 55) / 100;
+    final entry = _FloatRx(
+      id: 'gift-${gift.id}-${DateTime.now().microsecondsSinceEpoch}',
+      emoji: gift.emoji,
+      x: x,
+      controller: AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2200),
+      ),
+    );
+    setState(() => _floating.add(entry));
+    entry.controller.forward().whenComplete(() {
+      entry.controller.dispose();
+      if (mounted) {
+        setState(() => _floating.removeWhere((e) => e.id == entry.id));
+      }
+    });
+    await _refreshQuiet();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sent ${gift.emoji} ${gift.name}')),
+    );
   }
 
   Future<void> _endLive() async {
@@ -1010,7 +1029,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                     children: chat.take(24).map((m) {
                       final isBid =
                           m.text.contains('Bid ') && m.text.contains('GHS');
-                      final isGift = m.text.contains('🎁');
+                      final isGift = m.text.contains('sent a ') &&
+                          m.text.contains(' pts)');
                       final isFollow =
                           m.text.toLowerCase().contains('following');
                       return Padding(

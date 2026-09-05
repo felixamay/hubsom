@@ -69,7 +69,7 @@ class AccountPage extends ConsumerWidget {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  '${user.email}\nWallet ${formatGhs(user.walletBalanceGhs)}',
+                  '${user.email}\nWallet ${formatGhs(user.walletBalanceGhs)} · ${user.giftPoints} gift pts',
                 ),
                 isThreeLine: true,
                 onTap: () => context.push('/account/profile'),
