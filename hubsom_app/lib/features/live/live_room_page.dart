@@ -328,30 +328,41 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   void _maybeCelebrateWin(LiveAuction? before, LiveAuction? after) {
-    if (after == null || !after.isSold) return;
-    final key = after.orderId ?? after.id;
+    if (after == null) return;
+    // Auto-relist replaces a sold lot with a fresh open clock — celebrate the
+    // lot that just ended.
+    final sold = after.isSold
+        ? after
+        : (before != null &&
+                before.id != after.id &&
+                before.highestBidder != null &&
+                before.askMet)
+            ? before
+            : null;
+    if (sold == null) return;
+    final key = sold.orderId ?? sold.id;
     if (_celebratedWinKey == key) return;
-    final winner = after.highestBidder?.trim() ?? '';
+    final winner = sold.highestBidder?.trim() ?? '';
     if (winner.isEmpty) {
       _celebratedWinKey = key;
       return;
     }
     // Viewer joining an already-sold lot — don't replay the splash.
-    if (before == null || before.isSold) {
+    if (before == null) {
       _celebratedWinKey = key;
       return;
     }
     _celebratedWinKey = key;
     final me = ref.read(authStateProvider).valueOrNull;
     final isYou = me != null &&
-        ((after.highestBidderId != null && me.id == after.highestBidderId) ||
-            (after.highestBidderEmail != null &&
+        ((sold.highestBidderId != null && me.id == sold.highestBidderId) ||
+            (sold.highestBidderEmail != null &&
                 me.email.toLowerCase() ==
-                    after.highestBidderEmail!.toLowerCase()));
+                    sold.highestBidderEmail!.toLowerCase()));
     _enqueueWinSplash(
       winnerName: winner,
-      amountGhs: after.currentBidGhs,
-      productName: _lotName(after),
+      amountGhs: sold.currentBidGhs,
+      productName: _lotName(sold),
       isYou: isYou,
     );
   }
@@ -1388,7 +1399,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                           ),
                           subtitle: _isHost
                               ? const Text(
-                                  'Products only — use Add video on the live bar for clips',
+                                  'Auction lots auto-continue until quantity is gone. Sell or auction any listed product anytime.',
                                 )
                               : null,
                           trailing: IconButton(

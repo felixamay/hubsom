@@ -551,6 +551,7 @@ class LocalCommerceStore {
             .toIso8601String(),
         status: 'open',
         askingPriceGhs: ask,
+        durationSeconds: durationSecs,
       );
     }
 
@@ -767,7 +768,18 @@ class LocalCommerceStore {
           ),
         );
       }
-      await finalizeAuction(streamId);
+      await finalizeAuction(streamId, autoRelist: false);
+    }
+
+    final liveAfterSwitch = getStream(streamId) ?? stream;
+    var offered = liveAfterSwitch.offeredQty(
+      productId,
+      fallback: product.stock,
+    );
+    if (offered < 1) {
+      final qtys = Map<String, int>.from(liveAfterSwitch.productQuantities);
+      qtys[productId] = 1;
+      await updateStream(streamId, productQuantities: qtys);
     }
 
     final live = getStream(streamId) ?? stream;
@@ -798,6 +810,7 @@ class LocalCommerceStore {
           .toIso8601String(),
       status: 'open',
       askingPriceGhs: ask,
+      durationSeconds: durationSecs,
     );
 
     final updated = await updateStream(
@@ -910,7 +923,10 @@ class LocalCommerceStore {
   }
 
   /// When the auction clock hits zero with a winner, create a seller order once.
-  static Future<Order?> finalizeAuction(String streamId) async {
+  static Future<Order?> finalizeAuction(
+    String streamId, {
+    bool autoRelist = true,
+  }) async {
     final stream = getStream(streamId);
     if (stream == null || stream.auction == null) return null;
     var auction = stream.auction!;
@@ -1018,7 +1034,89 @@ class LocalCommerceStore {
         );
       } catch (_) {}
     }
+    await _consumeLiveQuantity(
+      streamId: streamId,
+      productId: auction.productId,
+    );
+    if (autoRelist) {
+      await _relistSameProductAuction(streamId, sold: auction);
+    }
     return order;
+  }
+
+  static Future<void> _consumeLiveQuantity({
+    required String streamId,
+    required String productId,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null) return;
+    final current = stream.offeredQty(
+      productId,
+      fallback: getProduct(productId)?.stock ?? 0,
+    );
+    final next = Map<String, int>.from(stream.productQuantities);
+    next[productId] = current <= 1 ? 0 : current - 1;
+    await updateStream(streamId, productQuantities: next);
+  }
+
+  /// After a sold lot, put the next unit of the same product on auction.
+  static Future<LiveStream?> _relistSameProductAuction(
+    String streamId, {
+    required LiveAuction sold,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null || !stream.isLive) return null;
+    final remaining = stream.offeredQty(sold.productId, fallback: 0);
+    if (remaining < 1) return null;
+    final product = getProduct(sold.productId);
+    if (product == null) return null;
+
+    final secs = sold.durationSeconds.clamp(1, 30);
+    final start = sold.startingBidGhs > 0
+        ? sold.startingBidGhs
+        : product.priceGhs * 0.5;
+    final nextLot = LiveAuction(
+      id: 'auction-${_uuid.v4().substring(0, 8)}',
+      productId: sold.productId,
+      startingBidGhs: start,
+      currentBidGhs: start,
+      minIncrementGhs: sold.minIncrementGhs > 0
+          ? sold.minIncrementGhs
+          : (start * 0.05).clamp(1, 50),
+      endsAt: DateTime.now()
+          .add(Duration(seconds: secs))
+          .toUtc()
+          .toIso8601String(),
+      status: 'open',
+      askingPriceGhs: sold.askingPriceGhs,
+      durationSeconds: secs,
+    );
+    final updated = await updateStream(
+      streamId,
+      auction: nextLot,
+      pinnedProductId: sold.productId,
+    );
+    if (updated == null) return null;
+    final hostName =
+        stream.hosts.isNotEmpty && stream.hosts.first.name.isNotEmpty
+            ? stream.hosts.first.name
+            : 'Hubsom Live';
+    final hostId =
+        stream.hosts.isNotEmpty ? stream.hosts.first.id : 'hubsom-live';
+    try {
+      await sendChat(
+        streamId: streamId,
+        user: HubsomUser(
+          id: hostId,
+          email: 'live@hubsom.com',
+          name: hostName,
+          role: 'seller',
+        ),
+        text:
+            '🔨 Next ${product.name} on auction — $remaining left · starting ${start.toStringAsFixed(0)} GHS',
+      );
+    } catch (_) {}
+    return updated;
   }
 
   // --- chat ---
