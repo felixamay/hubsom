@@ -333,6 +333,66 @@ class AuthRepository {
     return updated;
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = currentUser();
+    if (user == null) {
+      throw AuthException('Sign in to change your password');
+    }
+    final email = CloudStore.accountDocId(user.email);
+    _validateCredentials(email, newPassword);
+    if (currentPassword == newPassword) {
+      throw AuthException('Choose a different new password');
+    }
+
+    final vault = LocalStore.loadCredentialVault();
+    var entry = vault[email];
+    if (entry is! Map) {
+      try {
+        final remote = await CloudStore.getAccount(email);
+        if (remote != null) entry = remote;
+      } catch (_) {}
+    }
+    if (entry is! Map) {
+      throw AuthException(
+        'Could not verify your current password. Sign in again and try.',
+      );
+    }
+
+    final salt = entry['salt'] as String? ?? '';
+    final hash = entry['hash'] as String? ?? '';
+    if (salt.isEmpty ||
+        hash.isEmpty ||
+        !_verifyPassword(currentPassword, salt, hash)) {
+      throw AuthException('Current password is incorrect');
+    }
+
+    final nextSalt = _randomSalt();
+    final nextHash = _hashPassword(newPassword, nextSalt);
+    final userJson = entry['userJson'] is Map
+        ? Map<String, dynamic>.from(entry['userJson'] as Map)
+        : user.toJson();
+    final record = {
+      ...Map<String, dynamic>.from(entry),
+      'salt': nextSalt,
+      'hash': nextHash,
+      'userJson': userJson,
+      'email': email,
+      'name': user.name,
+      'role': user.role,
+    };
+    vault[email] = record;
+    await LocalStore.saveCredentialVault(vault);
+    await _backfillCloudAccount(
+      email: email,
+      salt: nextSalt,
+      hash: nextHash,
+      user: user,
+    );
+  }
+
   Future<void> signOut() async {
     try {
       await _api.post('/api/auth/signout');
