@@ -50,7 +50,10 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
       appBar: AppBar(title: const Text('Live auctions')),
       body: streamsAsync.when(
         data: (raw) {
-          final live = raw.cast<LiveStream>().where((s) => s.isLiveAuction).toList();
+          final live = raw
+              .cast<LiveStream>()
+              .where((s) => s.isLiveAuction)
+              .toList();
           unawaited(_loadProducts(live));
 
           if (live.isEmpty) {

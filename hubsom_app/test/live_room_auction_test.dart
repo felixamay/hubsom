@@ -406,17 +406,29 @@ void main() {
   });
 
 
-  test('closed unsold auctions stay on Auctions; sold do not (no history dump)', () async {
+  test('closed unsold auctions are not listed — only live open lots', () async {
     final stream = await goLive();
     final open = stream.auction!;
     expect(open.remainsOnAuctions, isTrue);
+    expect(stream.isLiveAuction, isTrue);
+    expect(LocalCommerceStore.listLiveAuctions().map((s) => s.id), contains(stream.id));
 
     final closed = open.copyWith(status: 'closed');
     expect(closed.isSold, isFalse);
-    expect(closed.remainsOnAuctions, isTrue);
+    expect(closed.isOpen, isFalse);
+    expect(closed.remainsOnAuctions, isFalse);
 
     final reserve = open.copyWith(status: 'reserve_not_met');
-    expect(reserve.remainsOnAuctions, isTrue);
+    expect(reserve.remainsOnAuctions, isFalse);
+
+    await LocalCommerceStore.updateStream(stream.id, auction: closed);
+    final stillLive = LocalCommerceStore.getStream(stream.id)!;
+    expect(stillLive.isLive, isTrue);
+    expect(stillLive.isLiveAuction, isFalse);
+    expect(
+      LocalCommerceStore.listLiveAuctions().any((s) => s.id == stream.id),
+      isFalse,
+    );
 
     final sold = open.copyWith(status: 'sold', orderId: 'ord_1');
     expect(sold.isSold, isTrue);
@@ -425,7 +437,7 @@ void main() {
     await LocalCommerceStore.updateStream(stream.id, end: true);
     final endedShow = LocalCommerceStore.getStream(stream.id)!;
     expect(endedShow.auction?.status, 'closed');
-    expect(endedShow.auction?.remainsOnAuctions, isTrue);
+    expect(endedShow.auction?.remainsOnAuctions, isFalse);
     expect(endedShow.isLiveAuction, isFalse);
     expect(LocalCommerceStore.getProduct(open.productId), isNotNull);
   });
@@ -438,5 +450,9 @@ void main() {
 
     await LocalCommerceStore.updateStream(stream.id, end: true);
     expect(LocalCommerceStore.getStream(stream.id)!.isLiveAuction, isFalse);
+    expect(
+      LocalCommerceStore.listLiveAuctions().any((s) => s.id == stream.id),
+      isFalse,
+    );
   });
 }
