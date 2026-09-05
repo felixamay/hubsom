@@ -503,12 +503,16 @@ class LocalCommerceStore {
         role: user.role == 'buyer' ? 'both' : user.role,
         sellerId: seller.id,
         huberId: user.huberId,
-      followingSellerIds: user.followingSellerIds,
-      savedProductIds: user.savedProductIds,
-      likedProductIds: user.likedProductIds,
-      addresses: user.addresses,
+        followingSellerIds: user.followingSellerIds,
+        savedProductIds: user.savedProductIds,
+        likedProductIds: user.likedProductIds,
+        likedVideoIds: user.likedVideoIds,
+        savedVideoIds: user.savedVideoIds,
+        addresses: user.addresses,
         emailVerified: user.emailVerified,
         walletBalanceGhs: user.walletBalanceGhs,
+        giftPoints: user.giftPoints,
+        giftEarningsGhs: user.giftEarningsGhs,
       );
       await LocalStore.setUserJson(jsonEncode(patched.toJson()));
     }

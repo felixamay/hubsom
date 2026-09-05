@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import '../../models/live_gift.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/gift_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import 'auth_repository.dart';
@@ -298,6 +300,45 @@ class LiveRepository {
     return LocalCommerceStore.sendReaction(streamId: streamId, emoji: emoji);
   }
 
+  Future<HubsomUser> buyGiftPoints({
+    required String packId,
+    required String paymentMethod,
+  }) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final pack = GiftCatalog.packById(packId);
+    if (pack == null) throw StateError('Unknown point pack');
+    return GiftStore.buyPoints(
+      user: user,
+      pack: pack,
+      paymentMethod: paymentMethod,
+    );
+  }
+
+  Future<({HubsomUser user, LiveGift gift})> sendGift({
+    required String streamId,
+    required String giftId,
+  }) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final result = await GiftStore.sendGift(
+      sender: user,
+      streamId: streamId,
+      giftId: giftId,
+    );
+    await LocalCommerceStore.sendChat(
+      streamId: streamId,
+      user: result.user,
+      text:
+          'sent a ${result.gift.emoji} ${result.gift.name} (${result.gift.costPoints} pts)',
+    );
+    await LocalCommerceStore.sendReaction(
+      streamId: streamId,
+      emoji: result.gift.emoji,
+    );
+    return (user: result.user, gift: result.gift);
+  }
+
   List<LiveReaction> recentReactions(String streamId) =>
       LocalCommerceStore.recentReactions(streamId);
 
@@ -372,6 +413,9 @@ class LiveRepository {
       'peakViewers': s.peakViewers,
       'status': s.status,
       'chatCount': LocalCommerceStore.listChat(streamId).length,
+      'giftCount': GiftStore.listLedger()
+          .where((e) => e.kind == 'send' && e.streamId == streamId)
+          .length,
     };
   }
 }

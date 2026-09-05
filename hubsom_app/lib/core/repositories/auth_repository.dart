@@ -218,9 +218,13 @@ class AuthRepository {
       followingSellerIds: current.followingSellerIds,
       savedProductIds: current.savedProductIds,
       likedProductIds: current.likedProductIds,
+      likedVideoIds: current.likedVideoIds,
+      savedVideoIds: current.savedVideoIds,
       addresses: current.addresses,
       emailVerified: current.emailVerified,
       walletBalanceGhs: current.walletBalanceGhs,
+      giftPoints: current.giftPoints,
+      giftEarningsGhs: current.giftEarningsGhs,
     );
     await LocalStore.setUserJson(jsonEncode(updated.toJson()));
     final vault = LocalStore.loadCredentialVault();
@@ -298,9 +302,14 @@ class AuthRepository {
       huberId: 'huber-${current.id}',
       followingSellerIds: current.followingSellerIds,
       savedProductIds: current.savedProductIds,
+      likedProductIds: current.likedProductIds,
+      likedVideoIds: current.likedVideoIds,
+      savedVideoIds: current.savedVideoIds,
       addresses: current.addresses,
       emailVerified: current.emailVerified,
       walletBalanceGhs: current.walletBalanceGhs,
+      giftPoints: current.giftPoints,
+      giftEarningsGhs: current.giftEarningsGhs,
     );
     await LocalStore.setUserJson(jsonEncode(updated.toJson()));
     final vault = LocalStore.loadCredentialVault();
