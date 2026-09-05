@@ -49,6 +49,7 @@ import '../seller/seller_product_new_page.dart';
 import '../seller/seller_products_page.dart';
 import '../seller/seller_store_page.dart';
 import '../settings/change_password_page.dart';
+import '../settings/passkeys_page.dart';
 import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
@@ -321,6 +322,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AuthGate(
           message: 'Sign in to change your password',
           child: ChangePasswordPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/passkeys',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to manage passkeys',
+          child: PasskeysPage(),
         ),
       ),
       GoRoute(path: '/auth/sign-in', builder: (_, __) => const SignInPage()),

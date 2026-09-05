@@ -26,6 +26,15 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/password'),
           ),
+          ListTile(
+            leading: const Icon(Icons.fingerprint, color: HubsomColors.forest),
+            title: const Text('Passkeys'),
+            subtitle: const Text(
+              'Sign in with Face ID, Touch ID, or your device lock',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/passkeys'),
+          ),
           const Divider(height: 32),
           const _SectionLabel('App'),
           ListTile(title: const Text('API base URL'), subtitle: Text(AppConfig.apiBaseUrl)),
