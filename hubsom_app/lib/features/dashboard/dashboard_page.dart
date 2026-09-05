@@ -30,6 +30,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
+    _tabs.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPurchases());
   }
 
@@ -110,26 +113,50 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final bids = _bidsForUser(user, streams);
     final offers = _offersForUser(user, _purchases);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Dashboard',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+    final tabBar = TabBar(
+      controller: _tabs,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      labelColor: HubsomColors.forest,
+      indicatorColor: HubsomColors.forest,
+      tabs: [
+        Tab(text: 'Purchases (${_purchases.length})'),
+        Tab(text: 'Bids (${bids.length})'),
+        Tab(text: 'Offers (${offers.length})'),
+        Tab(text: 'Saved (${user.savedProductIds.length})'),
+      ],
+    );
+
+    return RefreshIndicator(
+      onRefresh: _loadPurchases,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dashboard',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Welcome back, ${user.name}.'),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text('Welcome back, ${user.name}.'),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 96,
+              child: ListView(
+                key: const Key('dashboard-stats'),
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 children: [
                   _stat(
                     context,
@@ -194,42 +221,45 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                     icon: Icons.card_giftcard_outlined,
                     onTap: () => context.push('/gifts'),
                   ),
-                ],
+                ].expand((w) => [w, const SizedBox(width: 10)]).toList()
+                  ..removeLast(),
               ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        TabBar(
-          controller: _tabs,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          labelColor: HubsomColors.forest,
-          indicatorColor: HubsomColors.forest,
-          tabs: [
-            Tab(text: 'Purchases (${_purchases.length})'),
-            Tab(text: 'Bids (${bids.length})'),
-            Tab(text: 'Offers (${offers.length})'),
-            Tab(text: 'Saved (${user.savedProductIds.length})'),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabs,
-            children: [
-              _PurchasesTab(
-                loading: _loadingPurchases,
-                orders: _purchases,
-                onRefresh: _loadPurchases,
-              ),
-              _BidsTab(bids: bids),
-              _OffersTab(offers: offers),
-              _SavedTab(user: user),
-            ],
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedTabBarDelegate(tabBar),
           ),
-        ),
-      ],
+          ..._activitySlivers(
+            bids: bids,
+            offers: offers,
+            user: user,
+          ),
+        ],
+      ),
     );
+  }
+
+  List<Widget> _activitySlivers({
+    required List<_BidRow> bids,
+    required List<_OfferRow> offers,
+    required HubsomUser user,
+  }) {
+    switch (_tabs.index) {
+      case 1:
+        return _BidsTab.slivers(bids);
+      case 2:
+        return _OffersTab.slivers(offers);
+      case 3:
+        return [
+          _SavedSliver(user: user),
+        ];
+      default:
+        return _PurchasesTab.slivers(
+          loading: _loadingPurchases,
+          orders: _purchases,
+        );
+    }
   }
 
   Widget _stat(
@@ -246,8 +276,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Ink(
-          width: 150,
-          padding: const EdgeInsets.all(14),
+          width: 136,
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
@@ -255,23 +285,31 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             ),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(icon, size: 18, color: HubsomColors.forest),
+                  Icon(icon, size: 16, color: HubsomColors.forest),
                   const Spacer(),
-                  const Icon(Icons.chevron_right, size: 18, color: Colors.black38),
+                  const Icon(Icons.chevron_right, size: 16, color: Colors.black38),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 value,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
               ),
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -396,219 +434,261 @@ List<_OfferRow> _offersForUser(HubsomUser user, List<Order> purchases) {
   return rows;
 }
 
-class _PurchasesTab extends StatelessWidget {
-  const _PurchasesTab({
-    required this.loading,
-    required this.orders,
-    required this.onRefresh,
-  });
-
-  final bool loading;
-  final List<Order> orders;
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
+class _PurchasesTab {
+  static List<Widget> slivers({
+    required bool loading,
+    required List<Order> orders,
+  }) {
     if (orders.isEmpty) {
-      return Center(
-        child: Text(loading ? 'Loading purchases…' : 'No purchases yet'),
-      );
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(loading ? 'Loading purchases…' : 'No purchases yet'),
+          ),
+        ),
+      ];
     }
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.separated(
+    return [
+      SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-        itemCount: orders.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) {
-          final order = orders[i];
-          final name = order.lines.isEmpty
-              ? 'Order ${order.id}'
-              : order.lines.map((l) => l.name).join(', ');
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${formatGhs(order.subtotalGhs)} · ${_statusLabel(order.status)}',
-                    style: const TextStyle(
-                      color: HubsomColors.forest,
-                      fontWeight: FontWeight.w700,
+        sliver: SliverList.separated(
+          itemCount: orders.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final order = orders[i];
+            final name = order.lines.isEmpty
+                ? 'Order ${order.id}'
+                : order.lines.map((l) => l.name).join(', ');
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                  ),
-                  if (order.deliveryEstimate.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
-                      order.deliveryEstimate,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      '${formatGhs(order.subtotalGhs)} · ${_statusLabel(order.status)}',
+                      style: const TextStyle(
+                        color: HubsomColors.forest,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
+                    if (order.deliveryEstimate.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        order.deliveryEstimate,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    _ProgressTrack(status: order.status),
                   ],
-                  const SizedBox(height: 12),
-                  _ProgressTrack(status: order.status),
-                ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    );
+    ];
   }
 }
 
-class _BidsTab extends StatelessWidget {
-  const _BidsTab({required this.bids});
-
-  final List<_BidRow> bids;
-
-  @override
-  Widget build(BuildContext context) {
+class _BidsTab {
+  static List<Widget> slivers(List<_BidRow> bids) {
     if (bids.isEmpty) {
-      return const Center(child: Text('No bids yet'));
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: Text('No bids yet')),
+        ),
+      ];
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-      itemCount: bids.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final bid = bids[i];
-        return Card(
-          child: ListTile(
-            leading: Icon(
-              Icons.gavel,
-              color: bid.winning ? HubsomColors.gold : HubsomColors.forest,
-            ),
-            title: Text(bid.productName),
-            subtitle: Text('${bid.title} · ${bid.status}'),
-            trailing: Text(
-              formatGhs(bid.amountGhs),
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            onTap: () => context.push('/live/${bid.streamId}'),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _OffersTab extends StatelessWidget {
-  const _OffersTab({required this.offers});
-
-  final List<_OfferRow> offers;
-
-  @override
-  Widget build(BuildContext context) {
-    if (offers.isEmpty) {
-      return const Center(child: Text('No delivery offers yet'));
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-      itemCount: offers.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final offer = offers[i];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  offer.title,
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+        sliver: SliverList.separated(
+          itemCount: bids.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final bid = bids[i];
+            return Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.gavel,
+                  color: bid.winning ? HubsomColors.gold : HubsomColors.forest,
+                ),
+                title: Text(bid.productName),
+                subtitle: Text('${bid.title} · ${bid.status}'),
+                trailing: Text(
+                  formatGhs(bid.amountGhs),
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                if (offer.subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(offer.subtitle),
-                ],
-                if (offer.feeGhs != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    formatGhs(offer.feeGhs!),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: HubsomColors.forest,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                _ProgressTrack(status: offer.status),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+                onTap: () => context.push('/live/${bid.streamId}'),
+              ),
+            );
+          },
+        ),
+      ),
+    ];
   }
 }
 
-class _SavedTab extends ConsumerStatefulWidget {
-  const _SavedTab({required this.user});
+class _OffersTab {
+  static List<Widget> slivers(List<_OfferRow> offers) {
+    if (offers.isEmpty) {
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: Text('No delivery offers yet')),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+        sliver: SliverList.separated(
+          itemCount: offers.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final offer = offers[i];
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      offer.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    if (offer.subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(offer.subtitle),
+                    ],
+                    if (offer.feeGhs != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        formatGhs(offer.feeGhs!),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: HubsomColors.forest,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    _ProgressTrack(status: offer.status),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+}
+
+class _SavedSliver extends ConsumerStatefulWidget {
+  const _SavedSliver({required this.user});
 
   final HubsomUser user;
 
   @override
-  ConsumerState<_SavedTab> createState() => _SavedTabState();
+  ConsumerState<_SavedSliver> createState() => _SavedSliverState();
 }
 
-class _SavedTabState extends ConsumerState<_SavedTab> {
-  late final Future<List<Product>> _future;
+class _SavedSliverState extends ConsumerState<_SavedSliver> {
+  List<Product>? _products;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
   }
 
-  Future<List<Product>> _load() async {
+  Future<void> _load() async {
     final catalog = ref.read(catalogRepositoryProvider);
     final found = <Product>[];
     for (final id in widget.user.savedProductIds) {
       final p = await catalog.getProduct(id);
       if (p != null) found.add(p);
     }
-    return found;
+    if (mounted) setState(() => _products = found);
   }
 
   @override
   Widget build(BuildContext context) {
     final ids = widget.user.savedProductIds;
     if (ids.isEmpty) {
-      return const Center(child: Text('No saved products'));
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: Text('No saved products')),
+      );
     }
-    return FutureBuilder<List<Product>>(
-      future: _future,
-      builder: (context, snap) {
-        if (!snap.hasData) {
-          return const Center(child: Text('Loading saved…'));
-        }
-        final list = snap.data!;
-        if (list.isEmpty) {
-          return const Center(child: Text('No saved products'));
-        }
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.68,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-          ),
-          itemCount: list.length,
-          itemBuilder: (_, i) => ProductCard(product: list[i]),
-        );
-      },
+    if (_products == null) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: Text('Loading saved…')),
+      );
+    }
+    if (_products!.isEmpty) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: Text('No saved products')),
+      );
+    }
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.68,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (_, i) => ProductCard(product: _products![i]),
+          childCount: _products!.length,
+        ),
+      ),
     );
   }
+}
+
+class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedTabBarDelegate(this.tabBar);
+
+  final TabBar tabBar;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      elevation: overlapsContent ? 1 : 0,
+      child: tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedTabBarDelegate oldDelegate) =>
+      oldDelegate.tabBar != tabBar;
 }
 
 const _progressSteps = ['paid', 'processing', 'shipped', 'delivered'];
