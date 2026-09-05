@@ -39,14 +39,21 @@ void main() {
     const avatar = 'data:image/jpeg;base64,/9j/4AAQ';
     final updated = await repo.updateStore({
       'name': 'Accra Crafts',
+      'address': 'Osu Oxford Street',
       'city': 'Accra',
+      'region': 'Greater Accra',
       'bio': 'Handmade goods',
       'avatar': avatar,
     });
 
     expect(updated.avatar, avatar);
     expect(updated.name, 'Accra Crafts');
+    expect(updated.address, 'Osu Oxford Street');
+    expect(updated.city, 'Accra');
+    expect(updated.region, 'Greater Accra');
+    expect(updated.displayLocation, 'Osu Oxford Street, Accra, Greater Accra');
     expect(LocalCommerceStore.getSeller(updated.id)?.avatar, avatar);
+    expect(LocalCommerceStore.getSeller(updated.id)?.address, 'Osu Oxford Street');
 
     final user = jsonDecode(LocalStore.userJson!) as Map;
     expect(user['image'], avatar);

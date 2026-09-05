@@ -259,6 +259,7 @@ class AuthRepository {
         name: seller.name,
         city: seller.city,
         region: seller.region,
+        address: seller.address,
         bio: seller.bio,
         avatar: nextAvatar,
         cover: seller.cover,

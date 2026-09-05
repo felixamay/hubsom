@@ -72,6 +72,7 @@ class SellerRepository {
       name: body['name'] as String? ?? current.name,
       city: body['city'] as String? ?? current.city,
       region: body['region'] as String? ?? current.region,
+      address: body['address'] as String? ?? current.address,
       bio: body['bio'] as String? ?? current.bio,
       avatar: body['avatar'] as String? ?? current.avatar,
       cover: body['cover'] as String? ?? current.cover,
