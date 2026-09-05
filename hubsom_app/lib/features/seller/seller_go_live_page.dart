@@ -237,6 +237,38 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _loadingProducts
+          ? null
+          : Material(
+              elevation: 8,
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      FilledButton.icon(
+                        onPressed: _busy || _products.isEmpty ? null : _start,
+                        icon: const Icon(Icons.videocam),
+                        label: Text(_busy ? 'Starting…' : 'Start live stream'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
       body: _loadingProducts
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -581,19 +613,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         ),
                   ),
                 ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _busy || _products.isEmpty ? null : _start,
-                  icon: const Icon(Icons.videocam),
-                  label: Text(_busy ? 'Starting…' : 'Start live stream'),
-                ),
+                const SizedBox(height: 12),
               ],
             ),
     );

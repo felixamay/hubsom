@@ -170,7 +170,6 @@ void main() {
     expect(find.byKey(const Key('live-thumbnail-picker')), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Stream title'), 'Sunday');
-    await tester.ensureVisible(find.text('Start live stream'));
     await tester.tap(find.text('Start live stream'));
     await tester.pump();
 
