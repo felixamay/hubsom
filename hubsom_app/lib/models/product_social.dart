@@ -73,10 +73,50 @@ class TimelinePost extends Equatable {
   final String caption;
   final String createdAt;
 
-  bool get isVideo => type == 'video' || (videoId != null && videoId!.isNotEmpty);
-
   bool get isLivePost =>
       type == 'live' || (streamId != null && streamId!.isNotEmpty);
+
+  bool get isVideo =>
+      !isLivePost &&
+      (type == 'video' || (videoId != null && videoId!.isNotEmpty));
+
+  /// Live shares first (time-sensitive), then shop videos, then products.
+  static List<TimelinePost> rankForFeed(Iterable<TimelinePost> posts) {
+    final list = posts.toList();
+    int newest(TimelinePost a, TimelinePost b) =>
+        b.createdAt.compareTo(a.createdAt);
+    final lives = list.where((p) => p.isLivePost).toList()..sort(newest);
+    final videos = list.where((p) => p.isVideo).toList()..sort(newest);
+    final others = list.where((p) => !p.isLivePost && !p.isVideo).toList()
+      ..sort(newest);
+    return [...lives, ...videos, ...others];
+  }
+
+  TimelinePost copyWith({
+    String? type,
+    String? productId,
+    String? productName,
+    String? productImage,
+    String? videoId,
+    String? videoUrl,
+    String? streamId,
+    String? caption,
+  }) =>
+      TimelinePost(
+        id: id,
+        authorId: authorId,
+        authorName: authorName,
+        authorImage: authorImage,
+        type: type ?? this.type,
+        productId: productId ?? this.productId,
+        productName: productName ?? this.productName,
+        productImage: productImage ?? this.productImage,
+        videoId: videoId ?? this.videoId,
+        videoUrl: videoUrl ?? this.videoUrl,
+        streamId: streamId ?? this.streamId,
+        caption: caption ?? this.caption,
+        createdAt: createdAt,
+      );
 
   factory TimelinePost.fromJson(Map<String, dynamic> json) {
     final videoId = json['videoId'] as String?;
