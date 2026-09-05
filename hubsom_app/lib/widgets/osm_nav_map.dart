@@ -29,6 +29,22 @@ class OsmNavMap extends StatefulWidget {
   final String pickupLabel;
   final String dropoffLabel;
 
+  static Future<bool> launchDirections({
+    LatLng? from,
+    required LatLng to,
+  }) async {
+    for (final uri in MapsService.directionUris(from: from, to: to)) {
+      try {
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (opened) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   @override
   State<OsmNavMap> createState() => _OsmNavMapState();
 }
@@ -68,24 +84,8 @@ class _OsmNavMapState extends State<OsmNavMap> {
     } catch (_) {}
   }
 
-  static Future<bool> launchDirections({
-    LatLng? from,
-    required LatLng to,
-  }) async {
-    for (final uri in MapsService.directionUris(from: from, to: to)) {
-      try {
-        final opened = await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-        if (opened) return true;
-      } catch (_) {}
-    }
-    return false;
-  }
-
   Future<void> _openDirections() async {
-    final opened = await launchDirections(
+    final opened = await OsmNavMap.launchDirections(
       from: widget.rider,
       to: _target,
     );
