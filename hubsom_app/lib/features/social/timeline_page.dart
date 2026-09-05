@@ -345,6 +345,8 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
       widget.post.videoId != null &&
       widget.post.videoId!.isNotEmpty;
 
+  bool get _isLivePost => widget.post.isLivePost;
+
   String get _socialId =>
       _isVideo ? widget.post.videoId! : widget.post.productId;
 
@@ -554,6 +556,13 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
       });
       return;
     }
+    if (_isLivePost && (post.streamId ?? '').isNotEmpty) {
+      await Share.share(
+        'Watch ${post.productName} live on Hubsom: https://hubsom.com/live/${post.streamId}',
+        subject: post.productName,
+      );
+      return;
+    }
     final pid = post.productId;
     if (pid.isEmpty) return;
     await Share.share(
@@ -622,8 +631,17 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
   }
 
   void _openProduct() {
+    if (_isLivePost) {
+      _openLive();
+      return;
+    }
     final id = widget.post.productId;
     if (id.isNotEmpty) context.push('/products/$id');
+  }
+
+  void _openLive() {
+    final id = widget.post.streamId;
+    if (id != null && id.isNotEmpty) context.push('/live/$id');
   }
 
   @override
@@ -646,6 +664,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
           behavior: HitTestBehavior.opaque,
           onDoubleTapDown: (d) => _burstAt = d.localPosition,
           onDoubleTap: () => _toggleLike(at: _burstAt),
+          onTap: _isLivePost ? _openLive : null,
           child: _isVideo
               ? _TimelineVideoSurface(
                   videoId: post.videoId!,
@@ -657,6 +676,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
               : _ProductHero(
                   imageUrl: post.productImage,
                   name: post.productName,
+                  live: _isLivePost,
                 ),
         ),
 
@@ -834,7 +854,17 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                   ],
                 ),
               ],
-              if (_product != null) ...[
+              if (_isLivePost) ...[
+                const SizedBox(height: 10),
+                CommerceCtaBar(
+                  compact: true,
+                  overlay: true,
+                  secondaryLabel: 'Watch live',
+                  primaryLabel: 'Join live',
+                  onSecondary: _openLive,
+                  onPrimary: _openLive,
+                ),
+              ] else if (_product != null) ...[
                 const SizedBox(height: 10),
                 FeedProductShopStrip(
                   name: _product!.name,
@@ -1141,39 +1171,69 @@ class _TimelineVideoSurfaceState extends State<_TimelineVideoSurface> {
 }
 
 class _ProductHero extends StatelessWidget {
-  const _ProductHero({required this.imageUrl, required this.name});
+  const _ProductHero({
+    required this.imageUrl,
+    required this.name,
+    this.live = false,
+  });
   final String? imageUrl;
   final String name;
+  final bool live;
 
   @override
   Widget build(BuildContext context) {
-    if ((imageUrl ?? '').isNotEmpty) {
-      return HubsomImage(
-        url: imageUrl!,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-      );
-    }
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [HubsomColors.forest, HubsomColors.blue],
+    final media = (imageUrl ?? '').isNotEmpty
+        ? HubsomImage(
+            url: imageUrl!,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          )
+        : Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [HubsomColors.forest, HubsomColors.blue],
+              ),
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.all(32),
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 28,
+              ),
+            ),
+          );
+    if (!live) return media;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        media,
+        Positioned(
+          top: 56,
+          left: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: HubsomColors.live,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: const Text(
+              'LIVE',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ),
         ),
-      ),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(32),
-      child: Text(
-        name,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w900,
-          fontSize: 28,
-        ),
-      ),
+      ],
     );
   }
 }

@@ -78,4 +78,31 @@ void main() {
     final timeline = await catalog.listTimeline();
     expect(timeline.any((p) => p.id == post.id), isTrue);
   });
+
+  test('live share icon can post the show to timeline', () async {
+    final product = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Kente wrap',
+      description: 'Live lot',
+      category: 'fashion',
+      priceGhs: 90,
+      stock: 2,
+      images: const ['a', 'b', 'c'],
+    );
+    final stream = await LocalCommerceStore.createStream(
+      user: seller,
+      title: 'Saturday live',
+      productIds: [product.id],
+      pinnedProductId: product.id,
+    );
+    await LocalStore.setUserJson(jsonEncode(buyer.toJson()));
+    final catalog = CatalogRepository(ApiClient());
+    final post = await catalog.shareLiveToTimeline(stream.id);
+    expect(post.isLivePost, isTrue);
+    expect(post.streamId, stream.id);
+    expect(post.type, 'live');
+    expect(post.productId, product.id);
+    final timeline = await catalog.listTimeline();
+    expect(timeline.any((p) => p.id == post.id && p.isLivePost), isTrue);
+  });
 }

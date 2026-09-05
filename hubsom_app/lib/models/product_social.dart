@@ -51,6 +51,7 @@ class TimelinePost extends Equatable {
     this.productImage,
     this.videoId,
     this.videoUrl,
+    this.streamId,
     this.caption = '',
     required this.createdAt,
   });
@@ -59,7 +60,7 @@ class TimelinePost extends Equatable {
   final String authorId;
   final String authorName;
   final String? authorImage;
-  /// `product` | `video`
+  /// `product` | `video` | `live`
   final String type;
   final String productId;
   final String productName;
@@ -67,17 +68,25 @@ class TimelinePost extends Equatable {
   final String? videoId;
   /// Remote shop-video URL when this post is a video.
   final String? videoUrl;
+  /// Live show id when this post is a shared live.
+  final String? streamId;
   final String caption;
   final String createdAt;
 
   bool get isVideo => type == 'video' || (videoId != null && videoId!.isNotEmpty);
 
+  bool get isLivePost =>
+      type == 'live' || (streamId != null && streamId!.isNotEmpty);
+
   factory TimelinePost.fromJson(Map<String, dynamic> json) {
     final videoId = json['videoId'] as String?;
+    final streamId = json['streamId'] as String?;
     final rawType = json['type'] as String?;
     final type = (rawType != null && rawType.isNotEmpty)
         ? rawType
-        : (videoId != null && videoId.isNotEmpty ? 'video' : 'product');
+        : (videoId != null && videoId.isNotEmpty
+            ? 'video'
+            : (streamId != null && streamId.isNotEmpty ? 'live' : 'product'));
     return TimelinePost(
       id: json['id'] as String,
       authorId: json['authorId'] as String? ?? '',
@@ -89,6 +98,7 @@ class TimelinePost extends Equatable {
       productImage: json['productImage'] as String?,
       videoId: videoId,
       videoUrl: json['videoUrl'] as String?,
+      streamId: streamId,
       caption: json['caption'] as String? ?? '',
       createdAt: json['createdAt'] as String? ?? '',
     );
@@ -105,11 +115,12 @@ class TimelinePost extends Equatable {
         if (productImage != null) 'productImage': productImage,
         if (videoId != null) 'videoId': videoId,
         if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
+        if (streamId != null && streamId!.isNotEmpty) 'streamId': streamId,
         'caption': caption,
         'createdAt': createdAt,
       };
 
   @override
   List<Object?> get props =>
-      [id, type, productId, videoId, videoUrl, authorId, createdAt];
+      [id, type, productId, videoId, videoUrl, streamId, authorId, createdAt];
 }
