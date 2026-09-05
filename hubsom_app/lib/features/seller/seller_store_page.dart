@@ -8,6 +8,8 @@ import '../../core/providers/core_providers.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
+import '../../models/user.dart';
+import '../../widgets/gps_pin_card.dart';
 import '../../widgets/hubsom_image.dart';
 
 class SellerStorePage extends ConsumerStatefulWidget {
@@ -28,6 +30,9 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
   bool _picking = false;
   String? _error;
   String? _savedHint;
+  GeoLocation? _gps;
+  bool _gpsBusy = false;
+  String? _gpsError;
 
   static const _maxStoredBytes = 450_000;
 
@@ -50,6 +55,13 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
             ? AppConstants.defaultRegion
             : store.region.trim();
         _storeReady = true;
+        if (store.latitude != null && store.longitude != null) {
+          _gps = GeoLocation(
+            latitude: store.latitude!,
+            longitude: store.longitude!,
+            source: 'saved',
+          );
+        }
       });
     } else if (mounted) {
       setState(() => _storeReady = true);
@@ -101,7 +113,29 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
     }
   }
 
+  Future<void> _useGps() async {
+    setState(() {
+      _gpsBusy = true;
+      _gpsError = null;
+    });
+    try {
+      final pin = await ref.read(locationServiceProvider).current();
+      if (!mounted) return;
+      setState(() => _gps = pin);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _gpsError = '$e');
+    } finally {
+      if (mounted) setState(() => _gpsBusy = false);
+    }
+  }
+
   Future<void> _save() async {
+    if (_gps == null) {
+      setState(() => _error = 'Allow store location so riders can navigate to pickup.');
+      await _useGps();
+      if (_gps == null) return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -119,6 +153,8 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
             : _region.trim(),
         'bio': _bio.text.trim(),
         'avatar': _avatar,
+        if (_gps != null) 'latitude': _gps!.latitude,
+        if (_gps != null) 'longitude': _gps!.longitude,
       });
       await ref.read(authStateProvider.notifier).refresh();
       if (!mounted) return;
@@ -266,8 +302,18 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Shown on your public store and sent to Huber riders so they see how far they are from pickup.',
+            'Shown on your public store and sent to Huber riders so they can navigate to pickup with GPS.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          GpsPinCard(
+            title: 'Store GPS pin',
+            subtitle:
+                'Allow location so riders can navigate to your store on OpenStreetMap.',
+            pin: _gps,
+            busy: _gpsBusy,
+            error: _gpsError,
+            onUseLocation: _useGps,
           ),
           const SizedBox(height: 12),
           TextField(

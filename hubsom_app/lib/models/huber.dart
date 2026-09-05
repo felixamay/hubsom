@@ -74,6 +74,8 @@ class HuberProfile extends Equatable {
     this.emergencyContactPhone,
     this.idType,
     this.idNumber,
+    this.latitude,
+    this.longitude,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -99,6 +101,9 @@ class HuberProfile extends Equatable {
   final String? emergencyContactPhone;
   final String? idType;
   final String? idNumber;
+  /// Last GPS pin the rider shared (Hub Now / delivery).
+  final double? latitude;
+  final double? longitude;
   final String createdAt;
   final String updatedAt;
 
@@ -149,6 +154,8 @@ class HuberProfile extends Equatable {
         emergencyContactPhone: json['emergencyContactPhone'] as String?,
         idType: json['idType'] as String?,
         idNumber: json['idNumber'] as String?,
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
         createdAt: json['createdAt'] as String? ?? '',
         updatedAt: json['updatedAt'] as String? ?? '',
       );
@@ -168,6 +175,8 @@ class HuberProfile extends Equatable {
     double? todayEarningsGhs,
     String? idType,
     String? idNumber,
+    double? latitude,
+    double? longitude,
     String? updatedAt,
   }) =>
       HuberProfile(
@@ -192,6 +201,8 @@ class HuberProfile extends Equatable {
         emergencyContactPhone: emergencyContactPhone,
         idType: idType ?? this.idType,
         idNumber: idNumber ?? this.idNumber,
+        latitude: latitude ?? this.latitude,
+        longitude: longitude ?? this.longitude,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -220,6 +231,8 @@ class HuberProfile extends Equatable {
           'emergencyContactPhone': emergencyContactPhone,
         if (idType != null) 'idType': idType,
         if (idNumber != null) 'idNumber': idNumber,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };
