@@ -155,6 +155,15 @@ void main() {
     final sold = LocalCommerceStore.getStream(stream.id)!.auction!;
     expect(sold.status, 'sold');
     expect(sold.orderId, order.id);
+    expect(
+      LocalCommerceStore.listChat(stream.id).any(
+        (m) =>
+            m.text.contains('🏆') &&
+            m.text.contains('Kojo Bidder') &&
+            m.text.contains('150 GHS'),
+      ),
+      isTrue,
+    );
 
     // Idempotent.
     final again = await LocalCommerceStore.finalizeAuction(stream.id);

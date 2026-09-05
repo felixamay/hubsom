@@ -997,6 +997,27 @@ class LocalCommerceStore {
       streamId,
       auction: auction.copyWith(status: 'sold', orderId: orderId),
     );
+    final winnerName = auction.highestBidder?.trim();
+    if (winnerName != null && winnerName.isNotEmpty) {
+      final hostName = stream.hosts.isNotEmpty && stream.hosts.first.name.isNotEmpty
+          ? stream.hosts.first.name
+          : 'Hubsom Live';
+      final hostId =
+          stream.hosts.isNotEmpty ? stream.hosts.first.id : 'hubsom-live';
+      try {
+        await sendChat(
+          streamId: streamId,
+          user: HubsomUser(
+            id: hostId,
+            email: 'live@hubsom.com',
+            name: hostName,
+            role: 'seller',
+          ),
+          text:
+              '🏆 $winnerName won ${product?.name ?? 'the lot'} — ${price.toStringAsFixed(0)} GHS',
+        );
+      } catch (_) {}
+    }
     return order;
   }
 
