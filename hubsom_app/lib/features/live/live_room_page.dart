@@ -17,12 +17,15 @@ import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/live_gift.dart';
+import '../../models/live_reaction_kind.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/live_auction_win_splash.dart';
 import '../../widgets/live_gift_burst.dart';
 import '../../widgets/live_gift_sheet.dart';
+import '../../widgets/live_reaction_burst.dart';
+import '../../widgets/live_reaction_tray.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
@@ -60,7 +63,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   final _floating = <_FloatRx>[];
   final _giftFx = <_GiftFx>[];
   _AuctionWinFx? _winFx;
+  _ReactionBurstFx? _reactBurst;
   String? _celebratedWinKey;
+  bool _reactTrayOpen = false;
+  String _lastReactionId = LiveReactionCatalog.defaultId;
+  int _reactCombo = 0;
+  String? _comboKindId;
+  DateTime? _comboAt;
+  final _seenReactionIds = <String>{};
+  bool _seededReactions = false;
   final _seenGiftChatIds = <String>{};
   final _skipIncomingGiftIds = <String>{};
   bool _seededGiftChat = false;
@@ -213,6 +224,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         _catalog = catalog;
       });
       _seedGiftChat(messages);
+      _seedReactions();
       _maybeCelebrateWin(null, s.auction);
 
       if (join) {
@@ -295,6 +307,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (wasOpen != isOpen) _startPoll();
       _maybeCelebrateWin(prevAuction, next.auction);
       _playNewGiftChats(messages);
+      _playIncomingReactions();
     } catch (_) {}
   }
 
@@ -550,27 +563,96 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
   }
 
-  Future<void> _react() async {
+  void _seedReactions() {
+    if (_seededReactions) return;
+    for (final rx in ref
+        .read(liveRepositoryProvider)
+        .recentReactions(widget.streamId)) {
+      _seenReactionIds.add(rx.id);
+    }
+    _seededReactions = true;
+  }
+
+  void _playIncomingReactions() {
+    if (!_seededReactions) {
+      _seedReactions();
+      return;
+    }
+    final rows =
+        ref.read(liveRepositoryProvider).recentReactions(widget.streamId);
+    for (final rx in rows) {
+      if (!_seenReactionIds.add(rx.id)) continue;
+      _playReactionVisual(LiveReactionCatalog.byEmoji(rx.emoji), incoming: true);
+    }
+  }
+
+  Future<void> _react([LiveReactionKind? picked]) async {
     if (!ensureSignedIn(context, ref, message: 'Sign in to react')) return;
+    final kind = picked ??
+        LiveReactionCatalog.byId(_lastReactionId) ??
+        LiveReactionCatalog.fire;
+    _lastReactionId = kind.id;
+    final now = DateTime.now();
+    if (_comboKindId == kind.id &&
+        _comboAt != null &&
+        now.difference(_comboAt!) < const Duration(milliseconds: 900)) {
+      _reactCombo += 1;
+    } else {
+      _reactCombo = 1;
+      _comboKindId = kind.id;
+    }
+    _comboAt = now;
     final rx = await ref
         .read(liveRepositoryProvider)
-        .sendReaction(widget.streamId, '❤️');
-    final entry = _FloatRx(
-      id: rx.id,
-      emoji: rx.emoji,
-      x: rx.x,
-      controller: AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 1600),
-      ),
-    );
+        .sendReaction(widget.streamId, kind.emoji);
+    _seenReactionIds.add(rx.id);
+    if (!mounted) return;
     setState(() {
-      _floating.add(entry);
       _likeCount += 1;
+      _reactTrayOpen = false;
     });
-    entry.controller.forward().whenComplete(() {
-      entry.controller.dispose();
-      if (mounted) setState(() => _floating.removeWhere((e) => e.id == rx.id));
+    _playReactionVisual(kind, x: rx.x, combo: _reactCombo);
+  }
+
+  void _playReactionVisual(
+    LiveReactionKind kind, {
+    double? x,
+    int combo = 1,
+    bool incoming = false,
+  }) {
+    final count = incoming ? max(1, kind.floatCount - 2) : kind.floatCount;
+    final rnd = Random(DateTime.now().microsecondsSinceEpoch);
+    for (var i = 0; i < count; i++) {
+      final dx = (x ?? 0.62) + (rnd.nextDouble() - 0.5) * 0.22;
+      final entry = _FloatRx(
+        id: 'rxf-${DateTime.now().microsecondsSinceEpoch}-$i',
+        emoji: kind.emoji,
+        x: dx.clamp(0.08, 0.9),
+        color: kind.color,
+        controller: AnimationController(
+          vsync: this,
+          duration: Duration(milliseconds: 1400 + i * 80),
+        ),
+      );
+      setState(() => _floating.add(entry));
+      entry.controller.forward().whenComplete(() {
+        entry.controller.dispose();
+        if (mounted) {
+          setState(() => _floating.removeWhere((e) => e.id == entry.id));
+        }
+      });
+    }
+    if (kind.fx == ReactionFx.float && combo < 3) return;
+    _reactBurst?.controller.dispose();
+    final burst = _ReactionBurstFx(
+      kind: kind,
+      combo: combo,
+      controller: AnimationController(vsync: this, duration: kind.duration),
+    );
+    setState(() => _reactBurst = burst);
+    burst.controller.forward().whenComplete(() {
+      burst.controller.dispose();
+      if (mounted && _reactBurst == burst) setState(() => _reactBurst = null);
     });
   }
 
@@ -1027,6 +1109,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       g.controller.dispose();
     }
     _winFx?.controller.dispose();
+    _reactBurst?.controller.dispose();
     _agora?.leave();
     super.dispose();
   }
@@ -1105,10 +1188,17 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                               )
                             : Text(
                                 f.emoji,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 34,
                                   shadows: [
-                                    Shadow(blurRadius: 8, color: Colors.black45),
+                                    Shadow(
+                                      blurRadius: 12,
+                                      color: f.color ?? Colors.black45,
+                                    ),
+                                    const Shadow(
+                                      blurRadius: 8,
+                                      color: Colors.black45,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1128,6 +1218,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 ),
               );
             }),
+            if (_reactBurst != null)
+              AnimatedBuilder(
+                animation: _reactBurst!.controller,
+                builder: (_, __) => LiveReactionBurst(
+                  kind: _reactBurst!.kind,
+                  combo: _reactBurst!.combo,
+                  progress: _reactBurst!.controller.value,
+                ),
+              ),
             if (_winFx != null)
               AnimatedBuilder(
                 animation: _winFx!.controller,
@@ -1332,6 +1431,16 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   ),
                 ),
               ),
+            if (!_shopOpen && _reactTrayOpen)
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 86,
+                child: LiveReactionTray(
+                  selectedId: _lastReactionId,
+                  onPick: (kind) => unawaited(_react(kind)),
+                ),
+              ),
             if (!_shopOpen)
               Positioned(
                 left: 0,
@@ -1356,7 +1465,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   onSendChat: _sendChat,
                   onOpenShop: _openShop,
                   onOpenCart: () => context.push('/cart'),
-                  onReact: _react,
+                  onReact: () => unawaited(_react()),
+                  onOpenReactions: () =>
+                      setState(() => _reactTrayOpen = !_reactTrayOpen),
+                  lastReactionEmoji:
+                      (LiveReactionCatalog.byId(_lastReactionId) ??
+                              LiveReactionCatalog.fire)
+                          .emoji,
                   onGift: _sendGift,
                   onShare: _shareShow,
                   onDismissAuction: () =>
@@ -1697,6 +1812,8 @@ class _LiveBottomDock extends StatelessWidget {
     required this.onOpenShop,
     required this.onOpenCart,
     required this.onReact,
+    required this.onOpenReactions,
+    required this.lastReactionEmoji,
     required this.onGift,
     required this.onShare,
     required this.onDismissAuction,
@@ -1722,6 +1839,8 @@ class _LiveBottomDock extends StatelessWidget {
   final VoidCallback onOpenShop;
   final VoidCallback onOpenCart;
   final VoidCallback onReact;
+  final VoidCallback onOpenReactions;
+  final String lastReactionEmoji;
   final VoidCallback onGift;
   final VoidCallback onShare;
   final VoidCallback onDismissAuction;
@@ -1867,10 +1986,16 @@ class _LiveBottomDock extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Like',
-                    onPressed: onReact,
-                    icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
+                  GestureDetector(
+                    onLongPress: onOpenReactions,
+                    child: IconButton(
+                      tooltip: 'React · hold for more',
+                      onPressed: onReact,
+                      icon: Text(
+                        lastReactionEmoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    ),
                   ),
                   IconButton(
                     tooltip: 'Gift',
@@ -2532,10 +2657,23 @@ class _FloatRx {
     required this.emoji,
     required this.x,
     required this.controller,
+    this.color,
   });
   final String id;
   final String emoji;
   final double x;
+  final Color? color;
+  final AnimationController controller;
+}
+
+class _ReactionBurstFx {
+  _ReactionBurstFx({
+    required this.kind,
+    required this.combo,
+    required this.controller,
+  });
+  final LiveReactionKind kind;
+  final int combo;
   final AnimationController controller;
 }
 
