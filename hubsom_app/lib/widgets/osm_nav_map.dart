@@ -39,9 +39,6 @@ class _OsmNavMapState extends State<OsmNavMap> {
   LatLng get _target =>
       widget.navigateToPickup ? widget.pickup : widget.dropoff;
 
-  LatLng get _from => widget.rider ??
-      (widget.navigateToPickup ? widget.pickup : widget.dropoff);
-
   @override
   void didUpdateWidget(covariant OsmNavMap oldWidget) {
     super.didUpdateWidget(oldWidget);
