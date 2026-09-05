@@ -48,6 +48,7 @@ import '../seller/seller_orders_page.dart';
 import '../seller/seller_product_new_page.dart';
 import '../seller/seller_products_page.dart';
 import '../seller/seller_store_page.dart';
+import '../settings/change_password_page.dart';
 import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
@@ -309,7 +310,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings',
-        builder: (_, __) => const AuthGate(child: SettingsPage()),
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to open settings',
+          child: SettingsPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/password',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to change your password',
+          child: ChangePasswordPage(),
+        ),
       ),
       GoRoute(path: '/auth/sign-in', builder: (_, __) => const SignInPage()),
       GoRoute(path: '/auth/sign-up', builder: (_, __) => const SignUpPage()),

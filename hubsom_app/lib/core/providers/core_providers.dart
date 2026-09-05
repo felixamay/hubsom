@@ -167,6 +167,16 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     state = AsyncValue.data(user);
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) {
+    return _repo.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
   Future<void> signOut() async {
     await _repo.signOut();
     state = const AsyncValue.data(null);
