@@ -82,6 +82,39 @@ class OrderRepository {
     return orders;
   }
 
+  Future<List<Order>> buyerOrders() async {
+    final user = _sessionUser;
+    final byId = <String, Order>{
+      for (final o in LocalHuberStore.listOrders()) o.id: o,
+    };
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.orders);
+      for (final row in rows) {
+        try {
+          final o = Order.fromJson(row);
+          byId[o.id] = o;
+          await LocalHuberStore.saveOrder(o);
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    var orders = byId.values.toList();
+    if (user != null) {
+      final email = user.email.toLowerCase();
+      orders = orders
+          .where(
+            (o) =>
+                o.userId == user.id ||
+                (o.buyerEmail != null && o.buyerEmail!.toLowerCase() == email),
+          )
+          .toList();
+    } else {
+      orders = const [];
+    }
+    orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return orders;
+  }
+
   Future<Order> updateOrder(String orderId, Map<String, dynamic> patch) async {
     try {
       final res = await _api.patch('/api/seller/orders/$orderId', data: patch);
