@@ -120,7 +120,7 @@ class GiftStore {
       next = user.copyWith(giftPoints: user.giftPoints + pack.points);
     }
     final saved = await persistUser(next);
-    final rows = listLedger();
+    final rows = List<GiftLedgerEntry>.from(listLedger());
     rows.insert(
       0,
       GiftLedgerEntry(
@@ -181,7 +181,7 @@ class GiftStore {
       hostSellerId: stream.sellerId,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
-    final rows = listLedger();
+    final rows = List<GiftLedgerEntry>.from(listLedger());
     rows.insert(0, entry);
     await _saveLedger(rows);
     return (user: saved, gift: gift, entry: entry);
