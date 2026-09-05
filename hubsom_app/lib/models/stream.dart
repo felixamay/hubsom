@@ -230,6 +230,7 @@ class LiveStream extends Equatable {
     this.endedAt,
     this.recordingUrl,
     this.productIds = const [],
+    this.productQuantities = const {},
     this.pinnedProductId,
     this.hosts = const [],
     this.auction,
@@ -252,6 +253,8 @@ class LiveStream extends Equatable {
   final String? endedAt;
   final String? recordingUrl;
   final List<String> productIds;
+  /// Units of each product offered on this live (remaining).
+  final Map<String, int> productQuantities;
   final String? pinnedProductId;
   final List<StreamHost> hosts;
   final LiveAuction? auction;
@@ -265,6 +268,13 @@ class LiveStream extends Equatable {
 
   /// Open bidding on a show that is actually live — closed / unsold lots stay off Auctions.
   bool get isLiveAuction => isLive && auction != null && auction!.isOpen;
+
+  /// Remaining units for sale on this show. Falls back to [fallback] for older streams.
+  int offeredQty(String productId, {int fallback = 0}) {
+    final qty = productQuantities[productId];
+    if (qty != null) return qty;
+    return fallback;
+  }
 
   factory LiveStream.fromJson(Map<String, dynamic> json) => LiveStream(
         id: json['id'] as String,
@@ -280,6 +290,7 @@ class LiveStream extends Equatable {
         endedAt: json['endedAt'] as String?,
         recordingUrl: json['recordingUrl'] as String?,
         productIds: (json['productIds'] as List?)?.cast<String>() ?? const [],
+        productQuantities: parseProductQuantities(json['productQuantities']),
         pinnedProductId: json['pinnedProductId'] as String?,
         hosts: (json['hosts'] as List?)
                 ?.map((e) => StreamHost.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -308,6 +319,7 @@ class LiveStream extends Equatable {
         if (endedAt != null) 'endedAt': endedAt,
         if (recordingUrl != null) 'recordingUrl': recordingUrl,
         'productIds': productIds,
+        if (productQuantities.isNotEmpty) 'productQuantities': productQuantities,
         if (pinnedProductId != null) 'pinnedProductId': pinnedProductId,
         'hosts': hosts.map((h) => h.toJson()).toList(),
         if (auction != null) 'auction': auction!.toJson(),
@@ -324,6 +336,7 @@ class LiveStream extends Equatable {
     String? endedAt,
     String? pinnedProductId,
     List<String>? productIds,
+    Map<String, int>? productQuantities,
     LiveAuction? auction,
     bool clearPinned = false,
     bool clearAuction = false,
@@ -343,6 +356,7 @@ class LiveStream extends Equatable {
         endedAt: endedAt ?? this.endedAt,
         recordingUrl: recordingUrl,
         productIds: productIds ?? this.productIds,
+        productQuantities: productQuantities ?? this.productQuantities,
         pinnedProductId:
             clearPinned ? null : (pinnedProductId ?? this.pinnedProductId),
         hosts: hosts,
@@ -354,7 +368,18 @@ class LiveStream extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, status, viewerCount, pinnedProductId, auction];
+  List<Object?> get props =>
+      [id, status, viewerCount, pinnedProductId, auction, productQuantities];
+}
+
+Map<String, int> parseProductQuantities(dynamic raw) {
+  if (raw is! Map) return const {};
+  final out = <String, int>{};
+  raw.forEach((key, value) {
+    final n = value is num ? value.toInt() : int.tryParse('$value');
+    if (n != null && n >= 0) out['$key'] = n;
+  });
+  return out;
 }
 
 class ChatMessage extends Equatable {

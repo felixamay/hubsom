@@ -183,7 +183,7 @@ void main() {
     );
   });
 
-  test('host cannot gift their own live', () async {
+  test('host can gift their own live without self-earnings', () async {
     final stream = await goLive();
     final host = HubsomUser.fromJson(
       Map<String, dynamic>.from(jsonDecode(LocalStore.userJson!) as Map),
@@ -191,16 +191,17 @@ void main() {
     await LocalStore.setUserJson(
       jsonEncode(host.copyWith(giftPoints: 500).toJson()),
     );
+    await _putVault(host.copyWith(giftPoints: 500));
 
-    await expectLater(
-      repo.sendGift(streamId: stream.id, giftId: 'rose'),
-      throwsA(
-        isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('Hosts cannot gift'),
-        ),
-      ),
+    final before = GiftStore.hostEarnings(stream.sellerId);
+    final sent = await repo.sendGift(streamId: stream.id, giftId: 'rose');
+    expect(sent.gift.id, 'rose');
+    expect(sent.user.giftPoints, 499);
+    expect(GiftStore.hostEarnings(stream.sellerId), before);
+    expect(
+      GiftStore.receivedFor(stream.sellerId)
+          .where((e) => e.streamId == stream.id),
+      isEmpty,
     );
   });
 

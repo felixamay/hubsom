@@ -67,6 +67,58 @@ class GiftStore {
     }
   }
 
+  /// Gifts received as a live host (keyed by seller id).
+  static List<GiftLedgerEntry> receivedFor(String sellerId) {
+    if (sellerId.isEmpty) return const [];
+    return listLedger()
+        .where(
+          (e) =>
+              e.kind == 'send' &&
+              e.hostSellerId == sellerId &&
+              (e.hostShareGhs == null || e.hostShareGhs! > 0),
+        )
+        .toList();
+  }
+
+  static double pendingEarningsGhs(HubsomUser user) {
+    final sellerId = user.sellerId ?? '';
+    final stored = sellerId.isEmpty ? 0.0 : hostEarnings(sellerId);
+    final fromUser = user.giftEarningsGhs;
+    return fromUser > stored ? fromUser : stored;
+  }
+
+  static Future<HubsomUser> withdrawEarnings(HubsomUser user) async {
+    final pending = pendingEarningsGhs(user);
+    if (pending <= 0.001) {
+      throw StateError('No gift earnings to withdraw yet');
+    }
+    final sellerId = user.sellerId ?? '';
+    final next = user.copyWith(
+      walletBalanceGhs: user.walletBalanceGhs + pending,
+      giftEarningsGhs: 0,
+    );
+    final saved = await persistUser(next);
+    if (sellerId.isNotEmpty) {
+      final map = _hostEarnings();
+      map[sellerId] = 0;
+      await _saveHostEarnings(map);
+    }
+    final rows = List<GiftLedgerEntry>.from(listLedger());
+    rows.insert(
+      0,
+      GiftLedgerEntry(
+        id: 'gwd_${_uuid.v4().substring(0, 8)}',
+        userId: saved.id,
+        kind: 'withdraw',
+        points: 0,
+        priceGhs: pending,
+        createdAt: DateTime.now().toUtc().toIso8601String(),
+      ),
+    );
+    await _saveLedger(rows);
+    return saved;
+  }
+
   static Future<void> _saveLedger(List<GiftLedgerEntry> rows) async {
     await LocalStore.setString(
       _ledgerKey,
@@ -154,10 +206,10 @@ class GiftStore {
     if (stream == null || !stream.isLive) {
       throw StateError('Gifts can only be sent while the show is live');
     }
-    if (stream.hosts.any((h) => h.id == sender.id) ||
-        sender.sellerId == stream.sellerId) {
-      throw StateError('Hosts cannot gift their own live');
-    }
+    final selfGift = stream.hosts.any((h) => h.id == sender.id) ||
+        (sender.sellerId != null &&
+            sender.sellerId!.isNotEmpty &&
+            sender.sellerId == stream.sellerId);
 
     final next = sender.copyWith(
       giftPoints: sender.giftPoints - gift.costPoints,
@@ -165,10 +217,12 @@ class GiftStore {
     final saved = await persistUser(next);
 
     final share = GiftCatalog.hostShareGhs(gift.costPoints);
-    final earnings = _hostEarnings();
-    earnings[stream.sellerId] = (earnings[stream.sellerId] ?? 0) + share;
-    await _saveHostEarnings(earnings);
-    await _creditHostUser(stream.sellerId, share);
+    if (!selfGift) {
+      final earnings = _hostEarnings();
+      earnings[stream.sellerId] = (earnings[stream.sellerId] ?? 0) + share;
+      await _saveHostEarnings(earnings);
+      await _creditHostUser(stream.sellerId, share);
+    }
 
     final entry = GiftLedgerEntry(
       id: 'gft_${_uuid.v4().substring(0, 8)}',
@@ -179,6 +233,8 @@ class GiftStore {
       giftId: gift.id,
       giftName: gift.name,
       hostSellerId: stream.sellerId,
+      senderName: saved.name,
+      hostShareGhs: selfGift ? 0 : share,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = List<GiftLedgerEntry>.from(listLedger());

@@ -52,6 +52,7 @@ import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
 import '../wallet/gift_points_page.dart';
+import '../wallet/received_gifts_page.dart';
 import '../wallet/wallet_page.dart';
 import 'main_shell.dart';
 
@@ -278,6 +279,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AuthGate(
           message: 'Sign in to access your wallet',
           child: WalletPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/wallet/gifts',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to view received gifts',
+          child: ReceivedGiftsPage(),
         ),
       ),
       GoRoute(

@@ -76,11 +76,13 @@ class GiftLedgerEntry extends Equatable {
     this.giftId,
     this.giftName,
     this.hostSellerId,
+    this.senderName,
+    this.hostShareGhs,
   });
 
   final String id;
   final String userId;
-  final String kind; // purchase | send
+  final String kind; // purchase | send | withdraw
   final int points;
   final String createdAt;
   final double? priceGhs;
@@ -89,6 +91,8 @@ class GiftLedgerEntry extends Equatable {
   final String? giftId;
   final String? giftName;
   final String? hostSellerId;
+  final String? senderName;
+  final double? hostShareGhs;
 
   factory GiftLedgerEntry.fromJson(Map<String, dynamic> json) =>
       GiftLedgerEntry(
@@ -103,6 +107,8 @@ class GiftLedgerEntry extends Equatable {
         giftId: json['giftId'] as String?,
         giftName: json['giftName'] as String?,
         hostSellerId: json['hostSellerId'] as String?,
+        senderName: json['senderName'] as String?,
+        hostShareGhs: (json['hostShareGhs'] as num?)?.toDouble(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -117,6 +123,8 @@ class GiftLedgerEntry extends Equatable {
         if (giftId != null) 'giftId': giftId,
         if (giftName != null) 'giftName': giftName,
         if (hostSellerId != null) 'hostSellerId': hostSellerId,
+        if (senderName != null) 'senderName': senderName,
+        if (hostShareGhs != null) 'hostShareGhs': hostShareGhs,
       };
 
   @override
