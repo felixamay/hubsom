@@ -71,10 +71,33 @@ class _OsmNavMapState extends State<OsmNavMap> {
     } catch (_) {}
   }
 
+  static Future<bool> launchDirections({
+    LatLng? from,
+    required LatLng to,
+  }) async {
+    for (final uri in MapsService.directionUris(from: from, to: to)) {
+      try {
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (opened) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   Future<void> _openDirections() async {
-    final uri = MapsService.osmDirectionsUri(_from, _target);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final opened = await launchDirections(
+      from: widget.rider,
+      to: _target,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open Maps. Allow pop-ups and try again.'),
+        ),
+      );
     }
   }
 
@@ -174,8 +197,8 @@ class _OsmNavMapState extends State<OsmNavMap> {
                 icon: const Icon(Icons.directions, size: 18),
                 label: Text(
                   widget.navigateToPickup
-                      ? 'Navigate to store'
-                      : 'Navigate to buyer',
+                      ? 'Open Maps to store'
+                      : 'Open Maps to buyer',
                 ),
               ),
             ),
