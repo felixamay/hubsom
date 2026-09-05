@@ -1103,6 +1103,38 @@ class LocalCommerceStore {
     return _insertTimelinePost(post);
   }
 
+  static Future<TimelinePost> shareLiveToTimeline({
+    required LiveStream stream,
+    required HubsomUser author,
+    Product? product,
+    String caption = '',
+  }) async {
+    final pinId = product?.id ??
+        stream.pinnedProductId ??
+        stream.auction?.productId ??
+        '';
+    final pin = pinId.isEmpty ? product : (product ?? getProduct(pinId));
+    final image = pin?.images.isNotEmpty == true
+        ? pin!.images.first
+        : (stream.cover.trim().isEmpty ? null : stream.cover);
+    final post = TimelinePost(
+      id: 'post-${_uuid.v4().substring(0, 8)}',
+      authorId: author.id,
+      authorName: author.name,
+      authorImage: author.image,
+      type: 'live',
+      streamId: stream.id,
+      productId: pin?.id ?? pinId,
+      productName: pin?.name ?? stream.title,
+      productImage: image,
+      caption: caption.trim().isEmpty
+          ? 'Watch ${stream.title} live on Hubsom'
+          : caption.trim(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    return _insertTimelinePost(post);
+  }
+
   static Future<TimelinePost> _insertTimelinePost(TimelinePost post) async {
     final rows = _readList(_timelineKey);
     rows.insert(0, post.toJson());

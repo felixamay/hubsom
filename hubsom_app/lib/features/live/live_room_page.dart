@@ -275,28 +275,109 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     } catch (_) {}
   }
 
-  Future<void> _shareShow() async {
+  String get _liveLink {
     final s = stream;
-    if (s == null) return;
-    final uri = Uri.base.replace(
+    if (s == null) return 'https://hubsom.com/';
+    return Uri.base.replace(
       path: '/live/${s.id}',
       query: '',
       fragment: '',
-    );
-    final link = uri.toString();
+    ).toString();
+  }
+
+  Future<void> _shareViaApps() async {
+    final s = stream;
+    if (s == null) return;
     final text =
-        'Watch $_hostName live on Hubsom — ${s.title}\nBargain in real time:\n$link';
+        'Watch $_hostName live on Hubsom — ${s.title}\nBargain in real time:\n$_liveLink';
     try {
       await Share.share(text, subject: s.title);
       if (mounted) setState(() => _shareCount += 1);
     } catch (_) {
-      await Clipboard.setData(ClipboardData(text: link));
+      await Clipboard.setData(ClipboardData(text: _liveLink));
       if (!mounted) return;
       setState(() => _shareCount += 1);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Live link copied — paste to share.')),
       );
     }
+  }
+
+  Future<void> _shareToTimeline() async {
+    final s = stream;
+    if (s == null) return;
+    if (!ensureSignedIn(context, ref, message: 'Sign in to share to your timeline')) {
+      return;
+    }
+    try {
+      await ref.read(catalogRepositoryProvider).shareLiveToTimeline(s.id);
+      if (!mounted) return;
+      setState(() => _shareCount += 1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Shared to your timeline'),
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () => context.push('/timeline'),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _shareShow() async {
+    if (stream == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.dynamic_feed_outlined),
+              title: const Text('Share to timeline'),
+              subtitle: const Text('Post this live for Hubsom shoppers'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _shareToTimeline();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Share via apps'),
+              subtitle: const Text('WhatsApp, SMS, and more'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _shareViaApps();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy link'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Clipboard.setData(ClipboardData(text: _liveLink));
+                if (!mounted) return;
+                setState(() => _shareCount += 1);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Live link copied')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleFollow() async {

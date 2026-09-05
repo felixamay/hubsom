@@ -671,6 +671,27 @@ class CatalogRepository {
     );
   }
 
+  Future<TimelinePost> shareLiveToTimeline(
+    String streamId, {
+    String caption = '',
+  }) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to share to your timeline');
+    final stream = LocalCommerceStore.getStream(streamId);
+    if (stream == null) throw StateError('Live show not found');
+    Product? product;
+    final pinId = stream.pinnedProductId ?? stream.auction?.productId;
+    if (pinId != null && pinId.isNotEmpty) {
+      product = await getProduct(pinId);
+    }
+    return LocalCommerceStore.shareLiveToTimeline(
+      stream: stream,
+      author: user,
+      product: product,
+      caption: caption,
+    );
+  }
+
   Future<List<Promotion>> listPromotions(String placement) async {
     try {
       final res = await _api
