@@ -20,6 +20,7 @@ import '../../models/live_gift.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/live_auction_win_splash.dart';
 import '../../widgets/live_gift_burst.dart';
 import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_host_camera.dart';
@@ -58,6 +59,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   int _shareCount = 0;
   final _floating = <_FloatRx>[];
   final _giftFx = <_GiftFx>[];
+  _AuctionWinFx? _winFx;
+  String? _celebratedWinKey;
   final _seenGiftChatIds = <String>{};
   final _skipIncomingGiftIds = <String>{};
   bool _seededGiftChat = false;
@@ -118,7 +121,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               .finalizeAuctionIfNeeded(widget.streamId)
               .then((s) {
             if (!mounted || s == null) return;
+            final prev = stream?.auction;
             setState(() => stream = s);
+            _maybeCelebrateWin(prev, s.auction);
             _startPoll();
           }),
         );
@@ -208,6 +213,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         _catalog = catalog;
       });
       _seedGiftChat(messages);
+      _maybeCelebrateWin(null, s.auction);
 
       if (join) {
         // Non-blocking: web uses a stub so this must never freeze the UI.
@@ -277,6 +283,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       }
       final wasOpen = stream?.auction?.isOpen == true;
       final isOpen = next.auction?.isOpen == true;
+      final prevAuction = stream?.auction;
       setState(() {
         stream = next;
         chat = messages;
@@ -286,6 +293,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
             .isFollowingSeller(next.sellerId);
       });
       if (wasOpen != isOpen) _startPoll();
+      _maybeCelebrateWin(prevAuction, next.auction);
       _playNewGiftChats(messages);
     } catch (_) {}
   }
@@ -309,6 +317,70 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (m.userId == me && _skipIncomingGiftIds.remove(gift.id)) continue;
       _enqueueGiftFx(gift, m.displayName);
     }
+  }
+
+  String _lotName(LiveAuction auction) {
+    if (pinned != null && pinned!.id == auction.productId) return pinned!.name;
+    for (final p in bag) {
+      if (p.id == auction.productId) return p.name;
+    }
+    return 'the lot';
+  }
+
+  void _maybeCelebrateWin(LiveAuction? before, LiveAuction? after) {
+    if (after == null || !after.isSold) return;
+    final key = after.orderId ?? after.id;
+    if (_celebratedWinKey == key) return;
+    final winner = after.highestBidder?.trim() ?? '';
+    if (winner.isEmpty) {
+      _celebratedWinKey = key;
+      return;
+    }
+    // Viewer joining an already-sold lot — don't replay the splash.
+    if (before == null || before.isSold) {
+      _celebratedWinKey = key;
+      return;
+    }
+    _celebratedWinKey = key;
+    final me = ref.read(authStateProvider).valueOrNull;
+    final isYou = me != null &&
+        ((after.highestBidderId != null && me.id == after.highestBidderId) ||
+            (after.highestBidderEmail != null &&
+                me.email.toLowerCase() ==
+                    after.highestBidderEmail!.toLowerCase()));
+    _enqueueWinSplash(
+      winnerName: winner,
+      amountGhs: after.currentBidGhs,
+      productName: _lotName(after),
+      isYou: isYou,
+    );
+  }
+
+  void _enqueueWinSplash({
+    required String winnerName,
+    required double amountGhs,
+    required String productName,
+    required bool isYou,
+  }) {
+    _winFx?.controller.dispose();
+    final entry = _AuctionWinFx(
+      winnerName: winnerName,
+      amountGhs: amountGhs,
+      productName: productName,
+      isYou: isYou,
+      controller: AnimationController(
+        vsync: this,
+        duration: LiveAuctionWinSplash.duration,
+      ),
+    );
+    setState(() {
+      _winFx = entry;
+      _hideAuctionCard = false;
+    });
+    entry.controller.forward().whenComplete(() {
+      entry.controller.dispose();
+      if (mounted && _winFx == entry) setState(() => _winFx = null);
+    });
   }
 
   void _enqueueGiftFx(LiveGift gift, String senderName) {
@@ -943,6 +1015,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     for (final g in _giftFx) {
       g.controller.dispose();
     }
+    _winFx?.controller.dispose();
     _agora?.leave();
     super.dispose();
   }
@@ -1044,6 +1117,17 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 ),
               );
             }),
+            if (_winFx != null)
+              AnimatedBuilder(
+                animation: _winFx!.controller,
+                builder: (_, __) => LiveAuctionWinSplash(
+                  winnerName: _winFx!.winnerName,
+                  amountGhs: _winFx!.amountGhs,
+                  productName: _winFx!.productName,
+                  isYou: _winFx!.isYou,
+                  progress: _winFx!.controller.value,
+                ),
+              ),
             // TikTok-style top chrome: host + Follow | viewers + close
             Positioned(
               left: 10,
@@ -2454,5 +2538,20 @@ class _GiftFx {
   final String id;
   final LiveGift gift;
   final String senderName;
+  final AnimationController controller;
+}
+
+class _AuctionWinFx {
+  _AuctionWinFx({
+    required this.winnerName,
+    required this.amountGhs,
+    required this.productName,
+    required this.isYou,
+    required this.controller,
+  });
+  final String winnerName;
+  final double amountGhs;
+  final String productName;
+  final bool isYou;
   final AnimationController controller;
 }
