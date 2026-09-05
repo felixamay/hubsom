@@ -76,7 +76,16 @@ class MainShell extends ConsumerWidget {
     }
   }
 
-  void _onMenuSelected(BuildContext context, String value) {
+  Future<void> _onMenuSelected(
+    BuildContext context,
+    WidgetRef ref,
+    String value,
+  ) async {
+    if (value == 'logout') {
+      await ref.read(authStateProvider.notifier).signOut();
+      if (context.mounted) context.go('/');
+      return;
+    }
     final path = switch (value) {
       'live' => '/live',
       'marketplace' => '/marketplace',
@@ -93,6 +102,7 @@ class MainShell extends ConsumerWidget {
       'messages' => '/messages',
       'notifications' => '/notifications',
       'settings' => '/settings',
+      'signin' => '/auth/sign-in',
       _ => null,
     };
     if (path == null) return;
@@ -100,7 +110,7 @@ class MainShell extends ConsumerWidget {
     context.go(path);
   }
 
-  List<PopupMenuEntry<String>> _buildMenu() {
+  List<PopupMenuEntry<String>> _buildMenu({required bool signedIn}) {
     return [
       const PopupMenuItem<String>(
         enabled: false,
@@ -147,6 +157,29 @@ class MainShell extends ConsumerWidget {
             ],
           ),
         ),
+      const PopupMenuDivider(),
+      if (signedIn)
+        const PopupMenuItem<String>(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 22, color: HubsomColors.forest),
+              SizedBox(width: 12),
+              Text('Log out'),
+            ],
+          ),
+        )
+      else
+        const PopupMenuItem<String>(
+          value: 'signin',
+          child: Row(
+            children: [
+              Icon(Icons.login, size: 22, color: HubsomColors.forest),
+              SizedBox(width: 12),
+              Text('Sign in'),
+            ],
+          ),
+        ),
     ];
   }
 
@@ -154,8 +187,9 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartCountProvider);
     final unreadMessages = ref.watch(unreadMessagesCountProvider);
+    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
-    final menu = _buildMenu();
+    final menu = _buildMenu(signedIn: signedIn);
 
     if (wide) {
       return Scaffold(
@@ -187,7 +221,7 @@ class MainShell extends ConsumerWidget {
                     cartCount: cartCount,
                     unreadMessages: unreadMessages,
                     menuEntries: menu,
-                    onMenuSelected: (v) => _onMenuSelected(context, v),
+                    onMenuSelected: (v) => _onMenuSelected(context, ref, v),
                   ),
                   Expanded(child: navigationShell),
                 ],
@@ -233,7 +267,7 @@ class MainShell extends ConsumerWidget {
           PopupMenuButton<String>(
             tooltip: 'Menu',
             icon: const Icon(Icons.menu),
-            onSelected: (value) => _onMenuSelected(context, value),
+            onSelected: (value) => _onMenuSelected(context, ref, value),
             itemBuilder: (_) => menu,
           ),
           const SizedBox(width: 4),
