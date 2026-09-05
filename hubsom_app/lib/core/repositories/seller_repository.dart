@@ -174,10 +174,10 @@ class SellerRepository {
         compareAtGhs: flashSale != null ? priceGhs : null,
         stock: stock,
         images: images,
-        supports: (body['supports'] as List?)?.cast<String>() ??
-            const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
+        supports: (body['supports'] as List?)?.cast<String>(),
         hasDemoVideo: hasDemoVideo,
         flashSale: flashSale,
+        auctionOnly: body['auctionOnly'] == true,
       );
     } catch (e) {
       final message = '$e';
@@ -325,6 +325,9 @@ class SellerRepository {
       flashSale: nextFlash,
       clearFlashSale: clearFlash,
       slug: slug.isEmpty ? existing.slug : slug,
+      auctionOnly: body.containsKey('auctionOnly')
+          ? body['auctionOnly'] == true
+          : existing.auctionOnly,
     );
 
     try {
@@ -408,7 +411,10 @@ class SellerRepository {
     final user = _user;
     if (user == null) return const [];
     final seller = await LocalCommerceStore.ensureSellerForUser(user);
-    final local = LocalCommerceStore.listProducts(sellerId: seller.id);
+    final local = LocalCommerceStore.listProducts(
+      sellerId: seller.id,
+      includeAuctionLots: true,
+    );
 
     try {
       final remoteRows = await CloudStore.listDocs(CloudStore.products);

@@ -189,14 +189,20 @@ class LocalCommerceStore {
 
   // --- products ---
 
+  static List<Product> _allProducts() => _readList(_productsKey)
+      .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
+
   static List<Product> listProducts({
     String? category,
     String? q,
     String? sellerId,
+    bool includeAuctionLots = false,
   }) {
-    var list = _readList(_productsKey)
-        .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    var list = _allProducts();
+    if (!includeAuctionLots) {
+      list = list.where((p) => !p.isAuctionLot).toList();
+    }
     if (category != null && category.isNotEmpty) {
       list = list.where((p) => p.category == category).toList();
     }
@@ -218,7 +224,7 @@ class LocalCommerceStore {
   }
 
   static Product? getProduct(String idOrSlug) {
-    for (final p in listProducts()) {
+    for (final p in _allProducts()) {
       if (p.id == idOrSlug || p.slug == idOrSlug) return p;
     }
     return null;
@@ -232,16 +238,12 @@ class LocalCommerceStore {
     required double priceGhs,
     required int stock,
     List<String> images = const [],
-    List<String> supports = const [
-      'buy-now',
-      'store-listing',
-      'live-selling',
-      'live-auction',
-    ],
+    List<String>? supports,
     bool hasDemoVideo = false,
     String? demoVideoUrl,
     FlashSale? flashSale,
     double? compareAtGhs,
+    bool auctionOnly = false,
   }) async {
     if (images.length < 3) {
       throw StateError('Upload at least 3 product photos before publishing');
@@ -263,12 +265,16 @@ class LocalCommerceStore {
       images: images,
       sellerId: seller.id,
       stock: stock,
-      supports: supports,
+      supports: supports ??
+          (auctionOnly
+              ? const ['live-auction']
+              : const ['buy-now', 'store-listing', 'live-selling']),
       hasDemoVideo: hasDemoVideo,
       demoVideoUrl: demoVideoUrl,
-      flashSale: flashSale,
+      flashSale: auctionOnly ? null : flashSale,
+      auctionOnly: auctionOnly,
     );
-    final products = listProducts();
+    final products = _allProducts();
     products.insert(0, product);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
     return getProduct(id) ?? product;
@@ -278,7 +284,7 @@ class LocalCommerceStore {
     if (product.images.length < 3) {
       throw StateError('Keep at least 3 product photos');
     }
-    final products = listProducts();
+    final products = _allProducts();
     final idx = products.indexWhere((p) => p.id == product.id);
     if (idx < 0) {
       throw StateError('Product not found');
@@ -289,7 +295,7 @@ class LocalCommerceStore {
   }
 
   static Future<void> deleteProduct(String productId) async {
-    final products = listProducts();
+    final products = _allProducts();
     products.removeWhere((p) => p.id == productId);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
 
@@ -1536,7 +1542,7 @@ class LocalCommerceStore {
     } catch (_) {}
 
     // Refresh product rating aggregates locally.
-    final products = listProducts();
+    final products = _allProducts();
     final idx = products.indexWhere((p) => p.id == productId);
     if (idx >= 0) {
       final all = listReviews(productId);

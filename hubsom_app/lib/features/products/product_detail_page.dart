@@ -614,6 +614,13 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         fontWeight: FontWeight.w900,
                       ),
                 ),
+                if (product.isAuctionLot) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Auction lot · hidden from store. Sellers tap it on live to start selling.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Text(
                   formatGhs(product.effectivePrice),
@@ -906,7 +913,9 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
           ),
         ],
       ),
-      bottomNavigationBar: ProductPurchaseBar(
+      bottomNavigationBar: product.isAuctionLot
+          ? null
+          : ProductPurchaseBar(
         inStock: product.stock > 0,
         onAddToCart: () async {
           await ref.read(cartProvider.notifier).addProduct(

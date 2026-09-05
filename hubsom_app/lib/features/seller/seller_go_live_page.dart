@@ -48,13 +48,18 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         _products = products;
         _loadingProducts = false;
         if (_products.isNotEmpty) {
+          final firstStore = _storeProducts.isNotEmpty
+              ? _storeProducts.first
+              : _products.first;
           _selected
             ..clear()
-            ..add(_products.first.id);
-          _qtys[_products.first.id] = _defaultQty(_products.first);
-          _auctionProductId = _products.first.id;
-          _askingPrice.text =
-              _products.first.effectivePrice.toStringAsFixed(0);
+            ..add(firstStore.id);
+          _qtys[firstStore.id] = _defaultQty(firstStore);
+          if (_auctionLots.isNotEmpty) {
+            _auctionProductId = _auctionLots.first.id;
+            _askingPrice.text =
+                _auctionLots.first.effectivePrice.toStringAsFixed(0);
+          }
         }
       });
     } catch (e) {
@@ -75,6 +80,12 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     _askingPrice.dispose();
     super.dispose();
   }
+
+  List<Product> get _storeProducts =>
+      _products.where((p) => !p.isAuctionLot).toList();
+
+  List<Product> get _auctionLots =>
+      _products.where((p) => p.isAuctionLot).toList();
 
   int _defaultQty(Product p) => p.stock < 1 ? 0 : 1;
 
@@ -192,9 +203,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Pick products and set how many units are for this live. '
-                  'If you auction a product, the next unit of that product goes on auction automatically after each sale until quantity runs out. '
-                  'You can still list or auction any other product — or the same one again — without ending the show.',
+                  'Store products sell at the listed price. Auction lots are created separately and stay hidden from your store — tap one on live to start selling.',
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -223,14 +232,21 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'You need at least one product before going live. Create a product with 3+ photos, then you will return here.',
+                            'Create a store product or a hidden auction lot (3+ photos), then come back here.',
                           ),
                           const SizedBox(height: 12),
                           FilledButton(
                             onPressed: () => context.push(
-                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=store',
                             ),
-                            child: const Text('Create a product'),
+                            child: const Text('Create store product'),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            onPressed: () => context.push(
+                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=auction',
+                            ),
+                            child: const Text('Create auction lot'),
                           ),
                         ],
                       ),
@@ -266,7 +282,9 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                               subtitle: Text(
                                 out
                                     ? 'Out of stock — add quantity on the product first'
-                                    : '${formatGhs(p.effectivePrice)} · ${p.stock} in stock',
+                                    : p.isAuctionLot
+                                        ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot · hidden from store'
+                                        : '${formatGhs(p.effectivePrice)} · ${p.stock} in store',
                               ),
                               onChanged: out
                                   ? null
@@ -332,47 +350,64 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 if (_products.isNotEmpty) ...[
                   TextButton(
                     onPressed: () => context.push(
-                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=store',
                     ),
-                    child: const Text('Add another product'),
+                    child: const Text('Add store product'),
+                  ),
+                  TextButton(
+                    onPressed: () => context.push(
+                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=auction',
+                    ),
+                    child: const Text('Add auction lot'),
                   ),
                 ],
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Include live auction'),
-                  subtitle: const Text('Viewers can bid on one product'),
+                  title: const Text('Start with an auction lot'),
+                  subtitle: Text(
+                    _auctionLots.isEmpty
+                        ? 'Create an auction lot first — it stays hidden from your store'
+                        : 'Tap that lot on live to keep selling. Hidden from store.',
+                  ),
                   value: _auction,
-                  onChanged: _products.isEmpty || _selected.isEmpty
+                  onChanged: _auctionLots.isEmpty
                       ? null
                       : (v) => setState(() {
                             _auction = v;
-                            _auctionProductId ??= _selected.first;
+                            _auctionProductId ??= _auctionLots.first.id;
+                            if (v && _auctionProductId != null) {
+                              _selected.add(_auctionProductId!);
+                              final lot = _auctionLots.firstWhere(
+                                (p) => p.id == _auctionProductId,
+                              );
+                              _qtys[_auctionProductId!] = _defaultQty(lot);
+                            }
                           }),
                 ),
-                if (_auction && _selected.isNotEmpty) ...[
+                if (_auction && _auctionLots.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     key: ValueKey(
-                      'auction-${_selected.join(',')}-${_auctionProductId ?? ''}',
+                      'auction-${_auctionLots.map((p) => p.id).join(',')}-${_auctionProductId ?? ''}',
                     ),
-                    initialValue: _selected.contains(_auctionProductId ?? '')
+                    initialValue: _auctionLots.any((p) => p.id == _auctionProductId)
                         ? _auctionProductId
-                        : _selected.first,
+                        : _auctionLots.first.id,
                     items: [
-                      for (final id in _selected)
+                      for (final p in _auctionLots)
                         DropdownMenuItem(
-                          value: id,
-                          child: Text(
-                            _products.firstWhere((p) => p.id == id).name,
-                          ),
+                          value: p.id,
+                          child: Text(p.name),
                         ),
                     ],
                     onChanged: (v) {
                       setState(() {
                         _auctionProductId = v;
                         if (v == null) return;
-                        for (final p in _products) {
+                        _selected.add(v);
+                        for (final p in _auctionLots) {
                           if (p.id == v) {
+                            _qtys[v] = _defaultQty(p);
                             _askingPrice.text =
                                 p.effectivePrice.toStringAsFixed(0);
                             break;
@@ -381,7 +416,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                       });
                     },
                     decoration:
-                        const InputDecoration(labelText: 'Auction product'),
+                        const InputDecoration(labelText: 'Auction lot'),
                   ),
                   const SizedBox(height: 8),
                   TextField(
