@@ -86,6 +86,20 @@ class OrderShipping extends Equatable {
             : null,
       );
 
+  bool get hasCustomerContact {
+    final hasPhone = phone.trim().isNotEmpty;
+    final hasPlace = line1.trim().isNotEmpty || city.trim().isNotEmpty;
+    return hasPhone && hasPlace;
+  }
+
+  String get locationLabel {
+    final parts = [
+      if (line1.trim().isNotEmpty) line1.trim(),
+      if (city.trim().isNotEmpty) city.trim(),
+    ];
+    return parts.join(', ');
+  }
+
   Map<String, dynamic> toJson() => {
         'recipientName': recipientName,
         'phone': phone,

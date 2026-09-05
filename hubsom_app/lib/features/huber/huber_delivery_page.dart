@@ -161,7 +161,10 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
           const SizedBox(height: 8),
           Text(d.sellerName, style: Theme.of(context).textTheme.titleMedium),
           Text('Pickup: ${d.pickupAddress}'),
-          Text('Customer: ${d.customerName}'),
+          Text(
+            'Customer: ${d.customerName}'
+            '${d.customerPhone.isNotEmpty ? ' · ${d.customerPhone}' : ''}',
+          ),
           Text('Drop-off: ${d.dropoffAddress}'),
           Text(formatGhs(d.feeGhs), style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),

@@ -133,6 +133,7 @@ void main() {
       orderIds: [order.id],
       sellerId: 'seller-gps',
       createdByUserId: 'seller-gps',
+      offeredFeeGhs: 25,
     );
     expect(shipment.destination.location?.latitude, closeTo(5.6667, 0.0001));
     expect(shipment.destination.location?.source, 'gps');
