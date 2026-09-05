@@ -213,6 +213,28 @@ class LiveRepository {
     return updated;
   }
 
+  /// Add a listed product to the live bag and start bidding — show stays live.
+  Future<LiveStream> startAuction({
+    required String streamId,
+    required String productId,
+    double? startingBidGhs,
+    double? askingPriceGhs,
+    int durationSeconds = 30,
+  }) async {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    final updated = await LocalCommerceStore.startAuctionOnLive(
+      streamId: streamId,
+      user: user,
+      productId: productId,
+      startingBidGhs: startingBidGhs,
+      askingPriceGhs: askingPriceGhs,
+      durationSeconds: durationSeconds,
+    );
+    await _syncStream(updated);
+    return updated;
+  }
+
   Future<LiveAuction> extendAuction(String streamId, {int seconds = 30}) async {
     final next = await LocalCommerceStore.extendAuction(
       streamId: streamId,
