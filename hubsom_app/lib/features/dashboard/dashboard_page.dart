@@ -107,9 +107,42 @@ class DashboardPage extends ConsumerWidget {
                 context.push('/wallet');
               },
             ),
+            _stat(
+              context,
+              label: 'Gift points',
+              value: '${user?.giftPoints ?? 0}',
+              icon: Icons.card_giftcard_outlined,
+              onTap: () {
+                if (!ensureSignedIn(
+                  context,
+                  ref,
+                  message: 'Sign in to buy gift points',
+                )) {
+                  return;
+                }
+                context.push('/gifts');
+              },
+            ),
           ],
         ),
         const SizedBox(height: 20),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.card_giftcard, color: HubsomColors.gold),
+          title: const Text('Buy gift points'),
+          subtitle: const Text('Send roses, crowns, and more during live'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            if (!ensureSignedIn(
+              context,
+              ref,
+              message: 'Sign in to buy gift points',
+            )) {
+              return;
+            }
+            context.push('/gifts');
+          },
+        ),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.videocam, color: HubsomColors.live),
