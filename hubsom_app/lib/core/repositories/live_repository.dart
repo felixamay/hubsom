@@ -145,10 +145,15 @@ class LiveRepository {
 
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+    final cover = '${body['cover'] ?? ''}'.trim();
+    if (cover.isEmpty) {
+      throw StateError('Add a thumbnail for Watch live and Live now');
+    }
     final stream = await LocalCommerceStore.createStream(
       user: user,
       title: body['title'] as String? ?? 'Hubsom Live Show',
       description: body['description'] as String? ?? '',
+      cover: cover,
       productIds: (body['productIds'] as List?)?.cast<String>() ?? const [],
       productQuantities: parseProductQuantities(body['productQuantities']),
       pinnedProductId: body['pinnedProductId'] as String?,

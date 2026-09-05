@@ -11,6 +11,7 @@ LiveStream _live({
   required String id,
   required String title,
   required int viewers,
+  String cover = '',
 }) {
   return LiveStream(
     id: id,
@@ -19,7 +20,7 @@ LiveStream _live({
     sellerId: 'seller-1',
     status: 'live',
     channelName: 'hubsom-$id',
-    cover: '',
+    cover: cover,
     viewerCount: viewers,
     hosts: const [
       StreamHost(id: 'h1', name: 'Ama Host', role: 'host', avatar: ''),

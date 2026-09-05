@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_photo_compress.dart';
+import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
@@ -26,9 +30,13 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   /// Auction clock set by seller — max 30 seconds.
   int _auctionSeconds = 30;
   bool _busy = false;
+  bool _pickingCover = false;
+  String? _coverDataUrl;
   String? _error;
   List<Product> _products = const [];
   bool _loadingProducts = true;
+
+  static const _maxStoredBytes = 700_000;
 
   @override
   void initState() {
@@ -100,7 +108,46 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     setState(() => _qtys[p.id] = qty.clamp(1, p.stock));
   }
 
+  Future<void> _pickCover() async {
+    if (_pickingCover || _busy) return;
+    setState(() {
+      _pickingCover = true;
+      _error = null;
+    });
+    try {
+      final picked = await pickProductPhotos(remaining: 1);
+      if (picked.isEmpty) return;
+      final compressed = await compressProductPhoto(
+        picked.first.bytes,
+        maxSide: 960,
+        quality: 80,
+      );
+      if (compressed.isEmpty) {
+        setState(() => _error = 'Could not use that photo. Try another JPG/PNG.');
+        return;
+      }
+      if (compressed.lengthInBytes > _maxStoredBytes) {
+        setState(
+          () => _error =
+              'Photo is still too large after compress. Try a clearer, smaller shot.',
+        );
+        return;
+      }
+      setState(() {
+        _coverDataUrl = 'data:image/jpeg;base64,${base64Encode(compressed)}';
+      });
+    } catch (_) {
+      setState(() => _error = 'Could not pick a thumbnail. Try again.');
+    } finally {
+      if (mounted) setState(() => _pickingCover = false);
+    }
+  }
+
   Future<void> _start() async {
+    if (_coverDataUrl == null || _coverDataUrl!.trim().isEmpty) {
+      setState(() => _error = 'Add a thumbnail for Watch live and Live now');
+      return;
+    }
     if (_selected.isEmpty) {
       setState(() => _error = 'Select at least one of your products for the show');
       return;
@@ -137,6 +184,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
       final stream = await ref.read(liveRepositoryProvider).createStream({
         'title': _title.text.trim(),
         'description': _description.text.trim(),
+        'cover': _coverDataUrl,
         'status': 'live',
         'productIds': _selected.toList(),
         'productQuantities': {
@@ -189,6 +237,38 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _loadingProducts
+          ? null
+          : Material(
+              elevation: 8,
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      FilledButton.icon(
+                        onPressed: _busy || _products.isEmpty ? null : _start,
+                        icon: const Icon(Icons.videocam),
+                        label: Text(_busy ? 'Starting…' : 'Start live stream'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
       body: _loadingProducts
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -215,6 +295,79 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                   controller: _description,
                   decoration: const InputDecoration(labelText: 'Description'),
                   maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Show thumbnail',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Required — this photo is what shoppers see on Watch live and Live now.',
+                ),
+                const SizedBox(height: 10),
+                Material(
+                  key: const Key('live-thumbnail-picker'),
+                  color: HubsomColors.mint.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: _busy || _pickingCover ? null : _pickCover,
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: _coverDataUrl == null
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (_pickingCover)
+                                  const CircularProgressIndicator()
+                                else
+                                  Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                    size: 40,
+                                    color: HubsomColors.forest.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _pickingCover
+                                      ? 'Compressing…'
+                                      : 'Choose thumbnail',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: HubsomImage(
+                                    url: _coverDataUrl,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 8,
+                                  bottom: 8,
+                                  child: FilledButton.tonalIcon(
+                                    onPressed:
+                                        _busy || _pickingCover ? null : _pickCover,
+                                    icon: const Icon(Icons.photo_camera_outlined),
+                                    label: Text(
+                                      _pickingCover ? 'Compressing…' : 'Change',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -460,19 +613,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         ),
                   ),
                 ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _busy || _products.isEmpty ? null : _start,
-                  icon: const Icon(Icons.videocam),
-                  label: Text(_busy ? 'Starting…' : 'Start live stream'),
-                ),
+                const SizedBox(height: 12),
               ],
             ),
     );
