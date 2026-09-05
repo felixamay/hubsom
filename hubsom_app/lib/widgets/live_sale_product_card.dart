@@ -75,8 +75,19 @@ class LiveSaleProductCard extends StatelessWidget {
                               fontSize: 18,
                             ),
                           ),
+                          if (product.hasShipmentFee)
+                            Text(
+                              'Ship ${formatGhs(product.shipmentFeeGhs)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: HubsomColors.forest,
+                              ),
+                            ),
                           Text(
-                            '$offeredQty for sale · Huber shipping',
+                            product.hasShipmentFee
+                                ? '$offeredQty for sale · Huber shipping included'
+                                : '$offeredQty for sale · Huber shipping',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.black54,

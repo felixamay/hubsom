@@ -255,6 +255,7 @@ class CartController extends StateNotifier<List<CartItem>> {
           streamId: item.streamId ?? existing.streamId,
           name: item.name.isNotEmpty ? item.name : existing.name,
           priceGhs: item.priceGhs,
+          shipmentFeeGhs: item.shipmentFeeGhs,
           image: item.image ?? existing.image,
           category: item.category ?? existing.category,
         );
@@ -283,6 +284,7 @@ class CartController extends StateNotifier<List<CartItem>> {
       streamId: streamId,
       name: product.name,
       priceGhs: product.effectivePrice,
+      shipmentFeeGhs: product.shipmentFeeGhs,
       image: product.images.isNotEmpty ? product.images.first : null,
       category: product.category,
     );
@@ -302,6 +304,7 @@ class CartController extends StateNotifier<List<CartItem>> {
         streamId: item.streamId ?? existing.streamId,
         name: item.name.isNotEmpty ? item.name : existing.name,
         priceGhs: item.priceGhs,
+        shipmentFeeGhs: item.shipmentFeeGhs,
         image: item.image ?? existing.image,
         category: item.category ?? existing.category,
       );
@@ -335,6 +338,9 @@ class CartController extends StateNotifier<List<CartItem>> {
   }
 
   double get subtotal => state.fold(0, (sum, e) => sum + e.lineTotal);
+  double get shipmentTotal =>
+      state.fold(0, (sum, e) => sum + e.shipmentLineTotal);
+  double get payableTotal => subtotal + shipmentTotal;
   int get count => state.fold(0, (sum, e) => sum + e.quantity);
 }
 

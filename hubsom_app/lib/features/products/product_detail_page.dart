@@ -630,6 +630,16 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                     fontSize: 22,
                   ),
                 ),
+                if (product.hasShipmentFee) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Shipment ${formatGhs(product.shipmentFeeGhs)} · Huber delivery',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: HubsomColors.forest,
+                    ),
+                  ),
+                ],
                 if (product.compareAtGhs != null) ...[
                   const SizedBox(height: 2),
                   Text(

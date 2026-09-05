@@ -160,6 +160,10 @@ class SellerRepository {
       );
     }
     final priceGhs = (body['priceGhs'] as num?)?.toDouble() ?? 0;
+    final shipmentFeeGhs = (body['shipmentFeeGhs'] as num?)?.toDouble() ?? 0;
+    if (shipmentFeeGhs < 0) {
+      throw AuthException('Shipment fee cannot be negative');
+    }
 
     // Always write the local catalog first so Go live can see the product even
     // when Firebase Hosting has no /api/products backend.
@@ -171,6 +175,7 @@ class SellerRepository {
         description: body['description'] as String? ?? '',
         category: body['category'] as String? ?? 'miscellaneous',
         priceGhs: priceGhs,
+        shipmentFeeGhs: shipmentFeeGhs,
         compareAtGhs: flashSale != null ? priceGhs : null,
         stock: stock,
         images: images,
@@ -310,12 +315,19 @@ class SellerRepository {
     }
     final nextPrice =
         (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs;
+    final nextShipmentFee = body.containsKey('shipmentFeeGhs')
+        ? (body['shipmentFeeGhs'] as num?)?.toDouble() ?? 0
+        : existing.shipmentFeeGhs;
+    if (nextShipmentFee < 0) {
+      throw AuthException('Shipment fee cannot be negative');
+    }
 
     final updated = existing.copyWith(
       name: name,
       description: body['description'] as String? ?? existing.description,
       category: body['category'] as String? ?? existing.category,
       priceGhs: nextPrice,
+      shipmentFeeGhs: nextShipmentFee,
       compareAtGhs: nextFlash != null ? nextPrice : existing.compareAtGhs,
       stock: nextStock,
       images: images,

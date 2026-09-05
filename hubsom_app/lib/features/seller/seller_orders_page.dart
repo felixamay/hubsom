@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/order.dart';
@@ -110,6 +111,27 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
     }
   }
 
+  double _feeFromOrders(Iterable<Order> orders) {
+    final stored = Order.shipmentFeeFor(orders);
+    if (stored > 0) return stored;
+    var total = 0.0;
+    for (final order in orders) {
+      for (final line in order.lines) {
+        final product = LocalCommerceStore.getProduct(line.productId);
+        if (product != null && product.hasShipmentFee) {
+          total += product.shipmentFeeGhs * line.quantity;
+        }
+      }
+    }
+    return total;
+  }
+
+  double _feeFromShipment(Shipment shipment) {
+    if ((shipment.offeredFeeGhs ?? 0) > 0) return shipment.offeredFeeGhs!;
+    final linked = orders.where((o) => shipment.orderIds.contains(o.id));
+    return _feeFromOrders(linked);
+  }
+
   Future<_DeliveryDraft?> _collectDeliveryDetails({
     required bool includeFee,
     OrderShipping? initial,
@@ -156,7 +178,7 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
     final draft = await _collectDeliveryDetails(
       includeFee: true,
       initial: shipment.destination,
-      initialFee: shipment.offeredFeeGhs,
+      initialFee: _feeFromShipment(shipment),
       title: 'Shipment & rider offer',
     );
     if (draft == null) return;
@@ -183,7 +205,7 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
       final draft = await _collectDeliveryDetails(
         includeFee: true,
         initial: ready.destination,
-        initialFee: ready.offeredFeeGhs,
+        initialFee: _feeFromShipment(ready),
         title: 'Add fee, location and phone for riders',
       );
       if (draft == null) return;
@@ -270,6 +292,8 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
                                       Text(
                                         [
                                           formatGhs(o.subtotalGhs),
+                                          if (o.effectiveShipmentFeeGhs > 0)
+                                            'ship ${formatGhs(o.effectiveShipmentFeeGhs)}',
                                           if (o.buyerName != null &&
                                               o.buyerName!.isNotEmpty)
                                             o.buyerName!,
@@ -542,9 +566,11 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
             (o) => paid.contains(o.id),
             orElse: () => orders.first,
           );
+          final paidOrders = orders.where((o) => paid.contains(o.id));
           final draft = await _collectDeliveryDetails(
             includeFee: true,
             initial: seed.shipping,
+            initialFee: _feeFromOrders(paidOrders),
             title: 'Shipment fee, location and phone',
           );
           if (draft == null) return;

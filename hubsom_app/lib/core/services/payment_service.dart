@@ -57,6 +57,7 @@ class PaymentService {
     final lines = items.map((e) {
       final qty = (e['quantity'] as num?)?.toInt() ?? 1;
       final price = (e['priceGhs'] as num?)?.toDouble() ?? 0;
+      final ship = (e['shipmentFeeGhs'] as num?)?.toDouble() ?? 0;
       return OrderLine(
         productId: '${e['productId'] ?? ''}',
         sellerId: e['sellerId'] as String?,
@@ -66,13 +67,17 @@ class PaymentService {
         unitPriceGhs: price,
         lineTotalGhs: price * qty,
         category: '${e['category'] ?? 'miscellaneous'}',
+        shipmentFeeGhs: ship < 0 ? 0 : ship,
       );
     }).toList();
-    final subtotal = lines.fold<double>(0, (s, e) => s + e.lineTotalGhs);
+    final merchandise = lines.fold<double>(0, (s, e) => s + e.lineTotalGhs);
+    final shipmentFee =
+        lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
     final dest = OrderShipping.fromJson(shipping);
     final order = Order(
       id: 'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}',
-      subtotalGhs: subtotal,
+      subtotalGhs: merchandise + shipmentFee,
+      shipmentFeeGhs: shipmentFee,
       status: 'paid',
       userId: user?.id,
       buyerName: dest.recipientName,

@@ -68,7 +68,9 @@ class ProductCard extends ConsumerWidget {
                         ),
                       ),
                       child: Text(
-                        formatGhs(product.effectivePrice),
+                        product.hasShipmentFee
+                            ? '${formatGhs(product.effectivePrice)} · ship ${formatGhs(product.shipmentFeeGhs)}'
+                            : formatGhs(product.effectivePrice),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
