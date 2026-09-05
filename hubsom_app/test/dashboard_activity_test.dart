@@ -140,4 +140,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No saved products'), findsOneWidget);
   });
+
+  testWidgets('short phone dashboard scrolls and activity chips stay tappable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 560);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.runAsync(() async {
+      await LocalHuberStore.saveOrder(_order);
+      await LocalHuberStore.createShipmentFromOrders(
+        orderIds: const ['ord-dash-1'],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+      );
+      await LocalStore.setSessionToken('sess');
+      await LocalStore.setUserJson(jsonEncode(_buyer.toJson()));
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
+          liveRepositoryProvider.overrideWithValue(_LocalLiveRepository()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(title: const Text('Hubsom')),
+            body: const DashboardPage(),
+            bottomNavigationBar: NavigationBar(
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+                NavigationDestination(
+                  icon: Icon(Icons.insights),
+                  label: 'Dashboard',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CustomScrollView), findsOneWidget);
+    expect(find.byKey(const Key('dashboard-stats')), findsOneWidget);
+
+    await tester.tap(find.text('Offers'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Shipment'), findsWidgets);
+
+    await tester.tap(find.text('Purchases'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kente tote'), findsOneWidget);
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -240));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.widgetWithText(Tab, 'Purchases (1)'), findsOneWidget);
+  });
 }
