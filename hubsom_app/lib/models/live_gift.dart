@@ -29,7 +29,24 @@ class LiveGift extends Equatable {
 
   @override
   List<Object?> get props => [id, costPoints];
+
+  /// Visual weight for the on-live send animation.
+  GiftFxTier get fxTier {
+    if (costPoints >= 499) return GiftFxTier.mega;
+    if (costPoints >= 100) return GiftFxTier.large;
+    if (costPoints >= 25) return GiftFxTier.medium;
+    return GiftFxTier.small;
+  }
+
+  Duration get fxDuration => switch (fxTier) {
+        GiftFxTier.mega => const Duration(milliseconds: 4200),
+        GiftFxTier.large => const Duration(milliseconds: 3400),
+        GiftFxTier.medium => const Duration(milliseconds: 2600),
+        GiftFxTier.small => const Duration(milliseconds: 2000),
+      };
 }
+
+enum GiftFxTier { small, medium, large, mega }
 
 class GiftPointPack extends Equatable {
   const GiftPointPack({
@@ -142,4 +159,13 @@ abstract final class GiftCatalog {
 
   /// 10 points ≈ 1 GHS. Hosts receive 80% of that value.
   static double hostShareGhs(int points) => (points / 10) * 0.8;
+
+  /// Chat line written by [LiveRepository.sendGift].
+  static LiveGift? parseFromChat(String text) {
+    if (!text.contains('sent a ') || !text.contains(' pts)')) return null;
+    for (final g in gifts) {
+      if (text.contains(g.emoji) && text.contains(g.name)) return g;
+    }
+    return null;
+  }
 }
