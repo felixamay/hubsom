@@ -192,7 +192,9 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Pick products, set how many units are for sale on this live, optionally open an auction, then go live. Viewers can chat, react, bid, and buy.',
+                  'Pick products and set how many units are for this live. '
+                  'If you auction a product, the next unit of that product goes on auction automatically after each sale until quantity runs out. '
+                  'You can still list or auction any other product — or the same one again — without ending the show.',
                 ),
                 const SizedBox(height: 16),
                 TextField(

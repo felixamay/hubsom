@@ -152,9 +152,12 @@ void main() {
     expect(order.lines.first.sellerId, stream.sellerId);
     expect(order.status, 'paid');
 
-    final sold = LocalCommerceStore.getStream(stream.id)!.auction!;
-    expect(sold.status, 'sold');
-    expect(sold.orderId, order.id);
+    final live = LocalCommerceStore.getStream(stream.id)!;
+    expect(live.offeredQty(auction.productId), 2);
+    expect(live.auction!.isOpen, isTrue);
+    expect(live.auction!.id, isNot(auction.id));
+    expect(live.auction!.productId, auction.productId);
+    expect(live.auction!.startingBidGhs, auction.startingBidGhs);
     expect(
       LocalCommerceStore.listChat(stream.id).any(
         (m) =>
@@ -164,10 +167,15 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      LocalCommerceStore.listChat(stream.id).any(
+        (m) => m.text.contains('Next') && m.text.contains('2 left'),
+      ),
+      isTrue,
+    );
 
-    // Idempotent.
-    final again = await LocalCommerceStore.finalizeAuction(stream.id);
-    expect(again?.id, order.id);
+    // New lot is still counting down.
+    expect(await LocalCommerceStore.finalizeAuction(stream.id), isNull);
   });
 
   test('unmet asking price does not sell — seller can extend', () async {
@@ -449,6 +457,83 @@ void main() {
     expect(endedShow.auction?.remainsOnAuctions, isFalse);
     expect(endedShow.isLiveAuction, isFalse);
     expect(LocalCommerceStore.getProduct(open.productId), isNotNull);
+  });
+
+  test('last auction unit stays sold and host can list it again', () async {
+    final product = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'One left',
+      description: 'Last unit',
+      category: 'fashion',
+      priceGhs: 90,
+      stock: 4,
+      images: const ['a', 'b', 'c'],
+    );
+    final stream = await LocalCommerceStore.createStream(
+      user: seller,
+      title: 'Last lot',
+      productIds: [product.id],
+      productQuantities: {product.id: 1},
+      pinnedProductId: product.id,
+      auctionProductId: product.id,
+      startingBidGhs: 40,
+      askingPriceGhs: 40,
+    );
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 50,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNotNull);
+    final after = LocalCommerceStore.getStream(stream.id)!;
+    expect(after.isLive, isTrue);
+    expect(after.offeredQty(product.id), 0);
+    expect(after.auction!.isSold, isTrue);
+    expect(after.auction!.id, stream.auction!.id);
+
+    final again = await LocalCommerceStore.startAuctionOnLive(
+      streamId: stream.id,
+      user: seller,
+      productId: product.id,
+    );
+    expect(again.isLive, isTrue);
+    expect(again.auction!.isOpen, isTrue);
+    expect(again.auction!.productId, product.id);
+    expect(again.offeredQty(product.id), 1);
+  });
+
+  test('unmet ask does not auto-relist the next unit', () async {
+    final stream = await goLive();
+    final productId = stream.auction!.productId;
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: stream.auction!.nextMinBidGhs,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+    expect(await LocalCommerceStore.finalizeAuction(stream.id), isNull);
+    final reserved = LocalCommerceStore.getStream(stream.id)!;
+    expect(reserved.auction!.awaitingExtend, isTrue);
+    expect(reserved.offeredQty(productId), 3);
+    expect(reserved.auction!.id, stream.auction!.id);
   });
 
   test('isLiveAuction is only true for an open auction on a live show', () async {

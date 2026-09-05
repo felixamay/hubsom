@@ -47,6 +47,7 @@ class LiveAuction extends Equatable {
     this.recentBids = const [],
     this.orderId,
     this.askingPriceGhs,
+    this.durationSeconds = 30,
   });
 
   final String id;
@@ -65,6 +66,8 @@ class LiveAuction extends Equatable {
   final String? orderId;
   /// Seller-only reserve / asking price (hidden from viewers).
   final double? askingPriceGhs;
+  /// Clock length for this lot (and the next auto-relist).
+  final int durationSeconds;
 
   double get nextMinBidGhs => currentBidGhs + minIncrementGhs;
 
@@ -131,6 +134,8 @@ class LiveAuction extends Equatable {
             const [],
         orderId: json['orderId'] as String?,
         askingPriceGhs: (json['askingPriceGhs'] as num?)?.toDouble(),
+        durationSeconds: ((json['durationSeconds'] as num?)?.toInt() ?? 30)
+            .clamp(1, 30),
       );
 
   Map<String, dynamic> toJson() => {
@@ -148,6 +153,7 @@ class LiveAuction extends Equatable {
         'recentBids': recentBids.map((b) => b.toJson()).toList(),
         if (orderId != null) 'orderId': orderId,
         if (askingPriceGhs != null) 'askingPriceGhs': askingPriceGhs,
+        'durationSeconds': durationSeconds,
       };
 
   LiveAuction copyWith({
@@ -161,6 +167,7 @@ class LiveAuction extends Equatable {
     List<AuctionBid>? recentBids,
     String? orderId,
     double? askingPriceGhs,
+    int? durationSeconds,
   }) =>
       LiveAuction(
         id: id,
@@ -177,6 +184,7 @@ class LiveAuction extends Equatable {
         recentBids: recentBids ?? this.recentBids,
         orderId: orderId ?? this.orderId,
         askingPriceGhs: askingPriceGhs ?? this.askingPriceGhs,
+        durationSeconds: durationSeconds ?? this.durationSeconds,
       );
 
   @override
