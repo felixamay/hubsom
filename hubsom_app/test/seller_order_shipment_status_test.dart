@@ -75,6 +75,7 @@ void main() {
       orderIds: [order.id],
       sellerId: 'seller-1',
       createdByUserId: 'seller-1',
+      offeredFeeGhs: 25,
     );
     expect(shipment.status, 'ready');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'processing');

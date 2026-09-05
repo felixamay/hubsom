@@ -126,10 +126,17 @@ class OrderRepository {
       }
     } catch (_) {}
     final status = patch['status'] as String?;
-    if (status == null || status.isEmpty) {
+    final shippingMap = patch['shipping'] is Map
+        ? Map<String, dynamic>.from(patch['shipping'] as Map)
+        : null;
+    if ((status == null || status.isEmpty) && shippingMap == null) {
       throw StateError('Order update failed');
     }
-    return LocalHuberStore.updateOrderStatus(orderId, status);
+    return LocalHuberStore.updateOrderDetails(
+      orderId,
+      status: status,
+      shipping: shippingMap == null ? null : OrderShipping.fromJson(shippingMap),
+    );
   }
 
   Future<Shipment> markShipmentShipped(String shipmentId) async {
@@ -174,10 +181,18 @@ class OrderRepository {
     } catch (_) {}
     final user = _sessionUser;
     final ids = (body['orderIds'] as List?)?.map((e) => '$e').toList() ?? const [];
+    final destMap = body['destination'] is Map
+        ? Map<String, dynamic>.from(body['destination'] as Map)
+        : body['shipping'] is Map
+            ? Map<String, dynamic>.from(body['shipping'] as Map)
+            : null;
     return LocalHuberStore.createShipmentFromOrders(
       orderIds: ids,
       sellerId: user?.sellerId ?? user?.id ?? 'seller-local',
       createdByUserId: user?.id ?? 'local',
+      offeredFeeGhs: (body['offeredFeeGhs'] as num?)?.toDouble(),
+      destination:
+          destMap == null ? null : OrderShipping.fromJson(destMap),
     );
   }
 
@@ -191,12 +206,26 @@ class OrderRepository {
     } catch (_) {}
     final current = LocalHuberStore.getShipment(id);
     if (current == null) throw StateError('Shipment update failed');
-    return LocalHuberStore.saveShipment(
-      current.copyWith(
-        status: patch['status'] as String? ?? current.status,
-        updatedAt: DateTime.now().toUtc().toIso8601String(),
-      ),
+    final destMap = patch['destination'] is Map
+        ? Map<String, dynamic>.from(patch['destination'] as Map)
+        : patch['shipping'] is Map
+            ? Map<String, dynamic>.from(patch['shipping'] as Map)
+            : null;
+    var updated = await LocalHuberStore.updateShipmentDetails(
+      id,
+      destination:
+          destMap == null ? null : OrderShipping.fromJson(destMap),
+      offeredFeeGhs: (patch['offeredFeeGhs'] as num?)?.toDouble(),
     );
+    if (patch['status'] is String && patch['status'] != updated.status) {
+      updated = await LocalHuberStore.saveShipment(
+        updated.copyWith(
+          status: patch['status'] as String,
+          updatedAt: DateTime.now().toUtc().toIso8601String(),
+        ),
+      );
+    }
+    return updated;
   }
 
   /// Dispatch Hubers (rider offers) for a shipment.
@@ -218,7 +247,10 @@ class OrderRepository {
         'Shipment not found. Consolidate paid orders first, then tap Hubers.',
       );
     }
-    final result = await LocalHuberStore.dispatchToHubers(local);
+    final result = await LocalHuberStore.dispatchToHubers(
+      local,
+      preferredFeeGhs: local.offeredFeeGhs,
+    );
     return result.shipment;
   }
 }
