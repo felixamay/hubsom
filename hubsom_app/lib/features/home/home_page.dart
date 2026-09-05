@@ -83,9 +83,7 @@ class HomePage extends ConsumerWidget {
     final live = streams.where((s) => s.isLive).toList();
     final flash =
         products.where((p) => p.hasActiveFlashSale).toList();
-    final auctions = streams
-        .where((s) => s.auction != null && s.auction!.remainsOnAuctions)
-        .toList();
+    final auctions = streams.where((s) => s.isLiveAuction).toList();
 
     final cross = ResponsiveScaffold.isWide(context)
         ? 5
@@ -316,11 +314,11 @@ class HomePage extends ConsumerWidget {
               ),
             ),
 
-          // Auctions — only streams that still remain on auctions.
+          // Live auctions only — ended lots stay off Home.
           if (auctions.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
-                title: 'Auctions',
+                title: 'Live auctions',
                 titleStyle: _sectionTitle(context),
                 actionLabel: 'See all',
                 onAction: () => context.push('/auctions'),
@@ -692,11 +690,8 @@ class ContainedAuctionStrip extends StatelessWidget {
           itemBuilder: (_, i) {
             final s = streams[i];
             final a = s.auction!;
-            final open = a.isOpen || s.isLive;
             return InkWell(
-              onTap: () => open
-                  ? context.push('/live/${s.id}')
-                  : context.push('/products/${a.productId}'),
+              onTap: () => context.push('/live/${s.id}'),
               borderRadius: BorderRadius.circular(14),
               child: Container(
                 width: 210,
@@ -711,21 +706,20 @@ class ContainedAuctionStrip extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
                         Icon(
                           Icons.gavel,
                           size: 16,
-                          color: open ? HubsomColors.live : HubsomColors.forest,
+                          color: HubsomColors.live,
                         ),
-                        const SizedBox(width: 6),
+                        SizedBox(width: 6),
                         Text(
-                          open ? 'Bidding open' : 'Available',
+                          'LIVE AUCTION',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color:
-                                open ? HubsomColors.live : HubsomColors.forest,
+                            color: HubsomColors.live,
                           ),
                         ),
                       ],
