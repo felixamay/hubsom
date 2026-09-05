@@ -91,6 +91,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
     final subtotal = cart.fold<double>(0, (s, e) => s + e.lineTotal);
+    final shipment = cart.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+    final payable = subtotal + shipment;
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
       body: ListView(
@@ -136,7 +138,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                 dense: true,
               )),
           const SizedBox(height: 12),
-          Text('Subtotal ${formatGhs(subtotal)} · ${AppConstants.deliveryEstimate}'),
+          Text(
+            shipment > 0
+                ? 'Subtotal ${formatGhs(subtotal)} · Ship ${formatGhs(shipment)} · Total ${formatGhs(payable)}'
+                : 'Subtotal ${formatGhs(subtotal)} · ${AppConstants.deliveryEstimate}',
+          ),
           if (_result != null) ...[
             const SizedBox(height: 12),
             Text(_result!),

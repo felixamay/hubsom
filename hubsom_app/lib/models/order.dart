@@ -12,6 +12,7 @@ class OrderLine extends Equatable {
     required this.unitPriceGhs,
     required this.lineTotalGhs,
     required this.category,
+    this.shipmentFeeGhs = 0,
   });
 
   final String productId;
@@ -22,6 +23,10 @@ class OrderLine extends Equatable {
   final double unitPriceGhs;
   final double lineTotalGhs;
   final String category;
+  /// Per-unit shipment fee captured at checkout from the product listing.
+  final double shipmentFeeGhs;
+
+  double get shipmentLineTotal => shipmentFeeGhs * quantity;
 
   factory OrderLine.fromJson(Map<String, dynamic> json) => OrderLine(
         productId: json['productId'] as String,
@@ -32,6 +37,7 @@ class OrderLine extends Equatable {
         unitPriceGhs: (json['unitPriceGhs'] as num?)?.toDouble() ?? 0,
         lineTotalGhs: (json['lineTotalGhs'] as num?)?.toDouble() ?? 0,
         category: json['category'] as String? ?? 'miscellaneous',
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -43,6 +49,7 @@ class OrderLine extends Equatable {
         'unitPriceGhs': unitPriceGhs,
         'lineTotalGhs': lineTotalGhs,
         'category': category,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
       };
 
   @override
@@ -121,6 +128,7 @@ class Order extends Equatable {
     required this.id,
     this.currency = 'GHS',
     required this.subtotalGhs,
+    this.shipmentFeeGhs = 0,
     required this.status,
     this.userId,
     this.buyerName,
@@ -137,6 +145,8 @@ class Order extends Equatable {
   final String id;
   final String currency;
   final double subtotalGhs;
+  /// Total shipment fees paid on this order (sum of line fees).
+  final double shipmentFeeGhs;
   final String status;
   final String? userId;
   final String? buyerName;
@@ -153,6 +163,7 @@ class Order extends Equatable {
         id: json['id'] as String,
         currency: json['currency'] as String? ?? 'GHS',
         subtotalGhs: (json['subtotalGhs'] as num?)?.toDouble() ?? 0,
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
         status: json['status'] as String? ?? 'pending_payment',
         userId: json['userId'] as String?,
         buyerName: json['buyerName'] as String?,
@@ -175,6 +186,7 @@ class Order extends Equatable {
         'id': id,
         'currency': currency,
         'subtotalGhs': subtotalGhs,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
         'status': status,
         if (userId != null) 'userId': userId,
         if (buyerName != null) 'buyerName': buyerName,
@@ -188,8 +200,17 @@ class Order extends Equatable {
         'createdAt': createdAt,
       };
 
+  /// Shipment fee stored on the order, or summed from line items.
+  double get effectiveShipmentFeeGhs {
+    if (shipmentFeeGhs > 0) return shipmentFeeGhs;
+    return lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+  }
+
+  static double shipmentFeeFor(Iterable<Order> orders) =>
+      orders.fold<double>(0, (s, o) => s + o.effectiveShipmentFeeGhs);
+
   @override
-  List<Object?> get props => [id, status, subtotalGhs, lines];
+  List<Object?> get props => [id, status, subtotalGhs, shipmentFeeGhs, lines];
 
   Order copyWith({
     String? status,
@@ -202,6 +223,7 @@ class Order extends Equatable {
       id: id,
       currency: currency,
       subtotalGhs: subtotalGhs,
+      shipmentFeeGhs: shipmentFeeGhs,
       status: status ?? this.status,
       userId: userId,
       buyerName: buyerName ?? this.buyerName,

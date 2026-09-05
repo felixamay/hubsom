@@ -35,6 +35,7 @@ class Product extends Equatable {
     required this.description,
     required this.category,
     required this.priceGhs,
+    this.shipmentFeeGhs = 0,
     this.compareAtGhs,
     this.currency = 'GHS',
     required this.images,
@@ -56,6 +57,8 @@ class Product extends Equatable {
   final String description;
   final String category;
   final double priceGhs;
+  /// Per-unit delivery fee buyers pay; also prefills the Huber rider offer.
+  final double shipmentFeeGhs;
   final double? compareAtGhs;
   final String currency;
   final List<String> images;
@@ -75,6 +78,8 @@ class Product extends Equatable {
 
   bool get isAuctionLot => auctionOnly;
 
+  bool get hasShipmentFee => shipmentFeeGhs > 0;
+
   double get effectivePrice {
     if (!hasActiveFlashSale) return priceGhs;
     return priceGhs * (1 - flashSale!.discountPct / 100);
@@ -93,6 +98,7 @@ class Product extends Equatable {
         description: json['description'] as String? ?? '',
         category: json['category'] as String? ?? 'miscellaneous',
         priceGhs: (json['priceGhs'] as num?)?.toDouble() ?? 0,
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
         compareAtGhs: (json['compareAtGhs'] as num?)?.toDouble(),
         currency: json['currency'] as String? ?? 'GHS',
         images: (json['images'] as List?)?.cast<String>() ?? const [],
@@ -117,6 +123,7 @@ class Product extends Equatable {
         'description': description,
         'category': category,
         'priceGhs': priceGhs,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
         if (compareAtGhs != null) 'compareAtGhs': compareAtGhs,
         'currency': currency,
         'images': images,
@@ -138,6 +145,7 @@ class Product extends Equatable {
         slug,
         name,
         priceGhs,
+        shipmentFeeGhs,
         sellerId,
         stock,
         hasDemoVideo,
@@ -151,6 +159,7 @@ class Product extends Equatable {
     String? description,
     String? category,
     double? priceGhs,
+    double? shipmentFeeGhs,
     double? compareAtGhs,
     List<String>? images,
     int? stock,
@@ -173,6 +182,7 @@ class Product extends Equatable {
       description: description ?? this.description,
       category: category ?? this.category,
       priceGhs: priceGhs ?? this.priceGhs,
+      shipmentFeeGhs: shipmentFeeGhs ?? this.shipmentFeeGhs,
       compareAtGhs: compareAtGhs ?? this.compareAtGhs,
       currency: currency,
       images: images ?? this.images,

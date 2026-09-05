@@ -373,6 +373,7 @@ class LocalHuberStore {
         );
     final dest = resolveDestination(destination ?? shipping);
     final now = DateTime.now().toUtc().toIso8601String();
+    final fromProducts = Order.shipmentFeeFor(orders);
     final created = await saveShipment(
       Shipment(
         id: 'shp_${_uuid.v4().replaceAll('-', '').substring(0, 10)}',
@@ -381,7 +382,8 @@ class LocalHuberStore {
         orderIds: orderIds,
         items: items,
         destination: dest,
-        offeredFeeGhs: offeredFeeGhs,
+        offeredFeeGhs:
+            offeredFeeGhs ?? (fromProducts > 0 ? fromProducts : null),
         status: 'ready',
         createdAt: now,
         updatedAt: now,

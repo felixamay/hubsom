@@ -38,6 +38,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _name = TextEditingController();
   final _description = TextEditingController();
   final _price = TextEditingController();
+  final _shipmentFee = TextEditingController();
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
   final _images = <String>[];
@@ -83,6 +84,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     _name.dispose();
     _description.dispose();
     _price.dispose();
+    _shipmentFee.dispose();
     _stock.dispose();
     super.dispose();
   }
@@ -112,6 +114,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _price.text = product.priceGhs.toStringAsFixed(
         product.priceGhs == product.priceGhs.roundToDouble() ? 0 : 2,
       );
+      _shipmentFee.text = product.shipmentFeeGhs <= 0
+          ? ''
+          : product.shipmentFeeGhs.toStringAsFixed(
+              product.shipmentFeeGhs == product.shipmentFeeGhs.roundToDouble()
+                  ? 0
+                  : 2,
+            );
       _stock.text = '${product.stock}';
       setState(() {
         _images
@@ -235,6 +244,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         'description': _description.text.trim(),
         'category': _category,
         'priceGhs': double.tryParse(_price.text) ?? 0,
+        'shipmentFeeGhs': double.tryParse(_shipmentFee.text.trim()) ?? 0,
         'stock': int.tryParse(_stock.text) ?? 0,
         'images': List<String>.from(_images),
         'supports': _auctionLot
@@ -513,6 +523,23 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               keyboardType: TextInputType.number,
               validator: (v) =>
                   ((double.tryParse(v ?? '') ?? 0) <= 0) ? 'Enter a valid price' : null,
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _shipmentFee,
+              decoration: const InputDecoration(
+                labelText: 'Shipment fee (GHS)',
+                helperText:
+                    'Buyers pay this at checkout. It also prefills the Huber rider offer.',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              validator: (v) {
+                final raw = (v ?? '').trim();
+                if (raw.isEmpty) return null;
+                final n = double.tryParse(raw);
+                if (n == null || n < 0) return 'Enter 0 or a valid shipment fee';
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             Text(
