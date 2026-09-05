@@ -136,6 +136,61 @@ class HomePage extends ConsumerWidget {
             ),
           ),
 
+          // Live now — same portrait grid as Shop videos, before Categories.
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Live now',
+              titleStyle: _sectionTitle(context),
+              actionLabel: 'See all',
+              onAction: () => context.push('/live'),
+            ),
+          ),
+          if (live.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No one is live right now. Sellers can start a show from Sell → Go live.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: HubsomColors.ink.withValues(alpha: 0.7),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => context.push('/live'),
+                      icon: const Icon(Icons.videocam_outlined),
+                      label: const Text('Watch live'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            SliverGrid(
+              gridDelegate: ContainedVideoGridDelegate.forContext(context),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final s = live[i];
+                  Product? linked;
+                  for (final id in [
+                    if (s.pinnedProductId != null) s.pinnedProductId!,
+                    ...s.productIds,
+                  ]) {
+                    final match = products.where((p) => p.id == id);
+                    if (match.isNotEmpty) {
+                      linked = match.first;
+                      break;
+                    }
+                  }
+                  return _HomeLiveNowCard(stream: s, linkedProduct: linked);
+                },
+                childCount: live.length.clamp(0, 12),
+              ),
+            ),
+
           // Categories — real app taxonomy (not seeded products).
           SliverToBoxAdapter(
             child: _SectionHeader(
@@ -197,84 +252,6 @@ class HomePage extends ConsumerWidget {
               ),
             ),
             SliverToBoxAdapter(child: PromoBanner(promotions: promos)),
-          ],
-
-          // Live now
-          if (live.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: _SectionHeader(
-                title: 'Live now',
-                titleStyle: _sectionTitle(context),
-                actionLabel: 'See all',
-                onAction: () => context.push('/live'),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 160,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: live.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final s = live[i];
-                    return InkWell(
-                      onTap: () => context.push('/live/${s.id}'),
-                      child: Container(
-                        width: 220,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              HubsomColors.forest,
-                              HubsomColors.blue,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              color: HubsomColors.live,
-                              child: const Text(
-                                'LIVE',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              s.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              '${s.viewerCount} watching',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
           ],
 
           // Flash sales — always listed; products only when sellers run an active sale.
@@ -661,6 +638,171 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
                           fontSize: 10,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Portrait live tile: same shop-video card shell, plus LIVE + viewer count.
+class _HomeLiveNowCard extends StatelessWidget {
+  const _HomeLiveNowCard({
+    required this.stream,
+    this.linkedProduct,
+  });
+
+  final LiveStream stream;
+  final Product? linkedProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = stream.cover.trim().isNotEmpty
+        ? stream.cover
+        : (linkedProduct != null && linkedProduct!.images.isNotEmpty
+            ? linkedProduct!.images.first
+            : null);
+    final host = stream.hosts.isNotEmpty ? stream.hosts.first.name : '';
+    final watching = stream.viewerCount <= 0
+        ? '0 watching'
+        : '${stream.viewerCount} watching';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/live/${stream.id}'),
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.black,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (cover != null)
+                  HubsomImage(
+                    url: cover,
+                    fit: BoxFit.cover,
+                    placeholder: const ColoredBox(color: Colors.black),
+                  )
+                else
+                  const ColoredBox(color: Colors.black),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 72,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.78),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const Center(
+                  child: Icon(
+                    Icons.play_circle_fill,
+                    size: 40,
+                    color: Colors.white,
+                  ),
+                ),
+                Positioned(
+                  left: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    color: HubsomColors.live,
+                    child: const Text(
+                      'LIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.remove_red_eye_outlined,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          watching,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stream.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          height: 1.2,
+                        ),
+                      ),
+                      if (host.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          host,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
