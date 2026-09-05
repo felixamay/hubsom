@@ -92,21 +92,20 @@ class OrderRepository {
       for (final row in rows) {
         try {
           final o = Order.fromJson(row);
-          byId[o.id] = o;
-          await LocalHuberStore.saveOrder(o);
+          final existing = byId[o.id];
+          final next = existing == null ? o : existing.preferFulfillment(o);
+          byId[o.id] = next;
+          if (existing == null || next.status != existing.status) {
+            await LocalHuberStore.saveOrder(next);
+          }
         } catch (_) {}
       }
     } catch (_) {}
 
     var orders = byId.values.toList();
     if (user != null) {
-      final email = user.email.toLowerCase();
       orders = orders
-          .where(
-            (o) =>
-                o.userId == user.id ||
-                (o.buyerEmail != null && o.buyerEmail!.toLowerCase() == email),
-          )
+          .where((o) => o.isBoughtBy(user) && !o.isSoldBy(user))
           .toList();
     } else {
       orders = const [];

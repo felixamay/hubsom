@@ -200,6 +200,51 @@ class Order extends Equatable {
         'createdAt': createdAt,
       };
 
+  /// Live-auction win — tracked under Dashboard Bids, not Purchases.
+  bool get isAuctionWin =>
+      paymentMethods.contains('live-auction') || id.startsWith('ord_auc_');
+
+  bool isBoughtBy(HubsomUser user) {
+    if (userId != null && userId == user.id) return true;
+    final email = user.email.trim().toLowerCase();
+    if (email.isNotEmpty &&
+        buyerEmail != null &&
+        buyerEmail!.trim().toLowerCase() == email) {
+      return true;
+    }
+    return false;
+  }
+
+  /// True when this order is a sale of the signed-in seller's products.
+  bool isSoldBy(HubsomUser user) {
+    final sid = user.sellerId?.trim();
+    if (sid == null || sid.isEmpty) return false;
+    return lines.any((l) => l.sellerId == sid);
+  }
+
+  int get fulfillmentRank {
+    switch (status) {
+      case 'delivered':
+        return 5;
+      case 'shipped':
+      case 'out_for_delivery':
+        return 4;
+      case 'processing':
+        return 3;
+      case 'paid':
+        return 2;
+      case 'cancelled':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /// Keep the order that is further along in fulfillment.
+  Order preferFulfillment(Order other) {
+    return other.fulfillmentRank > fulfillmentRank ? other : this;
+  }
+
   /// Shipment fee stored on the order, or summed from line items.
   double get effectiveShipmentFeeGhs {
     if (shipmentFeeGhs > 0) return shipmentFeeGhs;

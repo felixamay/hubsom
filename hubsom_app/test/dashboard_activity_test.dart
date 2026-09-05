@@ -10,6 +10,7 @@ import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/providers/core_providers.dart';
 import 'package:hubsom_app/core/repositories/auth_repository.dart';
 import 'package:hubsom_app/core/repositories/live_repository.dart';
+import 'package:hubsom_app/core/repositories/order_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
@@ -130,7 +131,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(Tab, 'Bids (0)'));
     await tester.pumpAndSettle();
-    expect(find.text('No bids yet'), findsOneWidget);
+    expect(find.text('No lots won yet'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(Tab, 'Offers (1)'));
     await tester.pumpAndSettle();
@@ -201,5 +202,213 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.widgetWithText(Tab, 'Purchases (1)'), findsOneWidget);
+  });
+
+  test('buyerOrders is what the user bought, not sales to them', () async {
+    const seller = HubsomUser(
+      id: 'seller-1',
+      email: 'seller@hubsom.test',
+      name: 'Ama Host',
+      role: 'seller',
+      sellerId: 'seller-1',
+    );
+    const saleToCustomer = Order(
+      id: 'ord-sale-1',
+      subtotalGhs: 40,
+      status: 'paid',
+      userId: 'customer-9',
+      buyerEmail: 'kojo@hubsom.test',
+      lines: [
+        OrderLine(
+          productId: 'p-sale',
+          sellerId: 'seller-1',
+          name: 'Sold from my store',
+          quantity: 1,
+          unitPriceGhs: 40,
+          lineTotalGhs: 40,
+          category: 'fashion',
+        ),
+      ],
+      createdAt: '2026-09-05T13:00:00.000Z',
+    );
+    const myPurchase = Order(
+      id: 'ord-buy-1',
+      subtotalGhs: 25,
+      status: 'paid',
+      userId: 'seller-1',
+      buyerEmail: 'seller@hubsom.test',
+      lines: [
+        OrderLine(
+          productId: 'p-other',
+          sellerId: 'other-seller',
+          name: 'Shea I bought',
+          quantity: 1,
+          unitPriceGhs: 25,
+          lineTotalGhs: 25,
+          category: 'beauty',
+        ),
+      ],
+      createdAt: '2026-09-05T13:05:00.000Z',
+    );
+    await LocalHuberStore.saveOrder(saleToCustomer);
+    await LocalHuberStore.saveOrder(myPurchase);
+    await LocalStore.setUserJson(jsonEncode(seller.toJson()));
+
+    final repo = OrderRepository(_unusedApi());
+    final mine = await repo.buyerOrders();
+    expect(mine.map((o) => o.id), ['ord-buy-1']);
+    expect(mine.single.lines.single.name, 'Shea I bought');
+
+    await LocalStore.setUserJson(jsonEncode(_buyer.toJson()));
+    final buyerRepo = OrderRepository(_unusedApi());
+    final bought = await buyerRepo.buyerOrders();
+    expect(bought.any((o) => o.id == 'ord-sale-1'), isFalse);
+    expect(bought.any((o) => o.id == 'ord-dash-1'), isTrue);
+  });
+
+  testWidgets('bids are lots the user won and follow seller fulfillment', (
+    tester,
+  ) async {
+    const win = Order(
+      id: 'ord_auc_auc-win',
+      subtotalGhs: 90,
+      status: 'processing',
+      userId: 'buyer-1',
+      buyerName: 'Ama Buyer',
+      buyerEmail: 'buyer@hubsom.test',
+      streamId: 'live-win-1',
+      paymentMethods: ['live-auction'],
+      lines: [
+        OrderLine(
+          productId: 'p-lot',
+          sellerId: 'seller-1',
+          name: 'Auction kente',
+          quantity: 1,
+          unitPriceGhs: 90,
+          lineTotalGhs: 90,
+          category: 'fashion',
+        ),
+      ],
+      createdAt: '2026-09-05T14:00:00.000Z',
+    );
+
+    await tester.runAsync(() async {
+      await LocalHuberStore.saveOrder(_order);
+      await LocalHuberStore.saveOrder(win);
+      await LocalCommerceStore.upsertStream(
+        LiveStream(
+          id: 'live-win-1',
+          title: 'Sunday live bargains',
+          description: 'Live',
+          sellerId: 'seller-1',
+          status: 'ended',
+          channelName: 'live-win-1',
+          cover: '',
+          auction: LiveAuction(
+            id: 'auc-win',
+            productId: 'p-lot',
+            startingBidGhs: 50,
+            currentBidGhs: 90,
+            minIncrementGhs: 5,
+            endsAt: '2026-09-01T00:00:00.000Z',
+            highestBidder: 'Ama Buyer',
+            highestBidderId: 'buyer-1',
+            highestBidderEmail: 'buyer@hubsom.test',
+            status: 'sold',
+            orderId: 'ord_auc_auc-win',
+            recentBids: const [
+              AuctionBid(
+                bidderName: 'Ama Buyer',
+                amountGhs: 90,
+                at: '2026-09-01T00:00:00.000Z',
+                bidderId: 'buyer-1',
+              ),
+            ],
+          ),
+        ),
+      );
+      await LocalStore.setSessionToken('sess');
+      await LocalStore.setUserJson(jsonEncode(_buyer.toJson()));
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
+          liveRepositoryProvider.overrideWithValue(_LocalLiveRepository()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: DashboardPage())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.widgetWithText(Tab, 'Purchases (1)'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Bids (1)'), findsOneWidget);
+    expect(find.text('Kente tote'), findsOneWidget);
+    expect(find.text('Auction kente'), findsNothing);
+
+    await tester.tap(find.widgetWithText(Tab, 'Bids (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Auction kente'), findsOneWidget);
+    expect(find.textContaining('Won'), findsWidgets);
+    expect(find.textContaining('Preparing'), findsWidgets);
+
+    await tester.runAsync(() async {
+      await LocalHuberStore.updateOrderStatus('ord_auc_auc-win', 'shipped');
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
+          liveRepositoryProvider.overrideWithValue(_LocalLiveRepository()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: DashboardPage())),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.widgetWithText(Tab, 'Bids (1)'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('On the way'), findsWidgets);
+  });
+
+  testWidgets('seller dashboard does not list customer sales as purchases', (
+    tester,
+  ) async {
+    const seller = HubsomUser(
+      id: 'seller-dash-1',
+      email: 'host@hubsom.test',
+      name: 'Ama Host',
+      role: 'seller',
+      sellerId: 'seller-1',
+    );
+    await tester.runAsync(() async {
+      await LocalHuberStore.saveOrder(_order);
+      await LocalStore.setSessionToken('sess');
+      await LocalStore.setUserJson(jsonEncode(seller.toJson()));
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
+          liveRepositoryProvider.overrideWithValue(_LocalLiveRepository()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: DashboardPage())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Welcome back, Ama Host.'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Purchases (0)'), findsOneWidget);
+    expect(find.text('Kente tote'), findsNothing);
+    expect(find.text('No purchases yet'), findsOneWidget);
   });
 }
