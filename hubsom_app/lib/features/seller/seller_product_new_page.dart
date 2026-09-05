@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/product_demo_video_picker.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -39,14 +38,10 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
   final _images = <String>[];
-  ProductDemoVideo? _demoVideo;
   String _category = hubsomCategories.first.slug;
   bool _busy = false;
   bool _picking = false;
-  bool _pickingVideo = false;
   bool _loadingEdit = false;
-  bool _existingHasVideo = false;
-  bool _clearedVideo = false;
   bool _flashEnabled = false;
   int _flashDiscountPct = 20;
   /// Hours until the flash sale ends (from save time).
@@ -59,7 +54,6 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
 
   static const _minImages = 3;
   static const _maxImages = 8;
-  static const _maxVideoSeconds = 15;
   static const _maxStoredBytes = 700_000;
 
   @override
@@ -111,9 +105,6 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
           ..clear()
           ..addAll(product!.images);
         _category = product.category;
-        _existingHasVideo = product.hasDemoVideo || product.showsDemoVideo;
-        _clearedVideo = false;
-        _demoVideo = null;
         final sale = product.flashSale;
         if (sale != null && sale.isActive) {
           _flashEnabled = true;
@@ -211,26 +202,6 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     }
   }
 
-  Future<void> _pickVideo() async {
-    if (_pickingVideo) return;
-    setState(() {
-      _error = null;
-      _pickingVideo = true;
-    });
-    try {
-      final video = await pickProductDemoVideo(maxSeconds: _maxVideoSeconds);
-      if (!mounted) return;
-      setState(() => _demoVideo = video);
-    } catch (e) {
-      final message = '$e'
-          .replaceFirst('Bad state: ', '')
-          .replaceFirst('Exception: ', '');
-      setState(() => _error = message);
-    } finally {
-      if (mounted) setState(() => _pickingVideo = false);
-    }
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_images.length < _minImages) {
@@ -276,15 +247,10 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         saved = await ref.read(sellerRepositoryProvider).updateProduct(
               widget.productId!.trim(),
               body,
-              demoVideoBytes: _demoVideo?.bytes,
-              demoVideoMimeType: _demoVideo?.mimeType,
-              clearDemoVideo: _clearedVideo && _demoVideo == null,
             );
       } else {
         saved = await ref.read(sellerRepositoryProvider).createProduct(
               body,
-              demoVideoBytes: _demoVideo?.bytes,
-              demoVideoMimeType: _demoVideo?.mimeType,
             );
       }
       ref.invalidate(productsProvider((category: null, q: null)));
@@ -429,90 +395,6 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                     color: Theme.of(context).colorScheme.error,
                     fontWeight: FontWeight.w600,
                   ),
-                ),
-              ),
-            const SizedBox(height: 20),
-            Text(
-              'Optional product clip',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: HubsomColors.forest,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Optional only. This is still Add product (a listing). To post a standalone shop video, use Add video instead.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => context.push('/videos/upload'),
-                icon: const Icon(Icons.movie_creation_outlined),
-                label: const Text('Open Add video instead'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (_demoVideo != null)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.videocam, color: HubsomColors.forest),
-                title: Text(_demoVideo!.name),
-                subtitle: Text(
-                  '${_demoVideo!.durationSeconds.toStringAsFixed(1)}s · ${(_demoVideo!.bytes.lengthInBytes / 1024).round()} KB',
-                ),
-                trailing: IconButton(
-                  tooltip: 'Remove video',
-                  onPressed: _busy || _pickingVideo
-                      ? null
-                      : () => setState(() {
-                            _demoVideo = null;
-                            _clearedVideo = true;
-                          }),
-                  icon: const Icon(Icons.close),
-                ),
-              )
-            else if (_existingHasVideo && !_clearedVideo)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.videocam, color: HubsomColors.forest),
-                title: const Text('Current demo video'),
-                subtitle: const Text('Kept on this listing'),
-                trailing: IconButton(
-                  tooltip: 'Remove video',
-                  onPressed: _busy || _pickingVideo
-                      ? null
-                      : () => setState(() {
-                            _clearedVideo = true;
-                            _demoVideo = null;
-                          }),
-                  icon: const Icon(Icons.close),
-                ),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: _busy || _pickingVideo
-                    ? null
-                    : () async {
-                        await _pickVideo();
-                        if (_demoVideo != null) {
-                          setState(() => _clearedVideo = false);
-                        }
-                      },
-                icon: _pickingVideo
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.video_call_outlined),
-                label: Text(
-                  _pickingVideo
-                      ? 'Checking video…'
-                      : 'Add optional clip (max ${_maxVideoSeconds}s)',
                 ),
               ),
             const SizedBox(height: 16),
@@ -715,7 +597,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _busy || _picking || _pickingVideo ? null : _submit,
+              onPressed: _busy || _picking ? null : _submit,
               child: Text(
                 _busy
                     ? (_isEdit ? 'Saving…' : 'Publishing…')
@@ -726,7 +608,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                'Tip: this screen adds a product listing. Use Add video (Sell tab) for a standalone clip that links to products.',
+                  'Tip: use Add video on the Sell tab to post a shop clip linked to products.',
                   style: TextStyle(color: Colors.black54),
                 ),
               ),
