@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
 import '../../core/services/gift_store.dart';
@@ -13,10 +14,8 @@ class WalletPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authStateProvider).valueOrNull;
-    final sellerId = user?.sellerId ?? '';
-    final storedHost = sellerId.isEmpty ? 0.0 : GiftStore.hostEarnings(sellerId);
-    final fromUser = user?.giftEarningsGhs ?? 0;
-    final hostEarnings = fromUser > storedHost ? fromUser : storedHost;
+    final hostEarnings =
+        user == null ? 0.0 : GiftStore.pendingEarningsGhs(user);
     return Scaffold(
       appBar: AppBar(title: const Text('Wallet')),
       body: ListView(
@@ -73,6 +72,16 @@ class WalletPage extends ConsumerWidget {
             onPressed: () => GiftPointsSheet.show(context),
             icon: const Icon(Icons.card_giftcard),
             label: const Text('Buy gift points'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/wallet/gifts'),
+            icon: const Icon(Icons.redeem),
+            label: Text(
+              hostEarnings > 0
+                  ? 'Received gifts · ${formatGhs(hostEarnings)} to withdraw'
+                  : 'Received gifts & withdraw',
+            ),
           ),
           const SizedBox(height: 8),
           const Text(

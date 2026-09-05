@@ -73,6 +73,12 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         stream!.hosts.any((h) => h.id == user.id);
   }
 
+  int _offeredQty(Product product) {
+    final s = stream;
+    if (s == null) return product.stock;
+    return s.offeredQty(product.id, fallback: product.stock);
+  }
+
   String get _hostName {
     final hosts = stream?.hosts;
     if (hosts != null && hosts.isNotEmpty && hosts.first.name.isNotEmpty) {
@@ -552,11 +558,82 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     });
   }
 
+  Future<int?> _pickLiveQty(Product product) async {
+    if (product.stock < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} is out of stock')),
+      );
+      return null;
+    }
+    var qty = 1;
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('Quantity for this live'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${product.name} · ${product.stock} in stock',
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: qty <= 1
+                            ? null
+                            : () => setLocal(() => qty -= 1),
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                      Text(
+                        '$qty',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 22,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: qty >= product.stock
+                            ? null
+                            : () => setLocal(() => qty += 1),
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, qty),
+                  child: const Text('Add to live'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _addProductToLive(Product product) async {
     try {
+      final qty = await _pickLiveQty(product);
+      if (qty == null || !mounted) return;
       final updated = await ref
           .read(liveRepositoryProvider)
-          .addProducts(widget.streamId, [product.id]);
+          .addProducts(
+            widget.streamId,
+            [product.id],
+            quantities: {product.id: qty},
+          );
       // Also pin the newly added product so viewers see it right away.
       final pinnedStream = await ref
           .read(liveRepositoryProvider)
@@ -706,21 +783,42 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     if (!ensureSignedIn(context, ref, message: 'Sign in to buy from live')) {
       return;
     }
-    await ref.read(cartProvider.notifier).addProduct(
-          product,
-          source: 'live',
-          streamId: stream?.id,
-        );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${product.name} added to cart'),
-        action: SnackBarAction(
-          label: 'View cart',
-          onPressed: () => context.push('/cart'),
+    if (_offeredQty(product) <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} is sold out on this live')),
+      );
+      return;
+    }
+    try {
+      final updated = await ref
+          .read(liveRepositoryProvider)
+          .reserveLiveUnit(widget.streamId, product.id);
+      await ref.read(cartProvider.notifier).addProduct(
+            product,
+            source: 'live',
+            streamId: stream?.id,
+          );
+      if (!mounted) return;
+      setState(() => stream = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${product.name} added to cart'),
+          action: SnackBarAction(
+            label: 'View cart',
+            onPressed: () => context.push('/cart'),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _bidQuick() async {
@@ -1158,6 +1256,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   onQuickBid: _bidQuick,
                   onCustomBid: _bidCustom,
                   onExtend: _extendAuction,
+                  offeredQty: pinned == null ? 0 : _offeredQty(pinned!),
                   onBuyPinned: pinned == null ? null : () => _buy(pinned!),
                   onSendChat: _sendChat,
                   onOpenShop: _openShop,
@@ -1264,7 +1363,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                   title: Text(p.name),
                                   subtitle: Text(
-                                    '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
+                                    '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} for sale',
                                   ),
                                   trailing: _isHost
                                       ? _HostLiveActions(
@@ -1282,11 +1381,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                               : () => _auctionProductOnLive(p),
                                         )
                                       : FilledButton(
-                                          onPressed: p.stock <= 0
+                                          onPressed: _offeredQty(p) <= 0
                                               ? null
                                               : () => _buy(p),
                                           child: Text(
-                                            p.stock <= 0 ? 'Sold out' : 'Buy',
+                                            _offeredQty(p) <= 0
+                                                ? 'Sold out'
+                                                : 'Buy',
                                           ),
                                         ),
                                 );
@@ -1495,6 +1596,7 @@ class _LiveBottomDock extends StatelessWidget {
     required this.onQuickBid,
     required this.onCustomBid,
     required this.onExtend,
+    required this.offeredQty,
     required this.onBuyPinned,
     required this.onSendChat,
     required this.onOpenShop,
@@ -1519,6 +1621,7 @@ class _LiveBottomDock extends StatelessWidget {
   final VoidCallback onQuickBid;
   final VoidCallback onCustomBid;
   final VoidCallback onExtend;
+  final int offeredQty;
   final VoidCallback? onBuyPinned;
   final VoidCallback onSendChat;
   final VoidCallback onOpenShop;
@@ -1574,6 +1677,7 @@ class _LiveBottomDock extends StatelessWidget {
                 _SleekAuctionCard(
                   auction: a,
                   pinned: pinned,
+                  offeredQty: offeredQty,
                   isHost: isHost,
                   secsLeft: secsLeft,
                   open: open,
@@ -1588,6 +1692,7 @@ class _LiveBottomDock extends StatelessWidget {
               else if (showCard && pinned != null)
                 _SleekBuyCard(
                   product: pinned!,
+                  offeredQty: offeredQty,
                   isHost: isHost,
                   onBuy: onBuyPinned,
                   onDismiss: onDismissAuction,
@@ -1713,6 +1818,7 @@ class _SleekAuctionCard extends StatelessWidget {
   const _SleekAuctionCard({
     required this.auction,
     required this.pinned,
+    required this.offeredQty,
     required this.isHost,
     required this.secsLeft,
     required this.open,
@@ -1727,6 +1833,7 @@ class _SleekAuctionCard extends StatelessWidget {
 
   final LiveAuction auction;
   final Product? pinned;
+  final int offeredQty;
   final bool isHost;
   final int secsLeft;
   final bool open;
@@ -1835,7 +1942,7 @@ class _SleekAuctionCard extends StatelessWidget {
           Text(
             pinned == null
                 ? 'Huber delivery across Ghana · Buyer protected'
-                : '${pinned!.stock} for sale · Huber shipping · Buyer protected',
+                : '$offeredQty for sale · Huber shipping · Buyer protected',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 11, color: Color(0xFF777777)),
@@ -1949,12 +2056,14 @@ class _SleekAuctionCard extends StatelessWidget {
 class _SleekBuyCard extends StatelessWidget {
   const _SleekBuyCard({
     required this.product,
+    required this.offeredQty,
     required this.isHost,
     required this.onBuy,
     required this.onDismiss,
   });
 
   final Product product;
+  final int offeredQty;
   final bool isHost;
   final VoidCallback? onBuy;
   final VoidCallback onDismiss;
@@ -2007,7 +2116,7 @@ class _SleekBuyCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${product.stock} for sale · Huber shipping',
+                  '$offeredQty for sale · Huber shipping',
                   style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
               ],
@@ -2015,11 +2124,11 @@ class _SleekBuyCard extends StatelessWidget {
           ),
           if (!isHost && onBuy != null)
             FilledButton(
-              onPressed: product.stock <= 0 ? null : onBuy,
+              onPressed: offeredQty <= 0 ? null : onBuy,
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFE91E63),
               ),
-              child: Text(product.stock <= 0 ? 'Sold out' : 'Buy'),
+              child: Text(offeredQty <= 0 ? 'Sold out' : 'Buy'),
             ),
           IconButton(
             onPressed: onDismiss,

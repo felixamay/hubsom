@@ -20,6 +20,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   final _startingBid = TextEditingController(text: '50');
   final _askingPrice = TextEditingController();
   final _selected = <String>{};
+  final _qtys = <String, int>{};
   String? _auctionProductId;
   bool _auction = false;
   /// Auction clock set by seller — max 30 seconds.
@@ -50,6 +51,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
           _selected
             ..clear()
             ..add(_products.first.id);
+          _qtys[_products.first.id] = _defaultQty(_products.first);
           _auctionProductId = _products.first.id;
           _askingPrice.text =
               _products.first.effectivePrice.toStringAsFixed(0);
@@ -74,6 +76,19 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     super.dispose();
   }
 
+  int _defaultQty(Product p) => p.stock < 1 ? 0 : 1;
+
+  int _qtyFor(Product p) {
+    final q = _qtys[p.id] ?? _defaultQty(p);
+    if (p.stock < 1) return 0;
+    return q.clamp(1, p.stock);
+  }
+
+  void _setQty(Product p, int qty) {
+    if (p.stock < 1) return;
+    setState(() => _qtys[p.id] = qty.clamp(1, p.stock));
+  }
+
   Future<void> _start() async {
     if (_selected.isEmpty) {
       setState(() => _error = 'Select at least one of your products for the show');
@@ -82,6 +97,26 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     if (_title.text.trim().isEmpty) {
       setState(() => _error = 'Add a stream title');
       return;
+    }
+    for (final id in _selected) {
+      final matches = _products.where((p) => p.id == id);
+      if (matches.isEmpty) continue;
+      final product = matches.first;
+      final qty = _qtyFor(product);
+      if (qty < 1) {
+        setState(
+          () => _error =
+              'Set a quantity for ${product.name} before going live',
+        );
+        return;
+      }
+      if (qty > product.stock) {
+        setState(
+          () => _error =
+              '${product.name} only has ${product.stock} in stock',
+        );
+        return;
+      }
     }
     setState(() {
       _busy = true;
@@ -93,6 +128,11 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         'description': _description.text.trim(),
         'status': 'live',
         'productIds': _selected.toList(),
+        'productQuantities': {
+          for (final id in _selected)
+            id: _qtys[id] ??
+                _defaultQty(_products.firstWhere((p) => p.id == id)),
+        },
         'pinnedProductId': _selected.first,
         if (_auction) 'auctionProductId': _auctionProductId ?? _selected.first,
         if (_auction)
@@ -152,7 +192,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Pick products, optionally open an auction, then go live. Viewers can chat, react, bid, and buy.',
+                  'Pick products, set how many units are for sale on this live, optionally open an auction, then go live. Viewers can chat, react, bid, and buy.',
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -199,35 +239,92 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                     final selected = _selected.contains(p.id);
                     final thumb =
                         p.images.isNotEmpty ? p.images.first : null;
-                    return CheckboxListTile(
-                      value: selected,
-                      contentPadding: EdgeInsets.zero,
-                      secondary: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: HubsomImage(
-                          url: thumb,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
+                    final out = p.stock < 1;
+                    final qty = _qtyFor(p);
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+                        child: Column(
+                          children: [
+                            CheckboxListTile(
+                              value: selected,
+                              enabled: !out,
+                              contentPadding: EdgeInsets.zero,
+                              secondary: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: HubsomImage(
+                                  url: thumb,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              title: Text(p.name),
+                              subtitle: Text(
+                                out
+                                    ? 'Out of stock — add quantity on the product first'
+                                    : '${formatGhs(p.effectivePrice)} · ${p.stock} in stock',
+                              ),
+                              onChanged: out
+                                  ? null
+                                  : (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _selected.add(p.id);
+                                          _qtys[p.id] = _defaultQty(p);
+                                        } else {
+                                          _selected.remove(p.id);
+                                          if (_auctionProductId == p.id) {
+                                            _auctionProductId =
+                                                _selected.isNotEmpty
+                                                    ? _selected.first
+                                                    : null;
+                                          }
+                                        }
+                                      });
+                                    },
+                            ),
+                            if (selected && !out)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8, right: 4),
+                                child: Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Quantity for this live',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Fewer',
+                                      onPressed: qty <= 1
+                                          ? null
+                                          : () => _setQty(p, qty - 1),
+                                      icon: const Icon(Icons.remove_circle_outline),
+                                    ),
+                                    Text(
+                                      '$qty',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'More',
+                                      onPressed: qty >= p.stock
+                                          ? null
+                                          : () => _setQty(p, qty + 1),
+                                      icon: const Icon(Icons.add_circle_outline),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      title: Text(p.name),
-                      subtitle: Text(
-                        '${formatGhs(p.effectivePrice)} · ${p.images.length} photos',
-                      ),
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selected.add(p.id);
-                          } else {
-                            _selected.remove(p.id);
-                            if (_auctionProductId == p.id) {
-                              _auctionProductId =
-                                  _selected.isNotEmpty ? _selected.first : null;
-                            }
-                          }
-                        });
-                      },
                     );
                   }),
                 if (_products.isNotEmpty) ...[

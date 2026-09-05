@@ -150,6 +150,7 @@ class LiveRepository {
       title: body['title'] as String? ?? 'Hubsom Live Show',
       description: body['description'] as String? ?? '',
       productIds: (body['productIds'] as List?)?.cast<String>() ?? const [],
+      productQuantities: parseProductQuantities(body['productQuantities']),
       pinnedProductId: body['pinnedProductId'] as String?,
       auctionProductId: body['auctionProductId'] as String?,
       startingBidGhs: (body['startingBidGhs'] as num?)?.toDouble() ?? 50,
@@ -202,15 +203,29 @@ class LiveRepository {
     return updated;
   }
 
-  Future<LiveStream> addProducts(String streamId, List<String> productIds) async {
+  Future<LiveStream> addProducts(
+    String streamId,
+    List<String> productIds, {
+    Map<String, int>? quantities,
+  }) async {
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
     final updated = await LocalCommerceStore.addProductsToStream(
       streamId: streamId,
       user: user,
       productIds: productIds,
+      quantities: quantities,
     );
     if (updated == null) throw StateError('Stream not found');
+    await _syncStream(updated);
+    return updated;
+  }
+
+  Future<LiveStream> reserveLiveUnit(String streamId, String productId) async {
+    final updated = await LocalCommerceStore.decrementLiveQuantity(
+      streamId: streamId,
+      productId: productId,
+    );
     await _syncStream(updated);
     return updated;
   }

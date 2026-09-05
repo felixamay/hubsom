@@ -71,7 +71,7 @@ class LiveGiftSheet extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             hostMode
-                ? 'Viewers buy points and send these gifts during your live.'
+                ? 'Send a gift to celebrate — host earnings are only credited when viewers gift you.'
                 : 'Pick a gift. Points are purchased in Wallet or here.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -88,9 +88,8 @@ class LiveGiftSheet extends ConsumerWidget {
                 _GiftTile(
                   gift: gift,
                   canAfford: points >= gift.costPoints,
-                  enabled: !hostMode,
+                  enabled: true,
                   onTap: () async {
-                    if (hostMode) return;
                     try {
                       final result = await ref
                           .read(liveRepositoryProvider)
@@ -117,15 +116,14 @@ class LiveGiftSheet extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (!hostMode)
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => GiftPointsSheet.show(context),
-                icon: const Icon(Icons.add),
-                label: const Text('Buy gift points'),
-              ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => GiftPointsSheet.show(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Buy gift points'),
             ),
+          ),
         ],
       ),
     );

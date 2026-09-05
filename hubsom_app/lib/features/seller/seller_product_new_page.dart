@@ -270,7 +270,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   productId: id,
                 );
           } else {
-            await ref.read(liveRepositoryProvider).addProducts(liveId, [id]);
+            await ref.read(liveRepositoryProvider).addProducts(
+                  liveId,
+                  [id],
+                  quantities: {
+                    id: int.tryParse(_stock.text.trim()) ?? 1,
+                  },
+                );
             await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
           }
         } catch (_) {}

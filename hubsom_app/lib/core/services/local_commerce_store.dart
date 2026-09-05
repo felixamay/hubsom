@@ -414,6 +414,7 @@ class LocalCommerceStore {
         endedAt: s.endedAt,
         recordingUrl: s.recordingUrl,
         productIds: s.productIds,
+        productQuantities: s.productQuantities,
         pinnedProductId: s.pinnedProductId,
         hosts: [
           for (final h in s.hosts)
@@ -484,6 +485,7 @@ class LocalCommerceStore {
     required String title,
     String description = '',
     required List<String> productIds,
+    Map<String, int>? productQuantities,
     String? pinnedProductId,
     String? auctionProductId,
     double startingBidGhs = 50,
@@ -500,6 +502,28 @@ class LocalCommerceStore {
         .toList();
     if (owned.isEmpty) {
       throw StateError('Select at least one of your products for the show');
+    }
+
+    final quantities = <String, int>{};
+    for (final id in owned) {
+      final product = getProduct(id)!;
+      final requested = productQuantities?[id];
+      if (requested != null) {
+        if (requested < 1) {
+          throw StateError('Set a quantity of at least 1 for ${product.name}');
+        }
+        if (requested > product.stock) {
+          throw StateError(
+            '${product.name} only has ${product.stock} in stock',
+          );
+        }
+        quantities[id] = requested;
+      } else {
+        if (product.stock < 1) {
+          throw StateError('${product.name} is out of stock');
+        }
+        quantities[id] = product.stock;
+      }
     }
 
     final pin = pinnedProductId != null && owned.contains(pinnedProductId)
@@ -548,6 +572,7 @@ class LocalCommerceStore {
       peakViewers: 1,
       startedAt: now,
       productIds: owned,
+      productQuantities: quantities,
       pinnedProductId: pin,
       hosts: [
         StreamHost(
@@ -606,6 +631,7 @@ class LocalCommerceStore {
     int? viewerCount,
     LiveAuction? auction,
     List<String>? productIds,
+    Map<String, int>? productQuantities,
     bool end = false,
   }) async {
     final streams = listStreams();
@@ -628,6 +654,7 @@ class LocalCommerceStore {
         peakViewers: viewers > s.peakViewers ? viewers : s.peakViewers,
         auction: auction,
         productIds: productIds,
+        productQuantities: productQuantities,
       );
     }
     streams[idx] = s;
@@ -639,6 +666,7 @@ class LocalCommerceStore {
     required String streamId,
     required HubsomUser user,
     required List<String> productIds,
+    Map<String, int>? quantities,
   }) async {
     final stream = getStream(streamId);
     if (stream == null || !stream.isLive) {
@@ -655,7 +683,46 @@ class LocalCommerceStore {
       throw StateError('Select products from your catalog');
     }
     final merged = <String>{...stream.productIds, ...owned}.toList();
-    return updateStream(streamId, productIds: merged);
+    final qtys = Map<String, int>.from(stream.productQuantities);
+    for (final id in owned) {
+      final product = getProduct(id);
+      final requested = quantities?[id] ?? product?.stock ?? 1;
+      final max = product?.stock ?? requested;
+      if (requested < 1) {
+        throw StateError('Set a quantity of at least 1 before adding');
+      }
+      if (max < 1) {
+        throw StateError('${product?.name ?? 'Product'} is out of stock');
+      }
+      qtys[id] = requested.clamp(1, max);
+    }
+    return updateStream(
+      streamId,
+      productIds: merged,
+      productQuantities: qtys,
+    );
+  }
+
+  /// Consume one (or more) live units when a viewer buys from the show.
+  static Future<LiveStream> decrementLiveQuantity({
+    required String streamId,
+    required String productId,
+    int by = 1,
+  }) async {
+    final stream = getStream(streamId);
+    if (stream == null || !stream.isLive) {
+      throw StateError('Live show not found');
+    }
+    final catalogStock = getProduct(productId)?.stock ?? 0;
+    final current = stream.offeredQty(productId, fallback: catalogStock);
+    if (current < by) {
+      throw StateError('Sold out on this live');
+    }
+    final next = Map<String, int>.from(stream.productQuantities);
+    next[productId] = current - by;
+    final updated = await updateStream(streamId, productQuantities: next);
+    if (updated == null) throw StateError('Live show not found');
+    return updated;
   }
 
   /// Start (or switch to) an auction on a catalog product without ending the live.
@@ -705,6 +772,10 @@ class LocalCommerceStore {
 
     final live = getStream(streamId) ?? stream;
     final productIds = <String>{...live.productIds, productId}.toList();
+    final qtys = Map<String, int>.from(live.productQuantities);
+    if (!qtys.containsKey(productId)) {
+      qtys[productId] = product.stock < 1 ? 1 : product.stock;
+    }
     final start =
         (startingBidGhs != null && startingBidGhs > 0)
             ? startingBidGhs
@@ -732,6 +803,7 @@ class LocalCommerceStore {
     final updated = await updateStream(
       streamId,
       productIds: productIds,
+      productQuantities: qtys,
       pinnedProductId: productId,
       auction: auction,
     );
