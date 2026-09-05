@@ -266,7 +266,7 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Shown on your public store so buyers know where you sell from.',
+            'Shown on your public store and sent to Huber riders so they see how far they are from pickup.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),

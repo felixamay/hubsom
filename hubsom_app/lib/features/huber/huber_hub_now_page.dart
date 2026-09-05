@@ -166,6 +166,17 @@ class _HuberHubNowPageState extends ConsumerState<HuberHubNowPage> {
                     label: const Text('Source: Hubsom marketplace'),
                     backgroundColor: HubsomColors.mint,
                   ),
+                  if (offer.pickupDistanceLabel.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      offer.pickupDistanceLabel,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                        color: HubsomColors.huberNavy,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Text('Pickup · ${offer.pickupLabel}, ${offer.pickupCity}'),
                   Text('Customer · ${offer.recipientName}'),

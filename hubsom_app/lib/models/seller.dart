@@ -16,6 +16,8 @@ class Seller extends Equatable {
     this.verified = false,
     this.categories = const [],
     this.ownerUserId,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -33,6 +35,8 @@ class Seller extends Equatable {
   final bool verified;
   final List<String> categories;
   final String? ownerUserId;
+  final double? latitude;
+  final double? longitude;
 
   factory Seller.fromJson(Map<String, dynamic> json) => Seller(
         id: json['id'] as String,
@@ -49,6 +53,8 @@ class Seller extends Equatable {
         verified: json['verified'] as bool? ?? false,
         categories: (json['categories'] as List?)?.cast<String>() ?? const [],
         ownerUserId: json['ownerUserId'] as String?,
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -66,6 +72,8 @@ class Seller extends Equatable {
         'verified': verified,
         'categories': categories,
         if (ownerUserId != null) 'ownerUserId': ownerUserId,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
       };
 
   Seller copyWith({
@@ -81,6 +89,8 @@ class Seller extends Equatable {
     bool? verified,
     List<String>? categories,
     String? ownerUserId,
+    double? latitude,
+    double? longitude,
   }) =>
       Seller(
         id: id,
@@ -97,6 +107,8 @@ class Seller extends Equatable {
         verified: verified ?? this.verified,
         categories: categories ?? this.categories,
         ownerUserId: ownerUserId ?? this.ownerUserId,
+        latitude: latitude ?? this.latitude,
+        longitude: longitude ?? this.longitude,
       );
 
   /// Public location line, e.g. "Osu, Accra, Greater Accra".

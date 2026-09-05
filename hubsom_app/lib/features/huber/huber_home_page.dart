@@ -185,7 +185,13 @@ class _HuberHomePageState extends ConsumerState<HuberHomePage> {
               (o) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(o.recipientName.isEmpty ? o.sellerName : o.recipientName),
-                subtitle: Text('${o.dropoffCity} · ${formatGhs(o.offeredFeeGhs ?? 0)}'),
+                subtitle: Text(
+                  [
+                    if (o.pickupDistanceLabel.isNotEmpty) o.pickupDistanceLabel,
+                    o.dropoffCity,
+                    formatGhs(o.offeredFeeGhs ?? 0),
+                  ].join(' · '),
+                ),
                 onTap: () => context.go('/huber/hub'),
               ),
             ),

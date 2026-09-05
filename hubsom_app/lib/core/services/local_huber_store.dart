@@ -4,11 +4,12 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/huber.dart';
 import '../../models/order.dart';
+import '../../models/seller.dart';
 import '../../models/shipment.dart';
 import '../../models/user.dart';
 import 'cloud_store.dart';
+import 'ghana_places.dart';
 import 'local_store.dart';
-import 'maps_service.dart';
 
 /// Device-local Huber riders, Hubsom offers, and deliveries when Hosting
 /// has no API. No seeded demo riders — only accounts created via sign-up.
@@ -36,6 +37,25 @@ class LocalHuberStore {
     } catch (_) {
       return [];
     }
+  }
+
+  static Seller? _sellerForShipment(String sellerId) {
+    if (sellerId.isEmpty) return null;
+    final raw = LocalStore.getString('localSellers');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final list = jsonDecode(raw) as List;
+      for (final row in list) {
+        if (row is! Map) continue;
+        final data = Map<String, dynamic>.from(row);
+        final id = '${data['id'] ?? ''}';
+        final slug = '${data['slug'] ?? ''}';
+        if (id == sellerId || slug == sellerId) {
+          return Seller.fromJson(data);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static Future<void> _writeList(String key, List<Map<String, dynamic>> rows) async {
@@ -357,10 +377,33 @@ class LocalHuberStore {
     final fee = preferredFeeGhs ??
         (defaultFeeGhs + shipment.items.length * 2).clamp(15, 80).toDouble();
     final dest = shipment.destination;
-    final accra = MapsService.defaultCenter;
+    final seller = _sellerForShipment(shipment.sellerId);
+    final pickup = GhanaPlaces.resolve(
+      address: seller?.address,
+      city: seller?.city,
+      region: seller?.region,
+      latitude: seller?.latitude,
+      longitude: seller?.longitude,
+    );
+    final pickupLabel = (seller?.address.trim().isNotEmpty == true)
+        ? seller!.address.trim()
+        : (seller?.displayLocation.isNotEmpty == true
+            ? seller!.displayLocation
+            : 'Seller pickup');
+    final pickupCity = (seller?.city.trim().isNotEmpty == true)
+        ? seller!.city.trim()
+        : 'Accra';
+    final sellerName = (seller?.name.trim().isNotEmpty == true)
+        ? seller!.name.trim()
+        : 'Hubsom seller';
     final offers = <HuberOffer>[];
     for (var i = 0; i < riders.length; i++) {
       final rider = riders[i];
+      final riderPoint = GhanaPlaces.resolve(
+        city: rider.city,
+        region: rider.region,
+      );
+      final km = GhanaPlaces.distanceKm(riderPoint, pickup);
       offers.add(
         HuberOffer(
           id: 'off_${now.millisecondsSinceEpoch.toRadixString(36)}_$i',
@@ -372,18 +415,19 @@ class LocalHuberStore {
           providerReference: 'hubsom:${shipment.id}:${rider.id}',
           createdAt: now.toIso8601String(),
           expiresAt: expiresAt,
-          sellerName: 'Hubsom seller',
-          pickupLabel: 'Hubsom seller pickup',
-          pickupCity: rider.city,
+          sellerName: sellerName,
+          pickupLabel: pickupLabel,
+          pickupCity: pickupCity,
           recipientName: dest.recipientName,
           dropoffLine1: dest.line1,
           dropoffCity: dest.city,
           itemCount: shipment.items.fold<int>(0, (s, e) => s + e.quantity),
           weightLbs: (shipment.items.length * 4).clamp(4, 40).toDouble(),
-          pickupLatitude: accra.latitude,
-          pickupLongitude: accra.longitude,
+          pickupLatitude: pickup.latitude,
+          pickupLongitude: pickup.longitude,
           dropoffLatitude: dest.location?.latitude,
           dropoffLongitude: dest.location?.longitude,
+          pickupDistanceKm: km,
         ),
       );
     }
