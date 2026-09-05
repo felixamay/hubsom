@@ -26,6 +26,7 @@ import '../../widgets/live_gift_burst.dart';
 import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_reaction_burst.dart';
 import '../../widgets/live_reaction_tray.dart';
+import '../../widgets/live_sale_product_card.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
@@ -1299,6 +1300,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                       ),
                       const SizedBox(width: 6),
                       _GlassPill(
+                        onTap: _openShop,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1462,6 +1464,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   onExtend: _extendAuction,
                   offeredQty: pinned == null ? 0 : _offeredQty(pinned!),
                   onBuyPinned: pinned == null ? null : () => _buy(pinned!),
+                  onOpenPinned: pinned == null
+                      ? null
+                      : () => context.push('/products/${pinned!.id}'),
                   onSendChat: _sendChat,
                   onOpenShop: _openShop,
                   onOpenCart: () => context.push('/cart'),
@@ -1555,6 +1560,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                 ),
                               ...bag.map((p) {
                                 return ListTile(
+                                  onTap: () => context.push('/products/${p.id}'),
                                   isThreeLine: _isHost,
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
@@ -1658,6 +1664,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                       )
                                       .map(
                                         (p) => ListTile(
+                                          onTap: () =>
+                                              context.push('/products/${p.id}'),
                                           isThreeLine: true,
                                           leading: ClipRRect(
                                             borderRadius:
@@ -1808,6 +1816,7 @@ class _LiveBottomDock extends StatelessWidget {
     required this.onExtend,
     required this.offeredQty,
     required this.onBuyPinned,
+    required this.onOpenPinned,
     required this.onSendChat,
     required this.onOpenShop,
     required this.onOpenCart,
@@ -1835,6 +1844,7 @@ class _LiveBottomDock extends StatelessWidget {
   final VoidCallback onExtend;
   final int offeredQty;
   final VoidCallback? onBuyPinned;
+  final VoidCallback? onOpenPinned;
   final VoidCallback onSendChat;
   final VoidCallback onOpenShop;
   final VoidCallback onOpenCart;
@@ -1853,7 +1863,9 @@ class _LiveBottomDock extends StatelessWidget {
     final secsLeft = left.inSeconds.clamp(0, 30);
     final open = a?.isOpen == true;
     final awaiting = a?.awaitingExtend == true;
-    final showCard = !hideAuctionCard && (a != null || pinned != null);
+    final activeAuction = a != null && (open || awaiting);
+    final showCard =
+        !hideAuctionCard && (activeAuction || pinned != null);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1874,7 +1886,7 @@ class _LiveBottomDock extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (hideAuctionCard && (a != null || pinned != null))
+              if (hideAuctionCard && (activeAuction || pinned != null))
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -1887,7 +1899,7 @@ class _LiveBottomDock extends StatelessWidget {
                     label: const Text('Show deal'),
                   ),
                 ),
-              if (showCard && a != null)
+              if (showCard && activeAuction && a != null)
                 _SleekAuctionCard(
                   auction: a,
                   pinned: pinned,
@@ -1903,12 +1915,13 @@ class _LiveBottomDock extends StatelessWidget {
                   onExtend: onExtend,
                   onDismiss: onDismissAuction,
                 )
-              else if (showCard && pinned != null)
-                _SleekBuyCard(
+              else if (showCard && pinned != null && onOpenPinned != null)
+                LiveSaleProductCard(
                   product: pinned!,
                   offeredQty: offeredQty,
                   isHost: isHost,
                   onBuy: onBuyPinned,
+                  onOpenProduct: onOpenPinned!,
                   onDismiss: onDismissAuction,
                 ),
               if (isHost && a != null && (open || awaiting)) ...[
@@ -2267,93 +2280,6 @@ class _SleekAuctionCard extends StatelessWidget {
                 color: Color(0xFF333333),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SleekBuyCard extends StatelessWidget {
-  const _SleekBuyCard({
-    required this.product,
-    required this.offeredQty,
-    required this.isHost,
-    required this.onBuy,
-    required this.onDismiss,
-  });
-
-  final Product product;
-  final int offeredQty;
-  final bool isHost;
-  final VoidCallback? onBuy;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: product.images.isNotEmpty
-                  ? HubsomImage(
-                      url: product.images.first,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      color: HubsomColors.mist,
-                      child: const Icon(Icons.shopping_bag),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  formatGhs(product.effectivePrice),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
-                ),
-                Text(
-                  '$offeredQty for sale · Huber shipping',
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-          if (!isHost && onBuy != null)
-            FilledButton(
-              onPressed: offeredQty <= 0 ? null : onBuy,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE91E63),
-              ),
-              child: Text(offeredQty <= 0 ? 'Sold out' : 'Buy'),
-            ),
-          IconButton(
-            onPressed: onDismiss,
-            icon: const Icon(Icons.close, size: 18),
-          ),
         ],
       ),
     );
