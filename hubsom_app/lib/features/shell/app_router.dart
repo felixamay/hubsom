@@ -160,7 +160,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/dashboard',
-                builder: (_, __) => const AuthGate(child: DashboardPage()),
+                builder: (_, __) => const AuthGate(
+                  message: 'Sign in to view your activity',
+                  child: DashboardPage(),
+                ),
               ),
             ],
           ),

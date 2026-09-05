@@ -42,16 +42,20 @@ class MainShell extends ConsumerWidget {
     ),
   ];
 
-  /// Browse links everyone may see. Sell is visible to guests; AuthGate locks it.
+  /// Browse links everyone may see. Sell and Dashboard stay AuthGate locked.
   static const guestBrowseItems = <(String value, IconData icon, String label)>[
     ('live', Icons.videocam_outlined, 'Live'),
     ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('auctions', Icons.gavel, 'Auctions'),
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
     ('sell', Icons.add_business_outlined, 'Sell'),
+    ('dashboard', Icons.insights_outlined, 'Dashboard'),
   ];
 
   static const signedInBrowseItems = guestBrowseItems;
+
+  static List<String> footerLabels({required bool signedIn}) =>
+      _tabs.map((t) => t.label).toList();
 
   static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
@@ -71,15 +75,7 @@ class MainShell extends ConsumerWidget {
     required int shellIndex,
     required bool signedIn,
   }) {
-    if (signedIn) return shellIndex;
-    // Guests see Home / Categories / Sell / Timeline (no Dashboard).
-    return switch (shellIndex) {
-      0 => 0,
-      1 => 1,
-      2 => 2,
-      3 => 3,
-      _ => 0,
-    };
+    return shellIndex;
   }
 
   void _onFooterTap(
@@ -88,18 +84,7 @@ class MainShell extends ConsumerWidget {
     int visibleIndex, {
     required bool signedIn,
   }) {
-    if (signedIn) {
-      _onTap(context, ref, visibleIndex);
-      return;
-    }
-    final shellIndex = switch (visibleIndex) {
-      0 => 0,
-      1 => 1,
-      2 => 2,
-      3 => 3,
-      _ => 0,
-    };
-    _onTap(context, ref, shellIndex);
+    _onTap(context, ref, visibleIndex);
   }
 
   void _onTap(BuildContext context, WidgetRef ref, int index) {
@@ -130,6 +115,7 @@ class MainShell extends ConsumerWidget {
       'auctions' => '/auctions',
       'flash' => '/flash-sales',
       'sell' => '/sell',
+      'dashboard' => '/dashboard',
       'account' => '/account',
       'profile' => '/account/profile',
       'saved' => '/account/saved',
@@ -244,7 +230,7 @@ class MainShell extends ConsumerWidget {
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
     final menu = _buildMenu(signedIn: signedIn);
-    final footerTabs = signedIn ? _tabs : _tabs.sublist(0, 4);
+    const footerTabs = _tabs;
     final selectedFooter = _visibleFooterIndex(
       shellIndex: navigationShell.currentIndex,
       signedIn: signedIn,
