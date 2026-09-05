@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/payment_service.dart';
+import '../../core/services/user_address_store.dart';
 import '../../core/utils/money.dart';
 import '../../models/user.dart';
 import '../../widgets/gps_pin_card.dart';
@@ -19,24 +20,42 @@ class CheckoutPage extends ConsumerStatefulWidget {
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
-  final _line1 = TextEditingController();
-  final _city = TextEditingController(text: AppConstants.defaultCity);
-  final _region = TextEditingController(text: AppConstants.defaultRegion);
   final _selected = <String>{'mtn-momo'};
   bool _busy = false;
   String? _result;
   GeoLocation? _gps;
+  UserAddress? _address;
   bool _gpsBusy = false;
   String? _gpsError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSavedPin());
+  }
 
   @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
-    _line1.dispose();
-    _city.dispose();
-    _region.dispose();
     super.dispose();
+  }
+
+  void _applyPin(GeoLocation pin, {UserAddress? address}) {
+    _gps = pin;
+    _address = address ?? UserAddressStore.fromAllowedGps(pin, phone: _phone.text.trim());
+    _gpsError = null;
+  }
+
+  void _loadSavedPin() {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+    _name.text = user.name;
+    _phone.text = user.phone ?? '';
+    final saved = UserAddressStore.defaultAddress(user);
+    if (saved?.location != null) {
+      setState(() => _applyPin(saved!.location!, address: saved));
+    }
   }
 
   Future<void> _useGps() async {
@@ -46,8 +65,23 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     });
     try {
       final pin = await ref.read(locationServiceProvider).current();
+      final user = ref.read(authStateProvider).valueOrNull;
+      HubsomUser? next;
+      if (user != null) {
+        next = await UserAddressStore.saveAllowedGps(
+          user: user,
+          pin: pin,
+          phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        );
+        ref.read(authStateProvider.notifier).applyLocalUser(next);
+      }
       if (!mounted) return;
-      setState(() => _gps = pin);
+      setState(() {
+        _applyPin(
+          pin,
+          address: next == null ? null : UserAddressStore.defaultAddress(next),
+        );
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _gpsError = '$e');
@@ -66,14 +100,15 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     }
     setState(() { _busy = true; _result = null; });
     try {
+      final address = _address ?? UserAddressStore.fromAllowedGps(_gps!);
       final res = await ref.read(paymentServiceProvider).checkout(
         items: cart.map((e) => e.toJson()).toList(),
         shipping: {
           'recipientName': _name.text.trim(),
           'phone': _phone.text.trim(),
-          'line1': _line1.text.trim(),
-          'city': _city.text.trim(),
-          'region': _region.text.trim(),
+          'line1': address.line1,
+          'city': address.city,
+          'region': address.region,
           'location': _gps!.toJson(),
         },
         paymentMethods: _selected.toList(),
@@ -93,6 +128,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     final subtotal = cart.fold<double>(0, (s, e) => s + e.lineTotal);
     final shipment = cart.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
     final payable = subtotal + shipment;
+    final area = _address?.displayArea ?? '';
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
       body: ListView(
@@ -103,24 +139,25 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           TextField(controller: _name, decoration: const InputDecoration(labelText: 'Recipient name')),
           const SizedBox(height: 8),
           TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone'), keyboardType: TextInputType.phone),
-          const SizedBox(height: 8),
-          TextField(controller: _line1, decoration: const InputDecoration(labelText: 'Address line')),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: TextField(controller: _city, decoration: const InputDecoration(labelText: 'City'))),
-            const SizedBox(width: 8),
-            Expanded(child: TextField(controller: _region, decoration: const InputDecoration(labelText: 'Region'))),
-          ]),
           const SizedBox(height: 12),
           GpsPinCard(
-            title: 'Delivery GPS pin',
+            title: 'Your delivery address',
             subtitle:
-                'Allow location so Huber riders can navigate to your door on OpenStreetMap.',
+                'Riders navigate to the GPS coordinate you allow — not a default Accra address.',
             pin: _gps,
             busy: _gpsBusy,
             error: _gpsError,
             onUseLocation: _useGps,
           ),
+          if (_gps != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              area.isEmpty
+                  ? 'Address · ${_gps!.coordinateLabel}'
+                  : 'Address · ${_gps!.coordinateLabel} · near $area',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: 20),
           Text('Payment', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),

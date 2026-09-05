@@ -81,6 +81,68 @@ abstract final class GhanaPlaces {
     return MapsService.defaultCenter;
   }
 
+  static const _cityRegion = <String, String>{
+    'accra': 'Greater Accra',
+    'osu': 'Greater Accra',
+    'labone': 'Greater Accra',
+    'cantonments': 'Greater Accra',
+    'east legon': 'Greater Accra',
+    'madina': 'Greater Accra',
+    'adenta': 'Greater Accra',
+    'tema': 'Greater Accra',
+    'ashaiman': 'Greater Accra',
+    'spintex': 'Greater Accra',
+    'kasoa': 'Central',
+    'dansoman': 'Greater Accra',
+    'achimota': 'Greater Accra',
+    'kumasi': 'Ashanti',
+    'obuasi': 'Ashanti',
+    'tamale': 'Northern',
+    'cape coast': 'Central',
+    'takoradi': 'Western',
+    'sekondi': 'Western',
+    'sunyani': 'Bono',
+    'techiman': 'Bono East',
+    'ho': 'Volta',
+    'koforidua': 'Eastern',
+    'wa': 'Upper West',
+    'bolgatanga': 'Upper East',
+    'tarkwa': 'Western',
+    'winneba': 'Central',
+    'nkawkaw': 'Eastern',
+  };
+
+  static String _titleCase(String value) => value
+      .split(' ')
+      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+
+  /// Nearest known Ghana place for a GPS pin. Does not fall back to Accra
+  /// when the pin is far from every listed city.
+  static ({String city, String region, double km}) nearest(
+    double latitude,
+    double longitude,
+  ) {
+    final pin = LatLng(latitude, longitude);
+    var bestKey = '';
+    var bestKm = double.infinity;
+    for (final entry in _cities.entries) {
+      final km = distanceKm(pin, entry.value);
+      if (km < bestKm) {
+        bestKm = km;
+        bestKey = entry.key;
+      }
+    }
+    if (bestKey.isEmpty || bestKm > 60) {
+      return (city: '', region: '', km: bestKm);
+    }
+    return (
+      city: _titleCase(bestKey),
+      region: _cityRegion[bestKey] ?? '',
+      km: bestKm,
+    );
+  }
+
   static double distanceKm(LatLng from, LatLng to) {
     return const Distance().as(LengthUnit.Kilometer, from, to);
   }

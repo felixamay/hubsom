@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 
-import '../core/services/maps_service.dart';
 import '../core/theme/hubsom_colors.dart';
 import '../models/user.dart';
 
@@ -41,47 +38,19 @@ class GpsPinCard extends StatelessWidget {
           Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 10),
           if (loc != null) ...[
-            SizedBox(
-              height: 140,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: LatLng(loc.latitude, loc.longitude),
-                    initialZoom: 15,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.none,
-                    ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.my_location, color: HubsomColors.live),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${loc.coordinateLabel}${loc.source == 'gps' ? ' · GPS' : ''}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  children: [
-                    TileLayer(
-                      urlTemplate: MapsService.osmTileUrl,
-                      userAgentPackageName: 'com.hubsom.app',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: LatLng(loc.latitude, loc.longitude),
-                          width: 36,
-                          height: 36,
-                          child: const Icon(
-                            Icons.my_location,
-                            color: HubsomColors.live,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${loc.latitude.toStringAsFixed(5)}, ${loc.longitude.toStringAsFixed(5)}'
-              '${loc.source == 'gps' ? ' · GPS' : ''}',
-              style: Theme.of(context).textTheme.bodySmall,
+              ],
             ),
           ],
           const SizedBox(height: 8),
