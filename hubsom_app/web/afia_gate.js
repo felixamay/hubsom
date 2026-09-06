@@ -31,9 +31,9 @@
     var form = document.getElementById('afia-form');
     if (form) form.hidden = true;
     if (opening) opening.hidden = false;
-    var boot = document.getElementById('hubsom-flutter-boot');
+    var boot = document.querySelector('meta[name="hubsom-flutter-boot"]');
     var s = document.createElement('script');
-    s.src = (boot && boot.textContent ? boot.textContent.trim() : 'flutter_bootstrap.js');
+    s.src = (boot && boot.getAttribute('content')) || 'flutter_bootstrap.js';
     s.async = true;
     s.setAttribute('data-hubsom-flutter', '1');
     document.body.appendChild(s);
