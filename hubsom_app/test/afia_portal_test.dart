@@ -112,6 +112,10 @@ void main() {
     expect(AfiaAccess.isUnlocked(), isTrue);
     await AfiaAccess.lock();
     expect(AfiaAccess.isUnlocked(), isFalse);
+
+    expect(await AfiaAccess.unlock(email: _owner.email, password: 'Newmoney@2025'), isTrue);
+    await AfiaAccess.logout();
+    expect(AfiaAccess.isUnlocked(), isFalse);
   });
 
   test('promotions persist and list by placement', () async {
@@ -189,5 +193,6 @@ void main() {
     expect(find.text('Controls'), findsWidgets);
     expect(find.text('Promotions'), findsWidgets);
     expect(find.text('Send purchase offers'), findsNothing);
+    expect(find.text('Log out'), findsOneWidget);
   });
 }

@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 
 import '../../models/user.dart';
 import '../services/local_store.dart';
+import 'afia_session_stub.dart'
+    if (dart.library.js_interop) 'afia_session_web.dart';
 
 /// Hubsom admin portal at `https://hubsom.com/afia`.
 ///
@@ -75,4 +77,10 @@ abstract final class AfiaAccess {
   }
 
   static Future<void> lock() => LocalStore.setString(_unlockKey, null);
+
+  /// End the Afia session. On web this reloads `/afia` so the login door shows.
+  static Future<void> logout() async {
+    await lock();
+    leaveAfiaSession();
+  }
 }
