@@ -39,6 +39,7 @@ class CloudStore {
   static const shopVideos = 'shopVideos';
   static const directMessages = 'directMessages';
   static const notifications = 'notifications';
+  static const withdrawals = 'withdrawals';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -355,6 +356,7 @@ class CloudStore {
       'adminPayouts': adminPayouts,
       'adminIntakes': adminIntakes,
       'paymentAccounts': paymentAccounts,
+      'withdrawals': withdrawals,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

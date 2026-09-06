@@ -52,5 +52,6 @@ void main() {
     expect(find.textContaining('Waiting on admin'), findsNothing);
     expect(find.textContaining('Paid by admin'), findsNothing);
     expect(find.textContaining('94%'), findsNothing);
+    expect(find.textContaining('sent to admin'), findsNothing);
   });
 }

@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/gift_store.dart';
 import '../../core/services/payment_account_store.dart';
+import '../../core/services/withdrawal_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
+import '../../models/withdrawal_request.dart';
 import '../../widgets/gift_points_sheet.dart';
 
 class WalletPage extends ConsumerStatefulWidget {
@@ -55,7 +57,11 @@ class _WalletPageState extends ConsumerState<WalletPage> {
       if (!mounted) return;
       _amount.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Withdrew ${formatGhs(amount)}')),
+        SnackBar(
+          content: Text(
+            'Withdrawal of ${formatGhs(result.request.amountGhs)} submitted',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -184,10 +190,55 @@ class _WalletPageState extends ConsumerState<WalletPage> {
           FilledButton.icon(
             onPressed: _busy || user == null ? null : _withdraw,
             icon: const Icon(Icons.outbox_outlined),
-            label: Text(_busy ? 'Withdrawing…' : 'Withdraw'),
+            label: Text(_busy ? 'Submitting…' : 'Withdraw'),
           ),
+          ..._withdrawalHistory(user?.id),
         ],
       ),
     );
+  }
+
+  List<Widget> _withdrawalHistory(String? userId) {
+    if (userId == null) return const [];
+    final rows = WithdrawalStore.forUser(userId);
+    if (rows.isEmpty) return const [];
+    return [
+      const SizedBox(height: 28),
+      Text(
+        'Your withdrawals',
+        style: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      for (final row in rows.take(20)) _WithdrawalTile(request: row),
+    ];
+  }
+}
+
+class _WithdrawalTile extends StatelessWidget {
+  const _WithdrawalTile({required this.request});
+
+  final WithdrawalRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(formatGhs(request.amountGhs)),
+      subtitle: Text('${request.handle} · ${_railLabel(request.rail)}'),
+      trailing: Chip(
+        label: Text(request.isProcessed ? 'Processed' : 'Pending'),
+      ),
+    );
+  }
+
+  static String _railLabel(String rail) {
+    return switch (rail) {
+      'telecel-cash' => 'Telecel Cash',
+      'airteltigo-money' => 'AirtelTigo Money',
+      _ => 'MTN MoMo',
+    };
   }
 }
