@@ -71,6 +71,15 @@
   }
 
   window.hubsomAfiaStart = function () {
+    var params = new URLSearchParams(window.location.search || '');
+    if (params.get('logout') === '1') {
+      localStorage.removeItem(KEY);
+      stayOnAfia();
+      hideBoot();
+      showDoor();
+      bindForm();
+      return;
+    }
     stayOnAfia();
     if (unlocked()) {
       hideDoor();

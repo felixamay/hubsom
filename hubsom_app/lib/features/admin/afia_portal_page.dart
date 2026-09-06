@@ -209,12 +209,13 @@ class _AfiaShellState extends State<_AfiaShell> {
       appBar: AppBar(
         title: const Text('Hubsom Admin'),
         actions: [
-          TextButton(
+          TextButton.icon(
             onPressed: () async {
-              await AfiaAccess.lock();
+              await AfiaAccess.logout();
               widget.onLocked();
             },
-            child: const Text('Lock'),
+            icon: const Icon(Icons.logout),
+            label: const Text('Log out'),
           ),
         ],
       ),
