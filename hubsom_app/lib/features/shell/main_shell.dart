@@ -227,6 +227,7 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartCountProvider);
     final unreadMessages = ref.watch(unreadMessagesCountProvider);
+    final unreadNotifications = ref.watch(unreadNotificationsCountProvider);
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
     final menu = _buildMenu(signedIn: signedIn);
@@ -270,6 +271,7 @@ class MainShell extends ConsumerWidget {
                   _TopBar(
                     cartCount: cartCount,
                     unreadMessages: unreadMessages,
+                    unreadNotifications: unreadNotifications,
                     showMessages: signedIn,
                     menuEntries: menu,
                     onMenuSelected: (v) => _onMenuSelected(context, ref, v),
@@ -297,6 +299,16 @@ class MainShell extends ConsumerWidget {
             onPressed: () => context.go('/live'),
             icon: const Icon(Icons.videocam_outlined),
           ),
+          if (signedIn)
+            IconButton(
+              tooltip: 'Notifications',
+              onPressed: () => context.go('/notifications'),
+              icon: Badge(
+                isLabelVisible: unreadNotifications > 0,
+                label: Text('$unreadNotifications'),
+                child: const Icon(Icons.notifications_outlined),
+              ),
+            ),
           if (signedIn)
             IconButton(
               tooltip: 'Messages',
@@ -347,6 +359,7 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.cartCount,
     required this.unreadMessages,
+    required this.unreadNotifications,
     required this.showMessages,
     required this.menuEntries,
     required this.onMenuSelected,
@@ -354,6 +367,7 @@ class _TopBar extends StatelessWidget {
 
   final int cartCount;
   final int unreadMessages;
+  final int unreadNotifications;
   final bool showMessages;
   final List<PopupMenuEntry<String>> menuEntries;
   final ValueChanged<String> onMenuSelected;
@@ -385,6 +399,16 @@ class _TopBar extends StatelessWidget {
                 icon: const Icon(Icons.videocam_outlined),
                 tooltip: 'Live',
               ),
+              if (showMessages)
+                IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: () => context.go('/notifications'),
+                  icon: Badge(
+                    isLabelVisible: unreadNotifications > 0,
+                    label: Text('$unreadNotifications'),
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                ),
               if (showMessages)
                 IconButton(
                   tooltip: 'Messages',

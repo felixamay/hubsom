@@ -8,6 +8,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/gift_store.dart';
 import '../services/local_commerce_store.dart';
+import '../services/local_notification_store.dart';
 import '../services/local_store.dart';
 import 'auth_repository.dart';
 
@@ -137,7 +138,10 @@ class LiveRepository {
       final data = ApiResponse.asMap(res.data);
       final streamMap = data?['stream'] as Map? ?? data;
       if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        final stream =
+            LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        await LocalNotificationStore.notifySellerWentLive(stream);
+        return stream;
       }
     } catch (_) {
       // fall through to local engine
@@ -165,6 +169,7 @@ class LiveRepository {
       multiHost: body['multiHost'] as bool? ?? false,
     );
     await _syncStream(stream);
+    await LocalNotificationStore.notifySellerWentLive(stream);
     return stream;
   }
 

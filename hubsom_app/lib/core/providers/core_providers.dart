@@ -24,6 +24,7 @@ import '../services/local_store.dart';
 import '../services/location_service.dart';
 import '../services/shipment_fee.dart';
 import '../services/maps_service.dart';
+import '../services/local_notification_store.dart';
 import '../services/notification_service.dart';
 import '../services/payment_service.dart';
 
@@ -78,6 +79,18 @@ final unreadMessagesCountProvider = Provider<int>((ref) {
 
 /// Bump to refresh inbox / unread badge after send or read.
 final messagesTickProvider = StateProvider<int>((ref) => 0);
+
+/// Bump after a live-follow alert is written or marked read.
+final notificationsTickProvider = StateProvider<int>((ref) => 0);
+
+/// Unread in-app alerts for the signed-in user (header badge).
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  ref.watch(authStateProvider);
+  ref.watch(notificationsTickProvider);
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return 0;
+  return LocalNotificationStore.unreadCountFor(user.id);
+});
 
 final sellerRepositoryProvider = Provider<SellerRepository>(
   (ref) => SellerRepository(ref.watch(apiClientProvider)),

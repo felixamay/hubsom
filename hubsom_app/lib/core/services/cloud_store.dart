@@ -38,6 +38,7 @@ class CloudStore {
   static const productReviews = 'productReviews';
   static const shopVideos = 'shopVideos';
   static const directMessages = 'directMessages';
+  static const notifications = 'notifications';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -348,6 +349,7 @@ class CloudStore {
       'localProductReviews': productReviews,
       'localShopVideos': shopVideos,
       'localDirectMessages': directMessages,
+      'localNotifications': notifications,
       'purchaseOffers': purchaseOffers,
       'promotions': promotions,
       'adminPayouts': adminPayouts,
