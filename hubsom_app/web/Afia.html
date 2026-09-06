@@ -12,15 +12,14 @@
   <title>Hubsom Admin</title>
   <style>
     html, body { height: 100%; margin: 0; background: #0A3D5C; }
+    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #0A3D5C; }
+    #afia-gate, #afia-admin { position: fixed; inset: 0; }
     #afia-gate {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
+      z-index: 2;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       background: #0A3D5C;
     }
     .afia-card {
@@ -31,25 +30,20 @@
       padding: 28px 24px;
       box-sizing: border-box;
     }
-    .afia-card h1 {
-      margin: 0 0 6px;
-      text-align: center;
-      color: #0A3D5C;
-      font-size: 26px;
-    }
+    .afia-card h1, #afia-admin h1 { margin: 0 0 6px; color: #0A3D5C; }
     .afia-card p { margin: 0 0 20px; text-align: center; color: #5b6b75; }
-    .afia-card label { display: block; margin: 0 0 6px; color: #0A3D5C; font-weight: 600; }
-    .afia-card input {
+    .afia-card h1 { text-align: center; font-size: 26px; }
+    label { display: block; margin: 0 0 6px; font-weight: 600; }
+    input[type="text"], input[type="email"], input[type="password"], input[type="number"], textarea {
       width: 100%;
       box-sizing: border-box;
-      margin: 0 0 14px;
+      margin: 0 0 12px;
       padding: 12px 14px;
       border: 1px solid #c5d4de;
       border-radius: 10px;
       font-size: 16px;
     }
-    .afia-card button {
-      width: 100%;
+    button, .btn {
       border: 0;
       border-radius: 10px;
       padding: 12px 16px;
@@ -59,9 +53,40 @@
       font-weight: 700;
       cursor: pointer;
     }
+    button.secondary { background: transparent; color: #0A3D5C; }
     #afia-error { color: #b42318; min-height: 1.2em; margin: 0 0 12px; }
-    #afia-opening { color: #fff; text-align: center; }
-    #afia-opening h1 { margin: 0 0 8px; }
+    #afia-admin { z-index: 3; background: #fff; overflow: auto; display: none; }
+    #afia-admin.is-open { display: block; }
+    .admin-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 0;
+      border-bottom: 1px solid #e6eef3;
+    }
+    .tabs { display: flex; gap: 18px; padding: 0 20px; }
+    .tabs button {
+      background: transparent;
+      color: #5b6b75;
+      border-radius: 0;
+      padding: 12px 0;
+      border-bottom: 2px solid transparent;
+    }
+    .tabs button.on { color: #0A3D5C; border-bottom-color: #0A3D5C; }
+    .panel { display: none; padding: 20px; max-width: 880px; }
+    .panel.on { display: block; }
+    .stats { display: flex; flex-wrap: wrap; gap: 10px; }
+    .stat {
+      width: 104px;
+      padding: 12px;
+      background: #D7F1FB;
+      border-radius: 12px;
+      box-sizing: border-box;
+    }
+    .stat b { display: block; font-size: 20px; }
+    .place { display: block; margin: 8px 0; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef3f6; }
+    .ok { color: #7CBF2C; }
   </style>
 </head>
 <body>
@@ -76,12 +101,24 @@
       <p id="afia-error"></p>
       <button type="submit">Sign in</button>
     </form>
-    <div id="afia-opening" hidden>
-      <h1>Hubsom Admin</h1>
-      <p>Opening…</p>
-    </div>
   </div>
-  <meta name="hubsom-flutter-boot" content="flutter_bootstrap.js">
+
+  <div id="afia-admin">
+    <div class="admin-bar">
+      <h1>Hubsom Admin</h1>
+      <button type="button" class="secondary" id="afia-lock">Lock</button>
+    </div>
+    <div class="tabs">
+      <button type="button" data-tab="overview" class="on">Overview</button>
+      <button type="button" data-tab="promotions">Promotions</button>
+      <button type="button" data-tab="offers">Offers</button>
+      <button type="button" data-tab="orders">Orders</button>
+    </div>
+    <section id="panel-overview" class="panel on"></section>
+    <section id="panel-promotions" class="panel"></section>
+    <section id="panel-offers" class="panel"></section>
+    <section id="panel-orders" class="panel"></section>
+  </div>
   <script src="/afia_gate.js"></script>
   <script>hubsomAfiaStart();</script>
 </body>
