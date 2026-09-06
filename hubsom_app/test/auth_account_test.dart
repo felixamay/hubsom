@@ -22,6 +22,7 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('hubsom-auth');
     Hive.init(dir.path);
     await LocalStore.init();
+    await LocalStore.clearSession();
   });
 
   test('sign-in without an account asks to create one', () async {
@@ -164,6 +165,8 @@ void main() {
         ),
       ),
     );
+    expect(repo.currentUser(), isNull);
+    expect(LocalStore.sessionToken, isNull);
   });
 }
 

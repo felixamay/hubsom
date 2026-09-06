@@ -194,28 +194,52 @@ class CloudStore {
       throw StateError('Account database is disabled in this environment');
     }
     final id = accountDocId(email);
-    if (createOnly) {
-      final existing = await getAccount(id);
-      if (existing != null) {
-        throw StateError(alreadyExistsCode);
-      }
-    }
     final payload = {
       ...data,
       'email': id,
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     };
 
-    final res = await _rest.patch<dynamic>(
-      '$_root/$accounts/${Uri.encodeComponent(id)}',
-      queryParameters: {'key': _apiKey},
-      data: {'fields': encodeFields(payload)},
-    );
-    if (res.statusCode == null || res.statusCode! < 200 || res.statusCode! >= 300) {
-      throw StateError(
-        'Could not save your account'
-        '${res.data != null ? ': ${res.data}' : ''}',
+    if (createOnly) {
+      final existing = await getAccount(id);
+      if (existing != null) {
+        throw StateError(alreadyExistsCode);
+      }
+      // POST create — PATCH would overwrite if two signups raced.
+      final res = await _rest.post<dynamic>(
+        '$_root/$accounts',
+        queryParameters: {
+          'key': _apiKey,
+          'documentId': id,
+        },
+        data: {'fields': encodeFields(payload)},
       );
+      final code = res.statusCode ?? 0;
+      final err = _asJsonMap(res.data)?['error'];
+      final status = err is Map ? '${err['status']}' : '';
+      if (code == 409 || status == 'ALREADY_EXISTS') {
+        throw StateError(alreadyExistsCode);
+      }
+      if (code < 200 || code >= 300) {
+        throw StateError(
+          'Could not save your account'
+          '${res.data != null ? ': ${res.data}' : ''}',
+        );
+      }
+    } else {
+      final res = await _rest.patch<dynamic>(
+        '$_root/$accounts/${Uri.encodeComponent(id)}',
+        queryParameters: {'key': _apiKey},
+        data: {'fields': encodeFields(payload)},
+      );
+      if (res.statusCode == null ||
+          res.statusCode! < 200 ||
+          res.statusCode! >= 300) {
+        throw StateError(
+          'Could not save your account'
+          '${res.data != null ? ': ${res.data}' : ''}',
+        );
+      }
     }
 
     final verify = await getAccount(id);
