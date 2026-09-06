@@ -61,6 +61,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   }
 
   Future<void> _publish() async {
+    if (_busy) return;
     if (!ensureSignedIn(context, ref, message: 'Sign in to upload a video')) {
       return;
     }
@@ -82,13 +83,21 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
       _error = null;
     });
     try {
-      final video = await ref.read(catalogRepositoryProvider).createShopVideo(
+      final video = await ref
+          .read(catalogRepositoryProvider)
+          .createShopVideo(
             bytes: bytes,
             mimeType: _mime,
             productIds: _selected.toList(),
             caption: _caption.text.trim(),
             soundTitle: _sound.text.trim(),
             thumbnailBytes: _thumbBytes,
+          )
+          .timeout(
+            const Duration(seconds: 90),
+            onTimeout: () => throw StateError(
+              'Publishing took too long. Check your connection and try again.',
+            ),
           );
       ref.invalidate(shopVideosProvider);
       ref.invalidate(productsProvider((category: null, q: null)));
@@ -145,7 +154,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
       body: loadingCatalog
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 Container(
                   width: double.infinity,
@@ -322,13 +331,34 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     style: TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _publish,
-                  child: Text(_busy ? 'Publishing video…' : 'Publish video'),
-                ),
               ],
             ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton(
+            onPressed: _busy ? null : _publish,
+            child: _busy
+                ? const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Text('Publishing video…'),
+                    ],
+                  )
+                : const Text('Publish video'),
+          ),
+        ),
+      ),
     );
   }
 }

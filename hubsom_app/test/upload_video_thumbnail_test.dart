@@ -46,6 +46,8 @@ void main() {
     expect(find.text('Thumbnail'), findsOneWidget);
     expect(find.text('Upload thumbnail'), findsOneWidget);
     expect(find.text('Pick video (≤15s)'), findsOneWidget);
+    expect(find.text('Publish video'), findsOneWidget);
+    expect(find.text('Publishing video…'), findsNothing);
     expect(
       find.textContaining('not the product photo'),
       findsOneWidget,

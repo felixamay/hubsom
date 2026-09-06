@@ -86,4 +86,17 @@ void main() {
     expect(prepared.bytes, bytes);
     expect(prepared.mimeType, 'video/mp4');
   });
+
+  test('prepareShopVideoForSlowNetwork finishes immediately on a large clip',
+      () async {
+    final bytes = Uint8List(500 * 1024);
+    final sw = Stopwatch()..start();
+    final prepared = await prepareShopVideoForSlowNetwork(
+      bytes: bytes,
+      mimeType: 'video/mp4',
+    );
+    sw.stop();
+    expect(prepared.bytes.length, bytes.length);
+    expect(sw.elapsedMilliseconds, lessThan(500));
+  });
 }
