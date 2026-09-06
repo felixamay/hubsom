@@ -91,6 +91,12 @@ class SellPage extends ConsumerWidget {
           ),
           _tile(
             context,
+            Icons.video_library_outlined,
+            'My videos',
+            '/seller/videos',
+          ),
+          _tile(
+            context,
             Icons.play_circle_outline,
             'Watch videos',
             '/videos',

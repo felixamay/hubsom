@@ -117,5 +117,11 @@ void main() {
     final shares = await catalog.recordVideoShare(video.id);
     expect(shares, 1);
     expect((await catalog.getShopVideo(video.id))!.shareCount, 1);
+
+    final mine = await catalog.myShopVideos();
+    expect(mine.any((v) => v.id == video.id), isTrue);
+
+    await catalog.deleteShopVideo(video.id);
+    expect(await catalog.myShopVideos(), isEmpty);
   });
 }

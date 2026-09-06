@@ -53,6 +53,7 @@ import '../seller/seller_orders_page.dart';
 import '../seller/seller_product_new_page.dart';
 import '../seller/seller_products_page.dart';
 import '../seller/seller_store_page.dart';
+import '../seller/seller_videos_page.dart';
 import '../settings/change_password_page.dart';
 import '../settings/passkeys_page.dart';
 import '../settings/settings_page.dart';
@@ -446,6 +447,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/seller/products',
         builder: (_, __) =>
             const AuthGate(requireSeller: true, child: SellerProductsPage()),
+      ),
+      GoRoute(
+        path: '/seller/videos',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to manage your videos',
+          child: SellerVideosPage(),
+        ),
       ),
       GoRoute(
         path: '/seller/products/new',

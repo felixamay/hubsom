@@ -102,6 +102,12 @@ class AccountPage extends ConsumerWidget {
               ),
               _link(
                 context,
+                Icons.video_library_outlined,
+                'My videos',
+                '/seller/videos',
+              ),
+              _link(
+                context,
                 Icons.people_outline,
                 'Following accounts',
                 '/account/following',
