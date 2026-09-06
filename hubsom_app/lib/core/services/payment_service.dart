@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/order.dart';
 import '../../models/user.dart';
 import '../config/app_config.dart';
+import 'admin_treasury_store.dart';
 import 'api_client.dart';
 import 'api_response.dart';
 import 'local_commerce_store.dart';
@@ -17,6 +18,9 @@ import 'shipment_fee.dart';
 
 /// Payment rails preserved from Hubsom: Stripe, Paystack, MTN MoMo,
 /// Telecel Cash, AirtelTigo Money.
+///
+/// Every successful checkout settles to Hubsom Admin. Sellers are paid
+/// 94% of merchandise later (6% Hubsom commission).
 class PaymentService {
   PaymentService(this._api);
 
@@ -52,6 +56,7 @@ class PaymentService {
       );
       final data = ApiResponse.asMap(res.data);
       if (data != null && (data['order'] != null || data['id'] != null)) {
+        await _holdWithAdmin(data);
         return data;
       }
     } catch (_) {}
@@ -114,8 +119,21 @@ class PaymentService {
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
+    await AdminTreasuryStore.recordPaidOrder(order);
     await _sendShipmentToBuyer(order: order, quotes: quotes);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  Future<void> _holdWithAdmin(Map<String, dynamic> data) async {
+    try {
+      final raw = data['order'] is Map
+          ? Map<String, dynamic>.from(data['order'] as Map)
+          : data;
+      if (raw['id'] == null) return;
+      final order = Order.fromJson(raw);
+      await LocalHuberStore.saveOrder(order);
+      await AdminTreasuryStore.recordPaidOrder(order);
+    } catch (_) {}
   }
 
   static String _zoneLabelFor(List<ShipmentQuote> quotes) {

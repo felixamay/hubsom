@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/afia_access.dart';
+import '../../core/constants/hubsom_commission.dart';
 import '../../core/services/admin_account_store.dart';
+import '../../core/services/admin_treasury_store.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_huber_store.dart';
 import '../../core/services/local_promotion_store.dart';
 import '../../core/services/local_purchase_offer_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
+import '../../models/seller_payout.dart';
 import '../../widgets/hubsom_logo.dart';
 import 'admin_accounts_page.dart';
 import 'admin_controls_page.dart';
 import 'admin_offers_page.dart';
+import 'admin_payouts_page.dart';
 import 'afia_promotions_tab.dart';
 
 class AfiaPortalPage extends StatefulWidget {
@@ -172,6 +176,7 @@ class _AfiaShellState extends State<_AfiaShell> {
   static const _destinations = <(IconData, String)>[
     (Icons.dashboard_rounded, 'Overview'),
     (Icons.people_alt_rounded, 'Accounts'),
+    (Icons.payments_rounded, 'Payouts'),
     (Icons.toggle_on_rounded, 'Controls'),
     (Icons.campaign_rounded, 'Promotions'),
     (Icons.local_offer_rounded, 'Offers'),
@@ -184,6 +189,7 @@ class _AfiaShellState extends State<_AfiaShell> {
     final pages = [
       const _OverviewTab(),
       const AdminAccountsPage(),
+      const AdminPayoutsPage(),
       const AdminControlsPage(),
       const AfiaPromotionsTab(),
       const AdminOffersPage(embedded: true),
@@ -256,13 +262,20 @@ class _OverviewTab extends StatefulWidget {
 
 class _OverviewTabState extends State<_OverviewTab> {
   List<AdminAccount> _users = const [];
+  TreasurySnapshot _treasury = const TreasurySnapshot();
 
   @override
   void initState() {
     super.initState();
     _users = AdminAccountStore.cached();
+    _treasury = AdminTreasuryStore.snapshot();
     AdminAccountStore.list().then((rows) {
       if (mounted) setState(() => _users = rows);
+    });
+    AdminTreasuryStore.syncFromOrders().then((_) {
+      if (mounted) {
+        setState(() => _treasury = AdminTreasuryStore.snapshot());
+      }
     });
   }
 
@@ -287,7 +300,10 @@ class _OverviewTabState extends State<_OverviewTab> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Live picture of Hubsom accounts, stores, and commerce.',
+          'Live picture of Hubsom accounts, stores, and commerce. '
+          'Buyer payments settle to Hubsom Admin, then sellers are paid '
+          '${HubsomCommission.sellerPercentLabel} after a '
+          '${HubsomCommission.percentLabel} commission.',
           style: text.bodyMedium?.copyWith(color: HubsomColors.ink.withValues(alpha: 0.7)),
         ),
         const SizedBox(height: 16),
@@ -302,6 +318,9 @@ class _OverviewTabState extends State<_OverviewTab> {
             _StatChip(label: 'Orders', value: '${orders.length}'),
             _StatChip(label: 'Offers', value: '${offers.length}'),
             _StatChip(label: 'Promos', value: '${promos.length}'),
+            _StatChip(label: 'Treasury', value: formatGhs(_treasury.collectedGhs)),
+            _StatChip(label: 'To pay', value: formatGhs(_treasury.pendingPayoutsGhs)),
+            _StatChip(label: 'Commission', value: formatGhs(_treasury.commissionGhs)),
           ],
         ),
         const SizedBox(height: 24),

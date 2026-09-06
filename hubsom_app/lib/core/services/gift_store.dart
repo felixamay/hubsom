@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/live_gift.dart';
 import '../../models/user.dart';
+import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'local_commerce_store.dart';
 import 'local_store.dart';
@@ -186,6 +187,18 @@ class GiftStore {
       ),
     );
     await _saveLedger(rows);
+    if (paymentMethod != 'wallet') {
+      try {
+        await AdminTreasuryStore.recordIntake(
+          source: 'gift',
+          refId: rows.first.id,
+          amountGhs: pack.priceGhs,
+          commissionGhs: pack.priceGhs,
+          buyerId: saved.id,
+          note: 'Gift points paid to Hubsom Admin',
+        );
+      } catch (_) {}
+    }
     return saved;
   }
 
