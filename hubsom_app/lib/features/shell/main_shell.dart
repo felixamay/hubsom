@@ -58,6 +58,21 @@ class MainShell extends ConsumerWidget {
   static List<String> footerLabels({required bool signedIn}) =>
       _tabs.map((t) => t.label).toList();
 
+  /// Live / inbox icons move into ☰ below this width so Search never
+  /// sits on top of the Hubsom wordmark on large phones.
+  static bool inlineHeaderExtras(double width) => width >= 520;
+
+  static Widget phoneTitle({required double width}) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: HubsomLogo(
+        height: width < 360 ? 26 : 30,
+        showWordmark: width >= 320,
+      ),
+    );
+  }
+
   static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
     ('profile', Icons.badge_outlined, 'Profile'),
@@ -287,23 +302,32 @@ class MainShell extends ConsumerWidget {
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+    const iconDensity = VisualDensity(horizontal: -2, vertical: -2);
+    final extras = inlineHeaderExtras(width);
+
     return Scaffold(
       appBar: AppBar(
-        title: const HubsomLogo(height: 30, showWordmark: true),
+        titleSpacing: 8,
+        title: phoneTitle(width: width),
         actions: [
           IconButton(
             tooltip: 'Search',
+            visualDensity: iconDensity,
             onPressed: () => context.go('/marketplace'),
             icon: const Icon(Icons.search),
           ),
-          IconButton(
-            tooltip: 'Live',
-            onPressed: () => context.go('/live'),
-            icon: const Icon(Icons.videocam_outlined),
-          ),
-          if (signedIn)
+          if (extras)
+            IconButton(
+              tooltip: 'Live',
+              visualDensity: iconDensity,
+              onPressed: () => context.go('/live'),
+              icon: const Icon(Icons.videocam_outlined),
+            ),
+          if (signedIn && extras)
             IconButton(
               tooltip: 'Notifications',
+              visualDensity: iconDensity,
               onPressed: () => context.go('/notifications'),
               icon: Badge(
                 isLabelVisible: unreadNotifications > 0,
@@ -311,9 +335,10 @@ class MainShell extends ConsumerWidget {
                 child: const Icon(Icons.notifications_outlined),
               ),
             ),
-          if (signedIn)
+          if (signedIn && extras)
             IconButton(
               tooltip: 'Messages',
+              visualDensity: iconDensity,
               onPressed: () => context.go('/messages'),
               icon: Badge(
                 isLabelVisible: unreadMessages > 0,
@@ -323,6 +348,7 @@ class MainShell extends ConsumerWidget {
             ),
           IconButton(
             tooltip: 'Cart',
+            visualDensity: iconDensity,
             onPressed: () => context.go('/cart'),
             icon: Badge(
               isLabelVisible: cartCount > 0,
