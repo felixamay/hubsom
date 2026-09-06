@@ -17,6 +17,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
 import '../services/local_commerce_store.dart';
+import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
@@ -709,26 +710,33 @@ class CatalogRepository {
   }
 
   Future<List<Promotion>> listPromotions(String placement) async {
-    try {
-      final res = await _api
-          .get(
-            '/api/promotions',
-            queryParameters: {'placement': placement},
-          )
-          .timeout(const Duration(seconds: 4));
-      final data = ApiResponse.decode(res.data);
-      if (data == null) return const [];
-      final list = data is List
-          ? data
-          : (data is Map && data['promotions'] is List)
-              ? data['promotions'] as List
-              : <dynamic>[];
-      return list
-          .map((e) => Promotion.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {
-      return const [];
+    if (CloudStore.useNetwork) {
+      try {
+        final res = await _api
+            .get(
+              '/api/promotions',
+              queryParameters: {'placement': placement},
+            )
+            .timeout(const Duration(seconds: 4));
+        final data = ApiResponse.decode(res.data);
+        if (data != null) {
+          final list = data is List
+              ? data
+              : (data is Map && data['promotions'] is List)
+                  ? data['promotions'] as List
+                  : <dynamic>[];
+          final remote = list
+              .map(
+                (e) => Promotion.fromJson(Map<String, dynamic>.from(e as Map)),
+              )
+              .where((p) => p.id.isNotEmpty && p.title.isNotEmpty)
+              .toList();
+          await LocalPromotionStore.mergeRemote(remote);
+        }
+      } catch (_) {}
+      await LocalPromotionStore.pullCloud();
     }
+    return LocalPromotionStore.forPlacement(placement);
   }
 
   Future<bool> followSeller(String sellerId) async {

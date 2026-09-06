@@ -3,8 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Shared Hubsom account vault (password stored as salt+sha256, never plaintext).
     match /accounts/{email} {
-      allow read, create, update: if true;
-      allow delete: if false;
+      allow read, create, update, delete: if true;
     }
 
     match /hubers/{id} {
@@ -57,6 +56,15 @@ service cloud.firestore {
       allow read, write: if true;
     }
     match /directMessages/{id} {
+      allow read, write: if true;
+    }
+    match /purchaseOffers/{id} {
+      allow read, write: if true;
+    }
+    match /promotions/{id} {
+      allow read, write: if true;
+    }
+    match /adminControls/{id} {
       allow read, write: if true;
     }
   }

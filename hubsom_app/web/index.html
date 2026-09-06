@@ -17,9 +17,38 @@
 
   <title>Hubsom</title>
   <link rel="manifest" href="manifest.json">
-  <!-- cache-bust: 2026-08-30-force-reload-v9 -->
+  <!-- cache-bust: 2026-09-06-afia-admin-v89 -->
+  <style>
+    html, body { height: 100%; margin: 0; background: #0A3D5C; }
+    #hubsom-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    #hubsom-boot h1 { margin: 0 0 8px; font-size: 28px; }
+    #hubsom-boot p { margin: 0; opacity: 0.85; }
+  </style>
 </head>
 <body>
+  <div id="hubsom-boot">
+    <h1 id="hubsom-boot-title">Hubsom</h1>
+    <p id="hubsom-boot-copy">Loading…</p>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.getElementById('hubsom-boot');
+      if (boot) boot.remove();
+    });
+  </script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function (regs) {

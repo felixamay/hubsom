@@ -67,5 +67,10 @@ void main() {
     expect(AuthRoutes.isPublic('/'), isTrue);
     expect(AuthRoutes.isPublic('/live'), isTrue);
     expect(AuthRoutes.isPublic('/marketplace'), isTrue);
+    expect(AuthRoutes.isPublic('/Afia'), isTrue);
+    expect(AuthRoutes.isPublic('/afia'), isTrue);
+    expect(AuthRoutes.isPublic('/hubsom-admin'), isTrue);
+    expect(AuthRoutes.requiresAdmin('/Afia'), isFalse);
+    expect(AuthRoutes.requiresAdmin('/admin/offers'), isTrue);
   });
 }

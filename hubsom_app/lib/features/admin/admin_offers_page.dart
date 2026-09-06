@@ -7,7 +7,10 @@ import '../../core/theme/hubsom_colors.dart';
 import '../../models/purchase_offer.dart';
 
 class AdminOffersPage extends ConsumerStatefulWidget {
-  const AdminOffersPage({super.key});
+  const AdminOffersPage({super.key, this.embedded = false});
+
+  /// When true, skip the outer scaffold so Afia can host this as a tab.
+  final bool embedded;
 
   @override
   ConsumerState<AdminOffersPage> createState() => _AdminOffersPageState();
@@ -77,9 +80,7 @@ class _AdminOffersPageState extends ConsumerState<AdminOffersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Purchase offers')),
-      body: ListView(
+    final body = ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           Text(
@@ -200,7 +201,11 @@ class _AdminOffersPageState extends ConsumerState<AdminOffersPage> {
                 ),
               ),
         ],
-      ),
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Purchase offers')),
+      body: body,
     );
   }
 }
