@@ -13,6 +13,7 @@ import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/shop_video_poster.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
 
@@ -337,18 +338,7 @@ class HomePage extends ConsumerWidget {
             SliverGrid(
               gridDelegate: ContainedVideoGridDelegate.forContext(context),
               delegate: SliverChildBuilderDelegate(
-                (_, i) {
-                  final v = videos[i];
-                  Product? linked;
-                  for (final id in v.productIds) {
-                    final match = products.where((p) => p.id == id);
-                    if (match.isNotEmpty) {
-                      linked = match.first;
-                      break;
-                    }
-                  }
-                  return _HomeShopVideoCard(video: v, linkedProduct: linked);
-                },
+                (_, i) => _HomeShopVideoCard(video: videos[i]),
                 childCount: videos.length.clamp(0, 12),
               ),
             ),
@@ -482,25 +472,20 @@ class ContainedVideoGridDelegate {
   }
 }
 
-/// Portrait shop-video card: product still as thumbnail, opens the feed.
+/// Portrait shop-video card: a frame from the clip, opens the feed.
 ///
 /// Do not mount a video player here — initializing every card on Home
 /// saturates a slow network before the shopper taps one clip.
 class _HomeShopVideoCard extends StatelessWidget {
   const _HomeShopVideoCard({
     required this.video,
-    this.linkedProduct,
   });
 
   final ShopVideo video;
-  final Product? linkedProduct;
 
   @override
   Widget build(BuildContext context) {
     final caption = video.caption.trim();
-    final cover = linkedProduct != null && linkedProduct!.images.isNotEmpty
-        ? linkedProduct!.images.first
-        : video.authorImage;
 
     return Material(
       color: Colors.transparent,
@@ -517,14 +502,7 @@ class _HomeShopVideoCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (cover != null)
-                  HubsomImage(
-                    url: cover,
-                    fit: BoxFit.cover,
-                    placeholder: const ColoredBox(color: Colors.black),
-                  )
-                else
-                  const ColoredBox(color: Colors.black),
+                ShopVideoPoster(video: video),
                 Positioned(
                   left: 0,
                   right: 0,

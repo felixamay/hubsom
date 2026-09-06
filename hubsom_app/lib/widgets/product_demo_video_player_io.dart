@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/services/cloud_video_media.dart';
 import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
@@ -100,35 +101,68 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
     }
 
     try {
-      late final VideoPlayerController controller;
       final remote = widget.remoteUrl?.trim();
       if (_isPlayableRemote(remote)) {
-        controller = VideoPlayerController.networkUrl(
-          Uri.parse(remote!),
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-        );
-      } else {
-        final stored = await ProductDemoVideoStore.load(widget.productId);
-        if (!mounted || gen != _loadGen) return;
-        if (stored != null && stored.bytes.isNotEmpty) {
-          final path = await createDemoVideoObjectUrl(
-            bytes: stored.bytes,
-            mimeType: stored.mimeType,
-          );
-          _ownedPath = path;
-          controller = VideoPlayerController.file(File(path));
-        } else {
-          if (mounted && gen == _loadGen) {
-            setState(() => _error = widget.expand ? null : 'No demo video');
-          }
-          return;
-        }
+        final streamed = await _attachNetwork(remote!, gen);
+        if (streamed) return;
       }
 
-      await controller.initialize();
+      if (await _attachStored(gen)) return;
+
+      await CloudVideoMedia.ensureLocalBytes(
+        videoId: widget.productId,
+        videoUrl: widget.remoteUrl,
+        allowChunkFallbackForHttp: true,
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (await _attachStored(gen)) return;
+
+      if (mounted && gen == _loadGen) {
+        setState(() => _error = widget.expand ? null : 'No demo video');
+      }
+    } catch (_) {
+      if (mounted && gen == _loadGen) {
+        setState(
+          () => _error = widget.expand ? null : 'Could not play demo video',
+        );
+      }
+    }
+  }
+
+  Future<bool> _attachNetwork(String remote, int gen) async {
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(remote),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    return _finishAttach(controller, gen);
+  }
+
+  Future<bool> _attachStored(int gen) async {
+    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (!mounted || gen != _loadGen) return false;
+    if (stored == null || stored.bytes.isEmpty) return false;
+    final path = await createDemoVideoObjectUrl(
+      bytes: stored.bytes,
+      mimeType: stored.mimeType,
+    );
+    if (!mounted || gen != _loadGen) {
+      revokeDemoVideoObjectUrl(path);
+      return false;
+    }
+    _ownedPath = path;
+    return _finishAttach(VideoPlayerController.file(File(path)), gen);
+  }
+
+  Future<bool> _finishAttach(VideoPlayerController controller, int gen) async {
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 12));
       if (!mounted || gen != _loadGen) {
         await controller.dispose();
-        return;
+        return false;
+      }
+      if (controller.value.hasError) {
+        await controller.dispose();
+        return false;
       }
       await controller.setLooping(true);
       controller.addListener(_onControllerTick);
@@ -141,10 +175,12 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       if (widget.autoplay) {
         await controller.play();
       }
+      return true;
     } catch (_) {
-      if (mounted && gen == _loadGen) {
-        setState(() => _error = widget.expand ? null : 'Could not play demo video');
-      }
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      return false;
     }
   }
 

@@ -1383,6 +1383,7 @@ class LocalCommerceStore {
       type: 'video',
       videoId: video.id,
       videoUrl: video.videoUrl,
+      videoThumbnailUrl: video.thumbnailUrl,
       productId: linkedProduct?.id ??
           (video.productIds.isNotEmpty ? video.productIds.first : video.id),
       productName: linkedProduct?.name ??
