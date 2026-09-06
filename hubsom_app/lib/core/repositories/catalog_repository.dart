@@ -21,6 +21,7 @@ import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
+import '../services/video_for_slow_network.dart';
 
 class CatalogRepository {
   CatalogRepository(
@@ -326,24 +327,12 @@ class CatalogRepository {
       await LocalCommerceStore.mergeCloudSocial();
     } catch (_) {}
     final list = LocalCommerceStore.listShopVideos();
-    // Never block the homepage/timeline on media backfill — do it in background.
+    // Publish any local-only clips. Do not download other people's videos in
+    // the background — that saturates a slow Ghana link before the clip the
+    // shopper is watching can start.
     // ignore: unawaited_futures
-    _publishAndHydrateInBackground(list);
+    _backfillShopVideoUrls(list);
     return list;
-  }
-
-  Future<void> _publishAndHydrateInBackground(List<ShopVideo> list) async {
-    try {
-      await _backfillShopVideoUrls(list);
-      final refreshed = LocalCommerceStore.listShopVideos();
-      for (final video in refreshed.take(12)) {
-        await CloudVideoMedia.ensureLocalBytes(
-          videoId: video.id,
-          videoUrl: video.videoUrl,
-          mimeType: video.mimeType,
-        );
-      }
-    } catch (_) {}
   }
 
   Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
@@ -369,11 +358,13 @@ class CatalogRepository {
     } catch (_) {}
     var video = LocalCommerceStore.getShopVideo(id);
     if (video == null) return null;
-    await CloudVideoMedia.ensureLocalBytes(
-      videoId: video.id,
-      videoUrl: video.videoUrl,
-      mimeType: video.mimeType,
-    );
+    if (!video.hasRemoteVideo) {
+      await CloudVideoMedia.ensureLocalBytes(
+        videoId: video.id,
+        videoUrl: video.videoUrl,
+        mimeType: video.mimeType,
+      );
+    }
     return LocalCommerceStore.getShopVideo(id) ?? video;
   }
 
@@ -386,23 +377,27 @@ class CatalogRepository {
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
+    final prepared = await prepareShopVideoForSlowNetwork(
+      bytes: bytes,
+      mimeType: mimeType,
+    );
     // Create metadata first so we have a stable id, then upload media.
     final draft = await LocalCommerceStore.createShopVideo(
       author: user,
       productIds: productIds,
       caption: caption,
       soundTitle: soundTitle,
-      mimeType: mimeType,
+      mimeType: prepared.mimeType,
     );
     await ProductDemoVideoStore.save(
       productId: draft.id,
-      bytes: bytes,
-      mimeType: mimeType,
+      bytes: prepared.bytes,
+      mimeType: prepared.mimeType,
     );
     final remoteUrl = await CloudVideoMedia.publish(
       videoId: draft.id,
-      bytes: bytes,
-      mimeType: mimeType,
+      bytes: prepared.bytes,
+      mimeType: prepared.mimeType,
     );
     final video = remoteUrl == null || remoteUrl.isEmpty
         ? draft
