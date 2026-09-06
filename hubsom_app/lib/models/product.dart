@@ -36,6 +36,8 @@ class Product extends Equatable {
     required this.category,
     required this.priceGhs,
     this.shipmentFeeGhs = 0,
+    this.shipmentZoneCities = const [],
+    this.outOfRegionShipmentFeeGhs = 0,
     this.compareAtGhs,
     this.currency = 'GHS',
     required this.images,
@@ -57,8 +59,12 @@ class Product extends Equatable {
   final String description;
   final String category;
   final double priceGhs;
-  /// Per-unit delivery fee buyers pay; also prefills the Huber rider offer.
+  /// Per-unit in-zone delivery fee (selected cities around the seller).
   final double shipmentFeeGhs;
+  /// Cities the in-zone fee covers. Anywhere else uses [outOfRegionShipmentFeeGhs].
+  final List<String> shipmentZoneCities;
+  /// Per-unit fee when the buyer is outside the selected cities.
+  final double outOfRegionShipmentFeeGhs;
   final double? compareAtGhs;
   final String currency;
   final List<String> images;
@@ -78,7 +84,32 @@ class Product extends Equatable {
 
   bool get isAuctionLot => auctionOnly;
 
-  bool get hasShipmentFee => shipmentFeeGhs > 0;
+  bool get hasShipmentZones => shipmentZoneCities.isNotEmpty;
+
+  bool get hasShipmentFee =>
+      shipmentFeeGhs > 0 || outOfRegionShipmentFeeGhs > 0;
+
+  bool get hasShipmentRange =>
+      hasShipmentZones &&
+      outOfRegionShipmentFeeGhs > 0 &&
+      (outOfRegionShipmentFeeGhs - shipmentFeeGhs).abs() > 0.001;
+
+  double get minShipmentFeeGhs {
+    if (!hasShipmentFee) return 0;
+    if (!hasShipmentRange) {
+      return shipmentFeeGhs > 0 ? shipmentFeeGhs : outOfRegionShipmentFeeGhs;
+    }
+    return shipmentFeeGhs < outOfRegionShipmentFeeGhs
+        ? shipmentFeeGhs
+        : outOfRegionShipmentFeeGhs;
+  }
+
+  double get maxShipmentFeeGhs {
+    if (!hasShipmentRange) return minShipmentFeeGhs;
+    return shipmentFeeGhs > outOfRegionShipmentFeeGhs
+        ? shipmentFeeGhs
+        : outOfRegionShipmentFeeGhs;
+  }
 
   double get effectivePrice {
     if (!hasActiveFlashSale) return priceGhs;
@@ -99,6 +130,13 @@ class Product extends Equatable {
         category: json['category'] as String? ?? 'miscellaneous',
         priceGhs: (json['priceGhs'] as num?)?.toDouble() ?? 0,
         shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
+        shipmentZoneCities: (json['shipmentZoneCities'] as List?)
+                ?.map((e) => '$e'.trim())
+                .where((e) => e.isNotEmpty)
+                .toList() ??
+            const [],
+        outOfRegionShipmentFeeGhs:
+            (json['outOfRegionShipmentFeeGhs'] as num?)?.toDouble() ?? 0,
         compareAtGhs: (json['compareAtGhs'] as num?)?.toDouble(),
         currency: json['currency'] as String? ?? 'GHS',
         images: (json['images'] as List?)?.cast<String>() ?? const [],
@@ -124,6 +162,10 @@ class Product extends Equatable {
         'category': category,
         'priceGhs': priceGhs,
         if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
+        if (shipmentZoneCities.isNotEmpty)
+          'shipmentZoneCities': shipmentZoneCities,
+        if (outOfRegionShipmentFeeGhs > 0)
+          'outOfRegionShipmentFeeGhs': outOfRegionShipmentFeeGhs,
         if (compareAtGhs != null) 'compareAtGhs': compareAtGhs,
         'currency': currency,
         'images': images,
@@ -146,6 +188,8 @@ class Product extends Equatable {
         name,
         priceGhs,
         shipmentFeeGhs,
+        shipmentZoneCities,
+        outOfRegionShipmentFeeGhs,
         sellerId,
         stock,
         hasDemoVideo,
@@ -160,6 +204,8 @@ class Product extends Equatable {
     String? category,
     double? priceGhs,
     double? shipmentFeeGhs,
+    List<String>? shipmentZoneCities,
+    double? outOfRegionShipmentFeeGhs,
     double? compareAtGhs,
     List<String>? images,
     int? stock,
@@ -183,6 +229,9 @@ class Product extends Equatable {
       category: category ?? this.category,
       priceGhs: priceGhs ?? this.priceGhs,
       shipmentFeeGhs: shipmentFeeGhs ?? this.shipmentFeeGhs,
+      shipmentZoneCities: shipmentZoneCities ?? this.shipmentZoneCities,
+      outOfRegionShipmentFeeGhs:
+          outOfRegionShipmentFeeGhs ?? this.outOfRegionShipmentFeeGhs,
       compareAtGhs: compareAtGhs ?? this.compareAtGhs,
       currency: currency,
       images: images ?? this.images,

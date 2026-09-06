@@ -45,6 +45,18 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     _gps = pin;
     _address = address ?? UserAddressStore.fromAllowedGps(pin, phone: _phone.text.trim());
     _gpsError = null;
+    _quoteCart();
+  }
+
+  Future<void> _quoteCart() async {
+    final pin = _gps;
+    if (pin == null) return;
+    final address = _address ?? UserAddressStore.fromAllowedGps(pin);
+    await ref.read(cartProvider.notifier).applyDestination(
+      city: address.city,
+      region: address.region,
+      location: pin,
+    );
   }
 
   void _loadSavedPin() {
@@ -101,8 +113,14 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     setState(() { _busy = true; _result = null; });
     try {
       final address = _address ?? UserAddressStore.fromAllowedGps(_gps!);
+      await ref.read(cartProvider.notifier).applyDestination(
+        city: address.city,
+        region: address.region,
+        location: _gps,
+      );
+      final cartQuoted = ref.read(cartProvider);
       final res = await ref.read(paymentServiceProvider).checkout(
-        items: cart.map((e) => e.toJson()).toList(),
+        items: cartQuoted.map((e) => e.toJson()).toList(),
         shipping: {
           'recipientName': _name.text.trim(),
           'phone': _phone.text.trim(),
@@ -114,7 +132,19 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         paymentMethods: _selected.toList(),
       );
       await ref.read(cartProvider.notifier).clear();
-      setState(() => _result = 'Order placed: ${res['order']?['id'] ?? res['id'] ?? 'ok'}');
+      final order = res['order'];
+      final id = order is Map
+          ? '${order['id'] ?? ''}'
+          : '${res['id'] ?? 'ok'}';
+      final zone = order is Map ? '${order['shipmentZoneLabel'] ?? ''}' : '';
+      final ship = order is Map
+          ? (order['shipmentFeeGhs'] as num?)?.toDouble() ?? 0
+          : 0.0;
+      setState(() {
+        _result = ship > 0
+            ? 'Order placed: $id. Shipment ${zone.isEmpty ? '' : '$zone · '}${formatGhs(ship)} sent to you.'
+            : 'Order placed: $id';
+      });
     } catch (e) {
       setState(() => _result = 'Checkout failed: $e');
     } finally {

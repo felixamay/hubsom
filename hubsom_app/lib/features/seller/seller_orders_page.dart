@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/local_commerce_store.dart';
+import '../../core/services/shipment_fee.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/order.dart';
@@ -119,7 +120,13 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
       for (final line in order.lines) {
         final product = LocalCommerceStore.getProduct(line.productId);
         if (product != null && product.hasShipmentFee) {
-          total += product.shipmentFeeGhs * line.quantity;
+          final quote = ShipmentFee.quote(
+            product,
+            city: order.shipping?.city,
+            region: order.shipping?.region,
+            location: order.shipping?.location,
+          );
+          total += quote.feeGhs * line.quantity;
         }
       }
     }

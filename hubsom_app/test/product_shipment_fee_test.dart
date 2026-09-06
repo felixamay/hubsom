@@ -10,9 +10,11 @@ import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
+import 'package:hubsom_app/core/services/ghana_places.dart';
 import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/core/services/payment_service.dart';
+import 'package:hubsom_app/core/services/shipment_fee.dart';
 import 'package:hubsom_app/models/order.dart';
 import 'package:hubsom_app/models/product.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -50,6 +52,62 @@ void main() {
 
   setUp(_init);
 
+  test('in-zone cities use the local fee; everywhere else is out of region', () {
+    const product = Product(
+      id: 'p-zones',
+      slug: 'p-zones',
+      name: 'Shea pot',
+      description: 'Raw shea',
+      category: 'beauty',
+      priceGhs: 40,
+      shipmentFeeGhs: 15,
+      shipmentZoneCities: ['Kumasi', 'Obuasi'],
+      outOfRegionShipmentFeeGhs: 45,
+      images: ['img'],
+      sellerId: 's1',
+      stock: 4,
+    );
+    expect(product.hasShipmentRange, isTrue);
+    expect(product.minShipmentFeeGhs, 15);
+    expect(product.maxShipmentFeeGhs, 45);
+    expect(ShipmentFee.listingLabel(product), contains('15'));
+    expect(ShipmentFee.listingLabel(product), contains('45'));
+
+    final kumasi = ShipmentFee.quote(
+      product,
+      city: 'Kumasi',
+      latitude: 6.6885,
+      longitude: -1.6244,
+    );
+    expect(kumasi.outOfRegion, isFalse);
+    expect(kumasi.feeGhs, 15);
+
+    final tamale = ShipmentFee.quote(
+      product,
+      city: 'Tamale',
+      latitude: 9.4034,
+      longitude: -0.8424,
+    );
+    expect(tamale.outOfRegion, isTrue);
+    expect(tamale.feeGhs, 45);
+    expect(tamale.lineLabel, contains('Out of region'));
+
+    expect(
+      GhanaPlaces.inShipmentZone(
+        zoneCities: const ['Tema', 'Madina'],
+        city: 'Tema',
+      ),
+      isTrue,
+    );
+    expect(
+      GhanaPlaces.inShipmentZone(
+        zoneCities: const ['Tema'],
+        city: 'Wa',
+      ),
+      isFalse,
+    );
+  });
+
   test('create and update product persist shipment fee for store and live lots',
       () async {
     final repo = SellerRepository(ApiClient());
@@ -60,13 +118,26 @@ void main() {
       'category': 'fashion',
       'priceGhs': 120,
       'shipmentFeeGhs': 18,
+      'shipmentZoneCities': ['Accra', 'Tema'],
+      'outOfRegionShipmentFeeGhs': 40,
       'stock': 5,
       'images': photos,
     });
     expect(store['shipmentFeeGhs'], 18);
+    expect(store['outOfRegionShipmentFeeGhs'], 40);
+    expect(store['shipmentZoneCities'], ['Accra', 'Tema']);
     expect(
       LocalCommerceStore.getProduct(store['id'] as String)?.shipmentFeeGhs,
       18,
+    );
+    expect(
+      LocalCommerceStore.getProduct(store['id'] as String)
+          ?.outOfRegionShipmentFeeGhs,
+      40,
+    );
+    expect(
+      LocalCommerceStore.getProduct(store['id'] as String)?.shipmentZoneCities,
+      ['Accra', 'Tema'],
     );
 
     final lot = await repo.createProduct({
@@ -88,10 +159,14 @@ void main() {
       'category': 'fashion',
       'priceGhs': 120,
       'shipmentFeeGhs': 22,
+      'shipmentZoneCities': ['Accra', 'Tema', 'Madina'],
+      'outOfRegionShipmentFeeGhs': 48,
       'stock': 5,
       'images': photos,
     });
     expect(updated['shipmentFeeGhs'], 22);
+    expect(updated['outOfRegionShipmentFeeGhs'], 48);
+    expect(updated['shipmentZoneCities'], ['Accra', 'Tema', 'Madina']);
     expect(
       LocalCommerceStore.getProduct(store['id'] as String)?.shipmentFeeGhs,
       22,
@@ -140,6 +215,63 @@ void main() {
     expect(order.subtotalGhs, 104);
     expect(order.lines.single.shipmentFeeGhs, 12);
     expect(order.effectiveShipmentFeeGhs, 24);
+  });
+
+  test('checkout quotes out-of-region fee from buyer GPS and stores the notice',
+      () async {
+    const user = HubsomUser(
+      id: 'u1',
+      email: 'seller@hubsom.test',
+      name: 'Seller',
+      role: 'seller',
+    );
+    final product = await LocalCommerceStore.createProduct(
+      user: user,
+      name: 'Kente scarf',
+      description: 'Handwoven kente scarf',
+      category: 'fashion',
+      priceGhs: 90,
+      shipmentFeeGhs: 12,
+      shipmentZoneCities: const ['Accra', 'Tema'],
+      outOfRegionShipmentFeeGhs: 38,
+      stock: 3,
+      images: [_dataUrl(), _dataUrl(), _dataUrl()],
+    );
+
+    final payment = PaymentService(ApiClient());
+    final res = await payment.checkout(
+      items: [
+        {
+          'productId': product.id,
+          'name': product.name,
+          'priceGhs': 90,
+          'quantity': 1,
+          'shipmentFeeGhs': 12,
+          'sellerId': product.sellerId,
+        },
+      ],
+      shipping: {
+        'recipientName': 'Ama Buyer',
+        'phone': '0242222222',
+        'line1': '9.4034, -0.8424',
+        'city': 'Tamale',
+        'region': 'Northern',
+        'location': {
+          'latitude': 9.4034,
+          'longitude': -0.8424,
+        },
+      },
+      paymentMethods: const ['mtn-momo'],
+    );
+    final order = Order.fromJson(
+      Map<String, dynamic>.from(res['order'] as Map),
+    );
+    expect(order.shipmentFeeGhs, 38);
+    expect(order.subtotalGhs, 128);
+    expect(order.lines.single.shipmentFeeGhs, 38);
+    expect(order.shipmentZoneLabel, ShipmentFee.outOfRegionLabel);
+    expect(order.deliveryEstimate, contains('Out of region'));
+    expect(order.deliveryEstimate, contains(order.id));
   });
 
   test('consolidating orders prefills rider offer from product shipment fee',

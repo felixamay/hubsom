@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/shipment_fee.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/message.dart';
@@ -633,12 +634,21 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                 if (product.hasShipmentFee) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Shipment ${formatGhs(product.shipmentFeeGhs)} · Huber delivery',
+                    '${ShipmentFee.listingLabel(product)} · Huber delivery',
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       color: HubsomColors.forest,
                     ),
                   ),
+                  if (product.hasShipmentZones) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      product.outOfRegionShipmentFeeGhs > 0
+                          ? 'In-zone ${product.shipmentZoneCities.join(', ')} · out of region ${formatGhs(product.outOfRegionShipmentFeeGhs)}'
+                          : 'In-zone ${product.shipmentZoneCities.join(', ')}',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
                 ],
                 if (product.compareAtGhs != null) ...[
                   const SizedBox(height: 2),
@@ -778,8 +788,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                   title: 'Shipping',
                   child: Text(
                     _seller == null
-                        ? 'Delivered across Ghana with Hubsom Huber riders. Typical Accra delivery 1–2 days; other regions 2–5 days after dispatch.'
-                        : 'Ships from ${_seller!.city}, ${_seller!.region}. Hubsom Huber riders deliver across Ghana — Accra usually 1–2 days, other regions 2–5 days after the seller ships.',
+                        ? 'Delivered across Ghana with Hubsom Huber riders. Typical Accra delivery 1–2 days; other regions 2–5 days after dispatch. The shipment fee for your GPS city is sent after you purchase.'
+                        : product.hasShipmentZones
+                            ? 'Ships from ${_seller!.city}, ${_seller!.region}. In-zone cities: ${product.shipmentZoneCities.join(', ')}. Out of region ${product.outOfRegionShipmentFeeGhs > 0 ? formatGhs(product.outOfRegionShipmentFeeGhs) : 'quoted after purchase'}. Your fee is sent after you buy.'
+                            : 'Ships from ${_seller!.city}, ${_seller!.region}. Hubsom Huber riders deliver across Ghana — Accra usually 1–2 days, other regions 2–5 days after the seller ships.',
                   ),
                 ),
                 const SizedBox(height: 12),
