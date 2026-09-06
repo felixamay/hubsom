@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/afia_access.dart';
 import '../../core/auth/auth_gate.dart';
 import '../../core/auth/auth_routes.dart';
 import '../../core/providers/core_providers.dart';
 import '../account/account_page.dart';
 import '../admin/admin_offers_page.dart';
+import '../admin/afia_portal_page.dart';
 import '../account/addresses_page.dart';
 import '../account/followers_page.dart';
 import '../account/following_page.dart';
@@ -114,8 +116,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (loggedIn && AuthRoutes.requiresAdmin(path)) {
-        if (user.role != 'admin') {
-          return '/account';
+        if (!user.isAfiaAdmin) {
+          return '/';
         }
       }
 
@@ -340,10 +342,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: AfiaAccess.path,
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AfiaPortalPage(),
+      ),
+      GoRoute(
         path: '/admin/offers',
         builder: (_, __) => const AuthGate(
           requireAdmin: true,
-          message: 'Sign in as admin to send purchase offers',
+          message: 'That Hubsom page is not available.',
           child: AdminOffersPage(),
         ),
       ),

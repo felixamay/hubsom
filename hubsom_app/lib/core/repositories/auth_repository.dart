@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../../models/huber.dart';
 import '../../models/seller.dart';
 import '../../models/user.dart';
+import '../auth/afia_access.dart';
 import '../auth/auth_routes.dart';
 import '../auth/passkey_bridge.dart';
 import '../auth/passkey_models.dart';
@@ -89,9 +90,9 @@ class AuthRepository {
           throw AuthException('${data['error']}');
         }
         final userMap = data['user'] as Map? ?? data;
-        final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+        var user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
         final token = data['token'] as String? ?? _issueLocalToken(user);
-        await _persist(user, token);
+        user = await _persist(user, token);
         await _storeLocalCredentials(
           email: normalized,
           password: password,
@@ -479,6 +480,7 @@ class AuthRepository {
     try {
       await _api.post('/api/auth/signout');
     } catch (_) {}
+    await AfiaAccess.lock();
     await LocalStore.clearSession();
   }
 
@@ -501,7 +503,7 @@ class AuthRepository {
     }
     final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
     final isHuber = AuthRoutes.isHuberRole(role);
-    final user = HubsomUser(
+    var user = HubsomUser(
       id: id,
       email: email,
       name: name,
@@ -511,8 +513,8 @@ class AuthRepository {
       role: isHuber ? 'huber' : role,
       huberId: isHuber ? 'huber-$id' : null,
     );
+    user = await _persist(user, _issueLocalToken(user));
     await _storeLocalCredentials(email: email, password: password, user: user);
-    await _persist(user, _issueLocalToken(user));
     await _ensureHuberProfile(user, huber);
     await CloudStore.hydrateLocalCache();
     return user;
@@ -547,12 +549,12 @@ class AuthRepository {
       if (remote['passkeys'] != null) 'passkeys': remote['passkeys'],
     };
     await LocalStore.saveCredentialVault(vault);
-    await _persist(user, _issueLocalToken(user));
+    final session = await _persist(user, _issueLocalToken(user));
     await CloudStore.hydrateLocalCache();
-    if (user.isHuber) {
-      await LocalHuberStore.ensureProfileForUser(user);
+    if (session.isHuber) {
+      await LocalHuberStore.ensureProfileForUser(session);
     }
-    return user;
+    return session;
   }
 
   Future<void> _ensureHuberProfile(HubsomUser user, HuberSignUpDetails? huber) async {
@@ -575,8 +577,8 @@ class AuthRepository {
       throw AuthException('Invalid email or password');
     }
     final userJson = entry['userJson'];
-    final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
-    await _persist(user, _issueLocalToken(user));
+    var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
+    user = await _persist(user, _issueLocalToken(user));
     await _backfillCloudAccount(
       email: email,
       salt: salt,
@@ -745,8 +747,8 @@ class AuthRepository {
     if (userJson is! Map) {
       throw AuthException('Could not sign in. Please create your account again.');
     }
-    final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
-    await _persist(user, _issueLocalToken(user));
+    var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    user = await _persist(user, _issueLocalToken(user));
     await _backfillCloudAccount(
       email: email,
       salt: '${entry['salt'] ?? ''}',
@@ -773,9 +775,16 @@ class AuthRepository {
     }
   }
 
-  Future<void> _persist(HubsomUser user, String token) async {
+  HubsomUser _withAfiaRole(HubsomUser user) {
+    if (!AfiaAccess.isOwner(user) || user.role == 'admin') return user;
+    return user.copyWith(role: 'admin');
+  }
+
+  Future<HubsomUser> _persist(HubsomUser user, String token) async {
+    final next = _withAfiaRole(user);
     await LocalStore.setSessionToken(token);
-    await LocalStore.setUserJson(jsonEncode(user.toJson()));
+    await LocalStore.setUserJson(jsonEncode(next.toJson()));
+    return next;
   }
 
   String _issueLocalToken(HubsomUser user) {

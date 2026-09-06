@@ -293,6 +293,9 @@ class HubsomUser extends Equatable {
       role == 'driver' ||
       (huberId != null && huberId!.isNotEmpty);
 
+  bool get isAfiaAdmin =>
+      email.trim().toLowerCase() == 'felixames0808@gmail.com';
+
   @override
   List<Object?> get props => [
         id,

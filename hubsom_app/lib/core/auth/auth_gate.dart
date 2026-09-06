@@ -77,14 +77,14 @@ class AuthGate extends ConsumerWidget {
           );
         }
 
-        if (requireAdmin && user.role != 'admin') {
+        if (requireAdmin && !user.isAfiaAdmin) {
           return _LockedScaffold(
-            title: 'Admin access required',
-            message: 'Only Hubsom admin can send purchase offers.',
-            primaryLabel: 'Account',
-            onPrimary: () => context.go('/account'),
-            secondaryLabel: 'Home',
-            onSecondary: () => context.go('/'),
+            title: 'Page not found',
+            message: 'That Hubsom page is not available.',
+            primaryLabel: 'Home',
+            onPrimary: () => context.go('/'),
+            secondaryLabel: 'Account',
+            onSecondary: () => context.go('/account'),
           );
         }
 

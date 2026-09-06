@@ -157,13 +157,6 @@ class AccountPage extends ConsumerWidget {
                   'Seller hub',
                   '/seller',
                 ),
-              if (user.role == 'admin')
-                _link(
-                  context,
-                  Icons.local_offer_outlined,
-                  'Send purchase offers',
-                  '/admin/offers',
-                ),
               if (user.isHuber || user.role == 'admin')
                 _link(
                   context,
