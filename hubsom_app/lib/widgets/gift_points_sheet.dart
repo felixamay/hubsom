@@ -134,7 +134,7 @@ class _GiftPointsSheetState extends ConsumerState<GiftPointsSheet> {
           const SizedBox(height: 4),
           Text(
             'Points stay on your account and are spent on live gifts. '
-            'Hosts receive 80% of the gift value.',
+            'Payment goes to Hubsom Admin. Hosts receive 80% of the gift value.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: HubsomColors.forest,
                 ),

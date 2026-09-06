@@ -182,6 +182,7 @@ void main() {
     expect(find.text('Hubsom Admin'), findsWidgets);
     expect(find.text('Overview'), findsWidgets);
     expect(find.text('Accounts'), findsWidgets);
+    expect(find.text('Payouts'), findsWidgets);
     expect(find.text('Controls'), findsWidgets);
     expect(find.text('Promotions'), findsWidgets);
     expect(find.text('Send purchase offers'), findsNothing);

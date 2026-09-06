@@ -10,6 +10,7 @@ import '../../models/seller.dart';
 import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
+import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
@@ -1027,6 +1028,9 @@ class LocalCommerceStore {
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
+    try {
+      await AdminTreasuryStore.recordPaidOrder(order);
+    } catch (_) {}
     await updateStream(
       streamId,
       auction: auction.copyWith(status: 'sold', orderId: orderId),
