@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../auth/idle_session.dart';
 import '../config/app_config.dart';
 import 'local_store.dart';
 
@@ -27,6 +28,10 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
+          if (IdleSession.isExpired()) {
+            handler.next(options);
+            return;
+          }
           final token = LocalStore.sessionToken;
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';

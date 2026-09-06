@@ -6,6 +6,7 @@ import '../../models/product.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
 import '../../models/user.dart';
+import '../auth/idle_session.dart';
 import '../auth/passkey_bridge.dart';
 import '../auth/passkey_models.dart';
 import '../repositories/auth_repository.dart';
@@ -127,8 +128,15 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
   final AuthRepository _repo;
 
   Future<void> _hydrate() async {
+    if (await IdleSession.expireIfIdle()) {
+      state = const AsyncValue.data(null);
+      return;
+    }
     final local = _repo.currentUser();
     state = AsyncValue.data(local);
+    if (local != null) {
+      await IdleSession.touch();
+    }
     await CloudStore.hydrateLocalCache();
     if (local != null) {
       final fresh = await _repo.fetchProfile();

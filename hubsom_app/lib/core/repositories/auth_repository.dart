@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -8,6 +9,7 @@ import '../../models/seller.dart';
 import '../../models/user.dart';
 import '../auth/afia_access.dart';
 import '../auth/auth_routes.dart';
+import '../auth/idle_session.dart';
 import '../auth/passkey_bridge.dart';
 import '../auth/passkey_models.dart';
 import '../services/api_client.dart';
@@ -35,6 +37,10 @@ class AuthRepository {
   bool get passkeysSupported => _passkeys.isSupported;
 
   HubsomUser? currentUser() {
+    if (IdleSession.isExpired()) {
+      unawaited(IdleSession.expireIfIdle());
+      return null;
+    }
     final token = LocalStore.sessionToken;
     final raw = LocalStore.userJson;
     if (token == null || token.isEmpty || raw == null) return null;
@@ -798,6 +804,7 @@ class AuthRepository {
     final next = _withAfiaRole(user);
     await LocalStore.setSessionToken(token);
     await LocalStore.setUserJson(jsonEncode(next.toJson()));
+    await IdleSession.touch(force: true);
     return next;
   }
 
