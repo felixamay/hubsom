@@ -5,12 +5,13 @@ import 'dart:typed_data';
 import 'package:web/web.dart' as web;
 
 import 'product_demo_video.dart';
+import 'shop_video_limits.dart';
 
 /// Browser file picker for a short product demo video.
 Future<ProductDemoVideo?> pickProductDemoVideo({int maxSeconds = 15}) async {
   final input = web.HTMLInputElement()
     ..type = 'file'
-    ..accept = 'video/mp4,video/webm,video/quicktime,video/*';
+    ..accept = 'video/mp4,video/quicktime,video/x-m4v';
   input.style.display = 'none';
   web.document.body?.append(input);
 
@@ -41,20 +42,16 @@ Future<ProductDemoVideo?> pickProductDemoVideo({int maxSeconds = 15}) async {
             finish(null);
             return;
           }
-          if (file.size > 12 * 1024 * 1024) {
-            throw StateError(
-              'Video is too large. Use a clip under about 12MB (max $maxSeconds seconds).',
-            );
+          if (file.size > ShopVideoLimits.maxBytes) {
+            throw StateError(ShopVideoLimits.sizeError(maxSeconds));
           }
 
           final duration = await _readDurationSeconds(file);
           if (duration <= 0) {
-            throw StateError('Could not read that video. Try MP4 or WebM.');
+            throw StateError('Could not read that video. Use an MP4 clip.');
           }
           if (duration > maxSeconds + 0.25) {
-            throw StateError(
-              'Video must be $maxSeconds seconds or shorter (yours is ${duration.toStringAsFixed(1)}s).',
-            );
+            throw StateError(ShopVideoLimits.durationError(maxSeconds, duration));
           }
 
           final buffer = await file.arrayBuffer().toDart;
@@ -63,10 +60,16 @@ Future<ProductDemoVideo?> pickProductDemoVideo({int maxSeconds = 15}) async {
             finish(null);
             return;
           }
+          final mime = type.isEmpty ? 'video/mp4' : type;
+          if (!isWidelyPlayableShopVideo(bytes: bytes, mimeType: mime)) {
+            throw StateError(
+              'Use an MP4 so the clip can play on iPhone and Android.',
+            );
+          }
           finish(
             ProductDemoVideo(
               bytes: Uint8List.fromList(bytes),
-              mimeType: type.isEmpty ? 'video/mp4' : type,
+              mimeType: shopVideoPlaybackMime(bytes: bytes, mimeType: mime),
               durationSeconds: duration,
               name: file.name,
             ),

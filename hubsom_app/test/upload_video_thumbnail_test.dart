@@ -45,7 +45,7 @@ void main() {
     expect(find.text('Add video'), findsOneWidget);
     expect(find.text('Thumbnail'), findsOneWidget);
     expect(find.text('Upload thumbnail'), findsOneWidget);
-    expect(find.text('Pick video (≤15s)'), findsOneWidget);
+    expect(find.text('Pick video (≤2 min, MP4)'), findsOneWidget);
     expect(find.text('Publish video'), findsOneWidget);
     expect(find.text('Publishing video…'), findsNothing);
     expect(

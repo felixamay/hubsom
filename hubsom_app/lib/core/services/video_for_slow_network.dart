@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'mp4_faststart.dart';
 import 'product_demo_video.dart';
+import 'shop_video_limits.dart';
 
 /// Prepare an uploaded clip so playback can start after the first kilobytes.
 ///
@@ -14,16 +15,22 @@ Future<ProductDemoVideo> prepareShopVideoForSlowNetwork({
   double durationSeconds = 0,
   String name = 'clip.mp4',
 }) async {
-  var outBytes = bytes;
-  final outMime = mimeType.isEmpty ? 'video/mp4' : mimeType;
+  if (!isWidelyPlayableShopVideo(bytes: bytes, mimeType: mimeType)) {
+    throw StateError(
+      'Use an MP4 so the clip can play on iPhone and Android.',
+    );
+  }
 
-  if (outMime.contains('mp4') || outMime.contains('quicktime')) {
+  var outBytes = bytes;
+  if (looksLikeMp4(outBytes) ||
+      mimeType.contains('mp4') ||
+      mimeType.contains('quicktime')) {
     outBytes = ensureMp4FastStart(outBytes);
   }
 
   return ProductDemoVideo(
     bytes: outBytes,
-    mimeType: outMime,
+    mimeType: shopVideoPlaybackMime(bytes: outBytes, mimeType: mimeType),
     durationSeconds: durationSeconds,
     name: name,
   );
