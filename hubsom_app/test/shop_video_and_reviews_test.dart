@@ -8,6 +8,7 @@ import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/repositories/catalog_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
+import 'package:hubsom_app/core/services/local_blob_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/core/services/product_demo_video_store.dart';
@@ -24,6 +25,7 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('hubsom-videos-reviews');
     Hive.init(dir.path);
     await LocalStore.init();
+    await LocalBlobStore.init();
     await ProductDemoVideoStore.init();
     await LocalStore.setSessionToken('sess');
     await LocalStore.setUserJson(
@@ -94,7 +96,8 @@ void main() {
       thumbnailBytes: thumb,
     );
     expect(video.productIds, contains(product.id));
-    expect(video.thumbnailUrl, startsWith('data:image/jpeg;base64,'));
+    expect(video.videoPosterUrl, isNotNull);
+    expect(video.videoPosterUrl, isNot(isEmpty));
     expect(ProductDemoVideoStore.hasVideo(video.id), isTrue);
     expect(await catalog.listShopVideos(), isNotEmpty);
 

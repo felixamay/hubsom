@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../config/firebase_options.dart';
 import 'firebase_bootstrap.dart';
 import 'local_store.dart';
+import 'shop_video_merge.dart';
 
 /// Firestore-backed Hubsom data so accounts work on any browser/device.
 ///
@@ -437,6 +438,27 @@ class CloudStore {
       try {
         final rows = await listDocs(entry.value);
         if (rows.isEmpty) return;
+        if (entry.key == 'localShopVideos') {
+          final raw = LocalStore.getString(entry.key);
+          final local = <Map<String, dynamic>>[];
+          if (raw != null && raw.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(raw);
+              if (decoded is List) {
+                for (final e in decoded) {
+                  if (e is Map) {
+                    local.add(Map<String, dynamic>.from(e));
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(mergeShopVideoDocs(local: local, incoming: rows)),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {

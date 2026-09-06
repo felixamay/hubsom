@@ -18,6 +18,7 @@ import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
 import '../services/video_frame_thumb.dart';
+import '../services/local_blob_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
@@ -421,16 +422,6 @@ class CatalogRepository {
       soundTitle: soundTitle,
       mimeType: prepared.mimeType,
     );
-    await ProductDemoVideoStore.save(
-      productId: draft.id,
-      bytes: prepared.bytes,
-      mimeType: prepared.mimeType,
-    );
-    final remoteUrl = await CloudVideoMedia.publish(
-      videoId: draft.id,
-      bytes: prepared.bytes,
-      mimeType: prepared.mimeType,
-    );
     String? thumbUrl;
     try {
       final frame = (thumbnailBytes != null && thumbnailBytes.isNotEmpty)
@@ -445,11 +436,29 @@ class CatalogRepository {
           bytes: frame,
         );
         if (thumbUrl == null || thumbUrl.isEmpty) {
-          thumbUrl = 'data:image/jpeg;base64,${base64Encode(frame)}';
+          final data = 'data:image/jpeg;base64,${base64Encode(frame)}';
+          try {
+            thumbUrl = await LocalBlobStore.putDataUrl(data);
+          } catch (_) {
+            thumbUrl = data;
+          }
         }
+        await LocalCommerceStore.updateShopVideo(
+          draft.copyWith(thumbnailUrl: thumbUrl),
+        );
       }
     } catch (_) {}
-    final patched = draft.copyWith(
+    await ProductDemoVideoStore.save(
+      productId: draft.id,
+      bytes: prepared.bytes,
+      mimeType: prepared.mimeType,
+    );
+    final remoteUrl = await CloudVideoMedia.publish(
+      videoId: draft.id,
+      bytes: prepared.bytes,
+      mimeType: prepared.mimeType,
+    );
+    final patched = (LocalCommerceStore.getShopVideo(draft.id) ?? draft).copyWith(
       videoUrl: remoteUrl,
       thumbnailUrl: thumbUrl,
     );

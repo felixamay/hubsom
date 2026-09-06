@@ -40,8 +40,10 @@ class CloudMedia {
       return null;
     }
     try {
-      final ref =
-          FirebaseStorage.instance.ref().child('shopVideoThumbs/$videoId.jpg');
+      // Lives under shopVideos/ so existing Storage rules allow the still.
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('shopVideos/${videoId}_thumb.jpg');
       await ref.putData(
         bytes,
         SettableMetadata(
