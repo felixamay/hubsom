@@ -155,7 +155,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
 
   Future<bool> _finishAttach(VideoPlayerController controller, int gen) async {
     try {
-      await controller.initialize().timeout(const Duration(seconds: 12));
+      await controller.initialize().timeout(const Duration(seconds: 20));
       if (!mounted || gen != _loadGen) {
         await controller.dispose();
         return false;

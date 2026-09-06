@@ -3,7 +3,7 @@ import 'dart:typed_data';
 /// Move an MP4 `moov` atom in front of `mdat` so playback can start after the
 /// first few kilobytes instead of waiting for the whole file on a slow link.
 Uint8List ensureMp4FastStart(Uint8List bytes) {
-  if (bytes.length < 16 || !_looksLikeMp4(bytes)) return bytes;
+  if (bytes.length < 16 || !looksLikeMp4(bytes)) return bytes;
   final boxes = _parseTopLevel(bytes);
   if (boxes.isEmpty) return bytes;
 
@@ -36,7 +36,7 @@ Uint8List ensureMp4FastStart(Uint8List bytes) {
   return result.isEmpty ? bytes : Uint8List.fromList(result);
 }
 
-bool _looksLikeMp4(Uint8List bytes) {
+bool looksLikeMp4(Uint8List bytes) {
   if (bytes.length < 8) return false;
   final type = String.fromCharCodes(bytes.sublist(4, 8));
   return type == 'ftyp' || type == 'wide' || type == 'mdat' || type == 'moov';

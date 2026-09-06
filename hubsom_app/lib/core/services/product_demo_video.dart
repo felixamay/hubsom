@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-/// A short product demo clip (max 15 seconds).
+/// A short shop / product clip (shop videos allow up to 2 minutes).
 class ProductDemoVideo {
   const ProductDemoVideo({
     required this.bytes,

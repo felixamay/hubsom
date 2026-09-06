@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/product_demo_video_picker.dart';
+import '../../core/services/shop_video_limits.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -49,7 +50,9 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   Future<void> _pickVideo() async {
     setState(() => _error = null);
     try {
-      final picked = await pickProductDemoVideo(maxSeconds: 15);
+      final picked = await pickProductDemoVideo(
+        maxSeconds: ShopVideoLimits.maxSeconds,
+      );
       if (picked == null) return;
       setState(() {
         _bytes = picked.bytes;
@@ -94,7 +97,8 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
             thumbnailBytes: _thumbBytes,
           )
           .timeout(
-            const Duration(seconds: 90),
+            Duration(seconds: (120 + (bytes.length / (200 * 1024)).ceil())
+                .clamp(120, 240)),
             onTimeout: () => throw StateError(
               'Publishing took too long. Check your connection and try again.',
             ),
@@ -164,7 +168,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'This is not Add product. You are posting a video clip. Link existing products so watchers open the product page.',
+                    'This is not Add product. Post an MP4 clip up to 2 minutes so it plays on iPhone and Android. Link existing products so watchers open the product page.',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -173,7 +177,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                   onPressed: _busy ? null : _pickVideo,
                   icon: const Icon(Icons.video_library_outlined),
                   label: Text(
-                    _bytes == null ? 'Pick video (≤15s)' : 'Change video',
+                    _bytes == null ? ShopVideoLimits.pickLabel : 'Change video',
                   ),
                 ),
                 if (_bytes != null) ...[

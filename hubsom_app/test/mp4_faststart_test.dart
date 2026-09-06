@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hubsom_app/core/services/mp4_faststart.dart';
+import 'package:hubsom_app/core/services/shop_video_limits.dart';
 import 'package:hubsom_app/core/services/video_for_slow_network.dart';
 
 Uint8List _box(String type, List<int> payload) {
@@ -85,6 +86,30 @@ void main() {
     );
     expect(prepared.bytes, bytes);
     expect(prepared.mimeType, 'video/mp4');
+  });
+
+  test('shop clips allow two minutes and reject WebM so iPhone can play', () {
+    expect(ShopVideoLimits.maxSeconds, 120);
+    expect(ShopVideoLimits.maxBytes, 40 * 1024 * 1024);
+    final webm = Uint8List.fromList([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
+    expect(
+      isWidelyPlayableShopVideo(bytes: webm, mimeType: 'video/webm'),
+      isFalse,
+    );
+    final ftyp = _box('ftyp', [...'isom'.codeUnits, ..._u32(0), ...'isom'.codeUnits]);
+    expect(
+      isWidelyPlayableShopVideo(bytes: ftyp, mimeType: 'video/mp4'),
+      isTrue,
+    );
+  });
+
+  test('prepareShopVideoForSlowNetwork rejects WebM instead of publishing it',
+      () async {
+    final webm = Uint8List.fromList([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
+    expect(
+      () => prepareShopVideoForSlowNetwork(bytes: webm, mimeType: 'video/webm'),
+      throwsStateError,
+    );
   });
 
   test('prepareShopVideoForSlowNetwork finishes immediately on a large clip',
