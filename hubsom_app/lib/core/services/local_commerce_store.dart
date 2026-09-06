@@ -1615,7 +1615,7 @@ class LocalCommerceStore {
     rows.insert(0, video.toJson());
     await _writeList(_shopVideosKey, rows);
     try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toCloudJson()]);
     } catch (_) {}
     return video;
   }
@@ -1630,7 +1630,7 @@ class LocalCommerceStore {
     rows[idx] = video.toJson();
     await _writeList(_shopVideosKey, rows);
     try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toCloudJson()]);
     } catch (_) {}
     return video;
   }

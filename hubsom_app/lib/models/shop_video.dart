@@ -96,6 +96,17 @@ class ShopVideo extends Equatable {
         'createdAt': createdAt,
       };
 
+  /// Firestore payload — omit device-local thumbnail refs other phones cannot load.
+  Map<String, dynamic> toCloudJson() {
+    final map = toJson();
+    final thumb = '${map['thumbnailUrl'] ?? ''}'.trim();
+    if (thumb.startsWith('hubsom-blob://') ||
+        (thumb.startsWith('data:') && thumb.contains('base64,'))) {
+      map.remove('thumbnailUrl');
+    }
+    return map;
+  }
+
   ShopVideo copyWith({
     String? caption,
     String? soundTitle,
