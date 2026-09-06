@@ -85,13 +85,16 @@ void main() {
 
     final catalog = CatalogRepository(ApiClient());
     final bytes = Uint8List.fromList(List<int>.generate(64, (i) => i));
+    final thumb = Uint8List.fromList(List<int>.generate(48, (i) => 255 - i));
     final video = await catalog.createShopVideo(
       bytes: bytes,
       mimeType: 'video/mp4',
       productIds: [product.id],
       caption: 'Check this mug',
+      thumbnailBytes: thumb,
     );
     expect(video.productIds, contains(product.id));
+    expect(video.thumbnailUrl, startsWith('data:image/jpeg;base64,'));
     expect(ProductDemoVideoStore.hasVideo(video.id), isTrue);
     expect(await catalog.listShopVideos(), isNotEmpty);
 
