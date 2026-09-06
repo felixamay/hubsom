@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/product.dart';
 import '../../models/product_social.dart';
@@ -423,55 +425,27 @@ class CatalogRepository {
       mimeType: prepared.mimeType,
     );
     String? thumbUrl;
-    try {
-      final frame = (thumbnailBytes != null && thumbnailBytes.isNotEmpty)
-          ? thumbnailBytes
-          : await captureShopVideoFrame(
-              bytes: prepared.bytes,
-              mimeType: prepared.mimeType,
-            );
-      if (frame != null && frame.isNotEmpty) {
-        thumbUrl = await CloudMedia.uploadShopVideoThumb(
-          videoId: draft.id,
-          bytes: frame,
-        );
-        if (thumbUrl == null || thumbUrl.isEmpty) {
-          final data = 'data:image/jpeg;base64,${base64Encode(frame)}';
-          try {
-            thumbUrl = await LocalBlobStore.putDataUrl(data);
-          } catch (_) {
-            thumbUrl = data;
-          }
-        }
-        await LocalCommerceStore.updateShopVideo(
-          draft.copyWith(thumbnailUrl: thumbUrl),
-        );
+    if (thumbnailBytes != null && thumbnailBytes.isNotEmpty) {
+      try {
+        final data = 'data:image/jpeg;base64,${base64Encode(thumbnailBytes)}';
+        thumbUrl = await LocalBlobStore.putDataUrl(data);
+      } catch (_) {
+        thumbUrl = 'data:image/jpeg;base64,${base64Encode(thumbnailBytes)}';
       }
-    } catch (_) {}
+    }
     await ProductDemoVideoStore.save(
       productId: draft.id,
       bytes: prepared.bytes,
       mimeType: prepared.mimeType,
     );
-    final remoteUrl = await CloudVideoMedia.publish(
-      videoId: draft.id,
-      bytes: prepared.bytes,
-      mimeType: prepared.mimeType,
-    );
-    final patched = (LocalCommerceStore.getShopVideo(draft.id) ?? draft).copyWith(
-      videoUrl: remoteUrl,
-      thumbnailUrl: thumbUrl,
-    );
-    final video = (remoteUrl == null || remoteUrl.isEmpty) &&
-            (thumbUrl == null || thumbUrl.isEmpty)
-        ? draft
-        : (await LocalCommerceStore.updateShopVideo(patched)) ?? patched;
-    // Force metadata to cloud even if media publish failed (other devices
-    // still see the card; media hydrates when bytes become available).
+    var video = (await LocalCommerceStore.updateShopVideo(
+          draft.copyWith(thumbnailUrl: thumbUrl),
+        )) ??
+        draft.copyWith(thumbnailUrl: thumbUrl);
+    // Metadata first so Home shows the card while the clip uploads.
     try {
       await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
     } catch (_) {}
-    // Post new videos to the vertical timeline feed.
     try {
       Product? linked;
       for (final id in productIds) {
@@ -485,7 +459,54 @@ class CatalogRepository {
         caption: caption,
       );
     } catch (_) {}
+    // Do not block Publish on Storage or 100+ Firestore chunks on a slow link.
+    unawaited(
+      _publishShopVideoInBackground(
+        videoId: draft.id,
+        bytes: prepared.bytes,
+        mimeType: prepared.mimeType,
+        thumbBytes: thumbnailBytes,
+      ),
+    );
     return video;
+  }
+
+  Future<void> _publishShopVideoInBackground({
+    required String videoId,
+    required Uint8List bytes,
+    required String mimeType,
+    Uint8List? thumbBytes,
+  }) async {
+    try {
+      String? remoteThumb;
+      if (thumbBytes != null && thumbBytes.isNotEmpty) {
+        remoteThumb = await CloudMedia.uploadShopVideoThumb(
+          videoId: videoId,
+          bytes: thumbBytes,
+        ).timeout(const Duration(seconds: 25), onTimeout: () => null);
+      }
+      final remoteUrl = await CloudVideoMedia.publish(
+        videoId: videoId,
+        bytes: bytes,
+        mimeType: mimeType,
+      ).timeout(const Duration(minutes: 8), onTimeout: () => null);
+      final current = LocalCommerceStore.getShopVideo(videoId);
+      if (current == null) return;
+      final patched = current.copyWith(
+        videoUrl: remoteUrl ?? current.videoUrl,
+        thumbnailUrl: (remoteThumb != null && remoteThumb.isNotEmpty)
+            ? remoteThumb
+            : current.thumbnailUrl,
+      );
+      await LocalCommerceStore.updateShopVideo(patched);
+      try {
+        await CloudStore.upsertDocs(CloudStore.shopVideos, [patched.toJson()]);
+      } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('CatalogRepository._publishShopVideoInBackground: $e');
+      }
+    }
   }
 
   Future<bool> toggleVideoLike(String videoId) async {
