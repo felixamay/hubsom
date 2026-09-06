@@ -7,10 +7,12 @@ import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/constants/hubsom_commission.dart';
 import 'package:hubsom_app/core/services/admin_account_store.dart';
 import 'package:hubsom_app/core/services/admin_treasury_store.dart';
+import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/gift_store.dart';
 import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
+import 'package:hubsom_app/core/services/payment_service.dart';
 import 'package:hubsom_app/models/live_gift.dart';
 import 'package:hubsom_app/models/order.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -69,6 +71,9 @@ Future<void> _init() async {
   SharedPreferences.setMockInitialValues({});
   Hive.init(Directory.systemTemp.createTempSync('hubsom-treasury').path);
   await LocalStore.init();
+  await LocalStore.setString(AdminTreasuryStore.payoutsKey, null);
+  await LocalStore.setString(AdminTreasuryStore.intakesKey, null);
+  await LocalStore.setString('localOrders', null);
   await LocalStore.saveCredentialVault({
     _seller.email: {
       'email': _seller.email,
@@ -154,5 +159,33 @@ void main() {
     expect(rows, hasLength(1));
     expect(rows.single.netGhs, 94);
     expect(rows.single.sellerId, 's1');
+  });
+
+  test('checkout sends the sale through Hubsom Admin', () async {
+    final res = await PaymentService(ApiClient()).checkout(
+      items: [
+        {
+          'productId': 'p1',
+          'name': 'Shea butter',
+          'priceGhs': 100,
+          'quantity': 1,
+          'shipmentFeeGhs': 12,
+          'sellerId': 's1',
+        },
+      ],
+      shipping: {
+        'recipientName': 'Ama Buyer',
+        'phone': '0240000000',
+        'line1': '12 Spintex Rd',
+        'city': 'Accra',
+        'region': 'Greater Accra',
+      },
+      paymentMethods: const ['mtn-momo'],
+    );
+    expect(res['ok'], isTrue);
+    final snap = AdminTreasuryStore.snapshot();
+    expect(snap.collectedGhs, 112);
+    expect(snap.commissionGhs, 6);
+    expect(snap.pendingPayoutsGhs, 94);
   });
 }
