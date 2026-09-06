@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/message.dart';
 import '../../models/user.dart';
+import '../auth/afia_access.dart';
+import '../support/support_chat.dart';
 import 'cloud_store.dart';
 import 'local_commerce_store.dart';
 import 'local_store.dart';
@@ -52,20 +54,41 @@ class LocalMessageStore {
     } catch (_) {}
   }
 
+  static Set<String> _selfIds(String userId) {
+    final ids = <String>{userId};
+    if (userId == SupportChat.peerId) return ids;
+    final raw = LocalStore.userJson;
+    if (raw == null || raw.isEmpty) return ids;
+    try {
+      final user = HubsomUser.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+      if (user.id == userId && SupportChat.receivesInbox(user)) {
+        ids.add(SupportChat.peerId);
+      }
+    } catch (_) {}
+    if (AfiaAccess.isOwnerEmail(userId)) {
+      ids.add(SupportChat.peerId);
+    }
+    return ids;
+  }
+
   static List<DirectMessage> forUser(String userId) {
+    final self = _selfIds(userId);
     final list = listAll()
-        .where((m) => m.fromUserId == userId || m.toUserId == userId)
+        .where((m) => self.contains(m.fromUserId) || self.contains(m.toUserId))
         .toList();
     list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return list;
   }
 
   static List<DirectMessage> thread(String meId, String peerId) {
+    final self = _selfIds(meId);
     final list = listAll()
         .where(
           (m) =>
-              (m.fromUserId == meId && m.toUserId == peerId) ||
-              (m.fromUserId == peerId && m.toUserId == meId),
+              (self.contains(m.fromUserId) && m.toUserId == peerId) ||
+              (m.fromUserId == peerId && self.contains(m.toUserId)),
         )
         .toList();
     list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -73,6 +96,7 @@ class LocalMessageStore {
   }
 
   static String resolvePeerName(String peerId, {String? fallback}) {
+    if (SupportChat.isSupportPeer(peerId)) return SupportChat.displayName;
     if (fallback != null && fallback.trim().isNotEmpty) return fallback.trim();
     for (final s in LocalCommerceStore.listSellers()) {
       if (s.id == peerId || s.ownerUserId == peerId) return s.name;
@@ -129,23 +153,25 @@ class LocalMessageStore {
   }
 
   static List<ConversationPreview> conversationsFor(String meId) {
+    final self = _selfIds(meId);
     final mine = forUser(meId);
     final latestByPeer = <String, DirectMessage>{};
     final unreadByPeer = <String, int>{};
     for (final m in mine) {
-      final peer = m.fromUserId == meId ? m.toUserId : m.fromUserId;
-      if (peer.isEmpty || peer == meId) continue;
+      final peer = self.contains(m.fromUserId) ? m.toUserId : m.fromUserId;
+      if (peer.isEmpty || self.contains(peer)) continue;
       final prev = latestByPeer[peer];
       if (prev == null || m.createdAt.compareTo(prev.createdAt) >= 0) {
         latestByPeer[peer] = m;
       }
-      if (m.toUserId == meId && !m.read) {
+      if (self.contains(m.toUserId) && !m.read) {
         unreadByPeer[peer] = (unreadByPeer[peer] ?? 0) + 1;
       }
     }
     final previews = latestByPeer.entries.map((e) {
       final m = e.value;
-      final peerName = m.fromUserId == meId
+      final mineMsg = self.contains(m.fromUserId);
+      final peerName = mineMsg
           ? (m.toUserName.isNotEmpty
               ? m.toUserName
               : resolvePeerName(e.key))
@@ -166,8 +192,9 @@ class LocalMessageStore {
   }
 
   static int unreadCountFor(String meId) {
+    final self = _selfIds(meId);
     return listAll()
-        .where((m) => m.toUserId == meId && !m.read)
+        .where((m) => self.contains(m.toUserId) && !m.read)
         .length;
   }
 
@@ -195,6 +222,9 @@ class LocalMessageStore {
     if (trimmed.isEmpty) throw StateError('Write a message first');
     if (toUserId.isEmpty) throw StateError('Pick someone to message');
     if (toUserId == from.id) throw StateError('You cannot message yourself');
+    final toName = SupportChat.isSupportPeer(toUserId)
+        ? SupportChat.displayName
+        : resolvePeerName(toUserId, fallback: toUserName);
 
     final msg = DirectMessage(
       id: 'dm-${_uuid.v4().substring(0, 10)}',
@@ -202,8 +232,10 @@ class LocalMessageStore {
       toUserId: toUserId,
       text: trimmed,
       createdAt: DateTime.now().toUtc().toIso8601String(),
-      fromUserName: from.name,
-      toUserName: resolvePeerName(toUserId, fallback: toUserName),
+      fromUserName: SupportChat.isSupportPeer(from.id)
+          ? SupportChat.displayName
+          : from.name,
+      toUserName: toName,
       read: false,
     );
     await upsert(msg);
@@ -214,11 +246,12 @@ class LocalMessageStore {
     required String meId,
     required String peerId,
   }) async {
+    final self = _selfIds(meId);
     final rows = [...listAll()];
     var changed = false;
     final next = <DirectMessage>[];
     for (final m in rows) {
-      final incoming = m.fromUserId == peerId && m.toUserId == meId;
+      final incoming = m.fromUserId == peerId && self.contains(m.toUserId);
       if (incoming && !m.read) {
         next.add(m.copyWith(read: true));
         changed = true;
@@ -230,7 +263,7 @@ class LocalMessageStore {
     await _save(next);
     try {
       final updated = next
-          .where((m) => m.fromUserId == peerId && m.toUserId == meId && m.read)
+          .where((m) => m.fromUserId == peerId && self.contains(m.toUserId) && m.read)
           .map((m) => m.toJson())
           .toList();
       if (updated.isNotEmpty) {

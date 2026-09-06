@@ -21,6 +21,7 @@ void main() {
     expect(values.contains('marketplace'), isTrue);
     expect(values.contains('sell'), isTrue);
     expect(values.contains('dashboard'), isTrue);
+    expect(values.contains('contact'), isTrue);
     expect(values.contains('wallet'), isFalse);
     expect(values.contains('gifts'), isFalse);
     expect(values.contains('account'), isFalse);
@@ -68,6 +69,7 @@ void main() {
     expect(AuthRoutes.isPublic('/live'), isTrue);
     expect(AuthRoutes.isPublic('/marketplace'), isTrue);
     expect(AuthRoutes.isPublic('/stores'), isTrue);
+    expect(AuthRoutes.isPublic('/contact'), isTrue);
     expect(AuthRoutes.isPublic('/Afia'), isTrue);
     expect(AuthRoutes.isPublic('/afia'), isTrue);
     expect(AuthRoutes.isPublic('/hubsom-admin'), isTrue);

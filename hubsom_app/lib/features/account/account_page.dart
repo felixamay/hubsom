@@ -144,6 +144,12 @@ class AccountPage extends ConsumerWidget {
               ),
               _link(
                 context,
+                Icons.mail_outline,
+                'Contact us',
+                '/contact',
+              ),
+              _link(
+                context,
                 Icons.settings_outlined,
                 'Settings',
                 '/settings',

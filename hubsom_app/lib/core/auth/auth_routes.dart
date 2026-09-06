@@ -16,6 +16,7 @@ abstract final class AuthRoutes {
     '/videos',
     '/cart',
     '/stores',
+    '/contact',
     '/auth/sign-in',
     '/auth/sign-up',
   };

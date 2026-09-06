@@ -16,6 +16,7 @@ import 'admin_accounts_page.dart';
 import 'admin_controls_page.dart';
 import 'admin_offers_page.dart';
 import 'admin_payouts_page.dart';
+import 'afia_inbox_page.dart';
 import 'afia_promotions_tab.dart';
 
 class AfiaPortalPage extends StatefulWidget {
@@ -181,6 +182,7 @@ class _AfiaShellState extends State<_AfiaShell> {
     (Icons.campaign_rounded, 'Promotions'),
     (Icons.local_offer_rounded, 'Offers'),
     (Icons.receipt_long_rounded, 'Orders'),
+    (Icons.inbox_rounded, 'Inbox'),
   ];
 
   @override
@@ -194,6 +196,7 @@ class _AfiaShellState extends State<_AfiaShell> {
       const AfiaPromotionsTab(),
       const AdminOffersPage(embedded: true),
       const _OrdersTab(),
+      const AfiaInboxPage(),
     ];
 
     final body = AnimatedSwitcher(
