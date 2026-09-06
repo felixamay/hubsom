@@ -15,6 +15,28 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "/hubsom-admin",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/hubsom-admin/**",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/Afia",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/Afia/**",
+        "destination": "/afia",
+        "type": 301
+      }
+    ],
     "rewrites": [
       {
         "source": "/afia",
@@ -22,14 +44,6 @@
       },
       {
         "source": "/afia/**",
-        "destination": "/Afia.html"
-      },
-      {
-        "source": "/Afia",
-        "destination": "/Afia.html"
-      },
-      {
-        "source": "/Afia/**",
         "destination": "/Afia.html"
       },
       {

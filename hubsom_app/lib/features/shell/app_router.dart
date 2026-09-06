@@ -391,7 +391,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AfiaPortalPage(),
       ),
       GoRoute(
-        path: AfiaAccess.appPath,
+        path: AfiaAccess.legacyAdminPath,
         parentNavigatorKey: _rootKey,
         builder: (_, __) => const AfiaPortalPage(),
       ),
@@ -531,9 +531,7 @@ String _webInitialLocation() {
   var path = Uri.base.path;
   if (path.isEmpty || path == '/index.html') path = '/';
   if (AfiaAccess.matchesPath(path)) {
-    return path.toLowerCase() == AfiaAccess.appPath
-        ? AfiaAccess.appPath
-        : AfiaAccess.path;
+    return AfiaAccess.path;
   }
   final query = Uri.base.hasQuery ? '?${Uri.base.query}' : '';
   return '$path$query';

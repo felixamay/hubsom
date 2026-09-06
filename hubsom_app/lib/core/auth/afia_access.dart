@@ -5,14 +5,15 @@ import 'package:crypto/crypto.dart';
 import '../../models/user.dart';
 import '../services/local_store.dart';
 
-/// Hubsom admin portal at `/Afia`. Not linked from buyer/seller menus.
+/// Hubsom admin portal at `https://hubsom.com/afia`.
 ///
-/// The door is a standalone login (owner email + portal password). A Hubsom
-/// storefront session is not required — visiting the URL always shows a real
-/// admin webpage.
+/// Not linked from buyer/seller menus. The door is a standalone login
+/// (owner email + portal password). A Hubsom storefront session is not
+/// required — visiting `/afia` always shows a real admin webpage.
 abstract final class AfiaAccess {
-  static const path = '/Afia';
-  static const appPath = '/hubsom-admin';
+  static const path = '/afia';
+  static const appPath = '/afia';
+  static const legacyAdminPath = '/hubsom-admin';
   static const ownerEmail = 'felixames0808@gmail.com';
   static const _salt = 'afia-portal';
   static const _unlockKey = 'afiaUnlockedEmail';
@@ -36,21 +37,18 @@ abstract final class AfiaAccess {
     return value;
   }
 
-  /// True for `/Afia`, `/afia`, `/AFIA/`, etc.
+  /// True for `/afia`, `/Afia`, `/hubsom-admin`, etc.
   static bool matchesPath(String location) {
     final normalized = _normalizedPath(location).toLowerCase();
-    return normalized == '/afia' || normalized == '/hubsom-admin';
+    return normalized == path || normalized == legacyAdminPath;
   }
 
-  /// Canonicalize Afia / admin casing and trailing slashes.
+  /// Canonicalize to `/afia`. Old `/hubsom-admin` and `/Afia` redirect here.
   static String? canonicalRedirect(String location) {
     final normalized = _normalizedPath(location).toLowerCase();
     final raw = location.split('?').first.trim();
-    if (normalized == '/afia') {
-      return raw == '/Afia' ? null : path;
-    }
-    if (normalized == '/hubsom-admin') {
-      return raw == appPath ? null : appPath;
+    if (normalized == path || normalized == legacyAdminPath) {
+      return raw == path ? null : path;
     }
     return null;
   }

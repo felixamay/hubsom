@@ -58,7 +58,7 @@ abstract final class AuthRoutes {
 
   static bool isPublic(String location) {
     final path = location.split('?').first;
-    if (AfiaAccess.matchesPath(path) || path == AfiaAccess.appPath) return true;
+    if (AfiaAccess.matchesPath(path)) return true;
     if (signedInExact.contains(path) ||
         path.startsWith('/account/') ||
         path.startsWith('/wallet/') ||

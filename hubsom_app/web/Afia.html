@@ -14,13 +14,35 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
   <style>
     html, body { height: 100%; margin: 0; background: #0A3D5C; }
-    body {
+    #hubsom-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
       font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    #hubsom-boot[hidden] { display: none; }
+    #hubsom-boot h1 { margin: 0 0 8px; font-size: 28px; }
+    #hubsom-boot p { margin: 0; opacity: 0.85; }
+    #afia-door {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
+      background: #0A3D5C;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
     }
+    #afia-door[hidden] { display: none; }
     .card {
       width: 100%;
       max-width: 420px;
@@ -56,17 +78,39 @@
   </style>
 </head>
 <body>
-  <form id="afia-form" class="card" autocomplete="on">
+  <div id="hubsom-boot" hidden>
     <h1>Hubsom Admin</h1>
-    <p>Afia console</p>
-    <label for="afia-email">Email</label>
-    <input id="afia-email" name="email" type="email" autocomplete="username" required>
-    <label for="afia-password">Password</label>
-    <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
-    <p id="afia-error"></p>
-    <button type="submit">Open console</button>
-  </form>
+    <p>Opening the Afia console…</p>
+  </div>
+  <div id="afia-door">
+    <form id="afia-form" class="card" autocomplete="on">
+      <h1>Hubsom Admin</h1>
+      <p>Afia console</p>
+      <label for="afia-email">Email</label>
+      <input id="afia-email" name="email" type="email" autocomplete="username" required>
+      <label for="afia-password">Password</label>
+      <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
+      <p id="afia-error"></p>
+      <button type="submit">Open console</button>
+    </form>
+  </div>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) { reg.unregister(); });
+      });
+      navigator.serviceWorker.register = function () {
+        return Promise.reject(new Error('Hubsom disables service workers so account updates are not stuck on an old build'));
+      };
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (key) { caches.delete(key); });
+      });
+    }
+  </script>
   <script src="/afia_gate.js"></script>
   <script>hubsomAfiaStart();</script>
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
