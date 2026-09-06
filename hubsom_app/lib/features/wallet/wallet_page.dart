@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants/hubsom_commission.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/admin_treasury_store.dart';
 import '../../core/services/gift_store.dart';
+import '../../core/services/payment_account_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
-import '../../models/seller_payout.dart';
 import '../../widgets/gift_points_sheet.dart';
 
 class WalletPage extends ConsumerStatefulWidget {
@@ -19,22 +17,54 @@ class WalletPage extends ConsumerStatefulWidget {
 }
 
 class _WalletPageState extends ConsumerState<WalletPage> {
-  List<SellerPayout> _payouts = const [];
+  final _amount = TextEditingController();
+  final _handle = TextEditingController();
+  String _rail = 'mtn-momo';
+  bool _busy = false;
+  String? _error;
+
+  static const _rails = <(String, String)>[
+    ('mtn-momo', 'MTN MoMo'),
+    ('telecel-cash', 'Telecel Cash'),
+    ('airteltigo-money', 'AirtelTigo Money'),
+  ];
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPayouts());
+  void dispose() {
+    _amount.dispose();
+    _handle.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadPayouts() async {
+  Future<void> _withdraw() async {
     final user = ref.read(authStateProvider).valueOrNull;
     if (user == null) return;
+    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
-      await AdminTreasuryStore.syncFromOrders();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() => _payouts = AdminTreasuryStore.payoutsFor(user));
+      final result = await PaymentAccountStore.withdraw(
+        user: user,
+        amountGhs: amount,
+        rail: _rail,
+        handle: _handle.text.trim(),
+      );
+      ref.read(authStateProvider.notifier).applyLocalUser(result.user);
+      if (!mounted) return;
+      _amount.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Withdrew ${formatGhs(amount)}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -42,9 +72,6 @@ class _WalletPageState extends ConsumerState<WalletPage> {
     final user = ref.watch(authStateProvider).valueOrNull;
     final hostEarnings =
         user == null ? 0.0 : GiftStore.pendingEarningsGhs(user);
-    final pending = _payouts.where((p) => p.isPending).toList();
-    final paid = _payouts.where((p) => p.isPaid).toList();
-    final pendingGhs = pending.fold<double>(0, (s, p) => s + p.netGhs);
     return Scaffold(
       appBar: AppBar(title: const Text('Wallet')),
       body: ListView(
@@ -62,7 +89,7 @@ class _WalletPageState extends ConsumerState<WalletPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Available balance',
+                  'Withdrawable balance',
                   style: TextStyle(color: Colors.white70),
                 ),
                 Text(
@@ -81,13 +108,6 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (pendingGhs > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Sales with admin ${formatGhs(pendingGhs)} · 94% after 6% fee',
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ],
                 if (hostEarnings > 0) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -99,52 +119,9 @@ class _WalletPageState extends ConsumerState<WalletPage> {
             ),
           ),
           const SizedBox(height: 16),
-          Text(
-            'Product sales are paid to Hubsom Admin first. Admin then pays you '
-            '${HubsomCommission.sellerPercentLabel} of merchandise '
-            '(${HubsomCommission.percentLabel} Hubsom commission). '
-            'Your available balance is only money already paid out.',
-          ),
-          if (pending.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Waiting on admin',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            for (final payout in pending)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(payout.orderId),
-                subtitle: Text(
-                  'Sales ${formatGhs(payout.salesGhs)} · '
-                  'Fee ${formatGhs(payout.commissionGhs)} · '
-                  'You ${formatGhs(payout.netGhs)}',
-                ),
-              ),
-          ],
-          if (paid.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Paid by admin',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            for (final payout in paid.take(12))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(payout.orderId),
-                subtitle: Text('Received ${formatGhs(payout.netGhs)}'),
-              ),
-          ],
-          const SizedBox(height: 16),
           const Text(
-            'Buy gift points to send roses, crowns, and more during live shows. '
-            'Those payments also go to Hubsom Admin.',
+            'This payment account is for withdrawals only. '
+            'It cannot receive product payments.',
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -161,6 +138,53 @@ class _WalletPageState extends ConsumerState<WalletPage> {
                   ? 'Received gifts · ${formatGhs(hostEarnings)} to withdraw'
                   : 'Received gifts & withdraw',
             ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Withdraw',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final rail in _rails)
+                ChoiceChip(
+                  label: Text(rail.$2),
+                  selected: _rail == rail.$1,
+                  onSelected: _busy ? null : (_) => setState(() => _rail = rail.$1),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _handle,
+            keyboardType: TextInputType.phone,
+            enabled: !_busy,
+            decoration: const InputDecoration(labelText: 'MoMo number'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            enabled: !_busy,
+            decoration: const InputDecoration(labelText: 'Amount (GHS)'),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _busy || user == null ? null : _withdraw,
+            icon: const Icon(Icons.outbox_outlined),
+            label: Text(_busy ? 'Withdrawing…' : 'Withdraw'),
           ),
         ],
       ),

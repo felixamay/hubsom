@@ -301,8 +301,8 @@ class _OverviewTabState extends State<_OverviewTab> {
         const SizedBox(height: 6),
         Text(
           'Live picture of Hubsom accounts, stores, and commerce. '
-          'Buyer payments settle to Hubsom Admin, then sellers are paid '
-          '${HubsomCommission.sellerPercentLabel} after a '
+          'Product payments land on the admin receive account. '
+          'Seller and user accounts withdraw after a '
           '${HubsomCommission.percentLabel} commission.',
           style: text.bodyMedium?.copyWith(color: HubsomColors.ink.withValues(alpha: 0.7)),
         ),

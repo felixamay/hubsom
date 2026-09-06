@@ -140,6 +140,7 @@ class Order extends Equatable {
     this.shipping,
     this.paymentMethods = const [],
     this.deliveryEstimate = '',
+    this.paidToAccountId = 'pay_admin',
     required this.createdAt,
   });
 
@@ -160,6 +161,8 @@ class Order extends Equatable {
   final OrderShipping? shipping;
   final List<String> paymentMethods;
   final String deliveryEstimate;
+  /// Product payments always settle on the admin receive account.
+  final String paidToAccountId;
   final String createdAt;
 
   factory Order.fromJson(Map<String, dynamic> json) => Order(
@@ -183,6 +186,7 @@ class Order extends Equatable {
             : null,
         paymentMethods: (json['paymentMethods'] as List?)?.cast<String>() ?? const [],
         deliveryEstimate: json['deliveryEstimate'] as String? ?? '',
+        paidToAccountId: json['paidToAccountId'] as String? ?? 'pay_admin',
         createdAt: json['createdAt'] as String? ?? '',
       );
 
@@ -202,6 +206,7 @@ class Order extends Equatable {
         if (shipping != null) 'shipping': shipping!.toJson(),
         'paymentMethods': paymentMethods,
         'deliveryEstimate': deliveryEstimate,
+        'paidToAccountId': paidToAccountId,
         'createdAt': createdAt,
       };
 
@@ -287,6 +292,7 @@ class Order extends Equatable {
       shipping: shipping ?? this.shipping,
       paymentMethods: paymentMethods,
       deliveryEstimate: deliveryEstimate ?? this.deliveryEstimate,
+      paidToAccountId: paidToAccountId,
       createdAt: createdAt,
     );
   }

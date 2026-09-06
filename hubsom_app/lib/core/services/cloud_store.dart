@@ -24,6 +24,7 @@ class CloudStore {
   static const adminControls = 'adminControls';
   static const adminPayouts = 'adminPayouts';
   static const adminIntakes = 'adminIntakes';
+  static const paymentAccounts = 'paymentAccounts';
   static const deliveries = 'huberDeliveries';
   static const orders = 'orders';
   static const shipments = 'shipments';
@@ -351,6 +352,7 @@ class CloudStore {
       'promotions': promotions,
       'adminPayouts': adminPayouts,
       'adminIntakes': adminIntakes,
+      'paymentAccounts': paymentAccounts,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

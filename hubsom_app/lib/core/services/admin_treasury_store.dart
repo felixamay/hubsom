@@ -9,6 +9,7 @@ import 'admin_account_store.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'payment_account_store.dart';
 
 /// Buyer payments settle to Hubsom Admin. Sellers are paid 94% later.
 abstract final class AdminTreasuryStore {
@@ -103,7 +104,12 @@ abstract final class AdminTreasuryStore {
       commissionGhs: HubsomCommission.commissionOn(merchandise),
       buyerId: order.userId,
       createdAt: createdAt,
-      note: 'Checkout held by $adminName',
+      note: 'Product payment to admin account',
+    );
+    await PaymentAccountStore.receiveProductPayment(
+      orderId: order.id,
+      amountGhs: merchandise + shipment,
+      destinationAccountId: order.paidToAccountId,
     );
 
     final grouped = <String, List<OrderLine>>{};
@@ -211,12 +217,12 @@ abstract final class AdminTreasuryStore {
       );
     }
 
-    final credited = account.user.copyWith(
-      walletBalanceGhs:
-          HubsomCommission.roundGhs(account.user.walletBalanceGhs + current.netGhs),
+    final paidOut = await PaymentAccountStore.creditWithdrawPayout(
+      user: account.user,
+      netGhs: current.netGhs,
+      payoutId: current.id,
     );
-    await AdminAccountStore.save(credited);
-    await _mirrorSessionWallet(credited);
+    final credited = paidOut.userProfile;
 
     final paid = current.copyWith(
       status: 'paid',

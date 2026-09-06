@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_constants.dart';
-import '../../core/constants/hubsom_commission.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/shipment_fee.dart';
@@ -266,19 +265,7 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
           ? const Center(child: CircularProgressIndicator())
           : error != null
               ? Center(child: Text(error!))
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                      child: Text(
-                        'Buyers pay Hubsom Admin. You receive '
-                        '${HubsomCommission.sellerPercentLabel} of merchandise '
-                        'after a ${HubsomCommission.percentLabel} commission.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    Expanded(
-                      child: TabBarView(
+              : TabBarView(
                   controller: _tabs,
                   children: [
                     orders.isEmpty
@@ -566,9 +553,6 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
                               );
                             },
                           ),
-                  ],
-                      ),
-                    ),
                   ],
                 ),
       floatingActionButton: FloatingActionButton.extended(
