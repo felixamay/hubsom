@@ -58,6 +58,7 @@ import '../settings/passkeys_page.dart';
 import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
+import '../stores/stores_list_page.dart';
 import '../wallet/gift_points_page.dart';
 import '../wallet/received_gifts_page.dart';
 import '../wallet/wallet_page.dart';
@@ -310,6 +311,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/stores',
+        builder: (_, __) => const StoresListPage(),
       ),
       GoRoute(
         path: '/stores/:slug',
