@@ -1635,6 +1635,59 @@ class LocalCommerceStore {
     return video;
   }
 
+  static Future<void> deleteShopVideo(String videoId) async {
+    if (videoId.isEmpty) return;
+
+    final rows = _readList(_shopVideosKey);
+    rows.removeWhere((e) => e is Map && '${e['id']}' == videoId);
+    await _writeList(_shopVideosKey, rows);
+
+    final timeline = _readList(_timelineKey);
+    final removedPostIds = <String>[];
+    timeline.removeWhere((e) {
+      if (e is! Map) return false;
+      if ('${e['videoId'] ?? ''}' != videoId) return false;
+      removedPostIds.add('${e['id']}');
+      return true;
+    });
+    await _writeList(_timelineKey, timeline);
+
+    final comments = _readList(_commentsKey);
+    final removedCommentIds = <String>[];
+    comments.removeWhere((e) {
+      if (e is! Map) return false;
+      if ('${e['productId']}' != videoId) return false;
+      removedCommentIds.add('${e['id']}');
+      return true;
+    });
+    await _writeList(_commentsKey, comments);
+
+    final likes = _likesMap();
+    if (likes.containsKey(videoId)) {
+      likes.remove(videoId);
+      await _saveLikesMap(likes);
+    }
+
+    final saves = _videoSavesMap();
+    if (saves.containsKey(videoId)) {
+      saves.remove(videoId);
+      await _saveVideoSavesMap(saves);
+    }
+
+    try {
+      await CloudStore.deleteDoc(CloudStore.shopVideos, videoId);
+      for (final id in removedPostIds) {
+        if (id.isEmpty) continue;
+        await CloudStore.deleteDoc(CloudStore.timelinePosts, id);
+      }
+      for (final id in removedCommentIds) {
+        if (id.isEmpty) continue;
+        await CloudStore.deleteDoc(CloudStore.productComments, id);
+      }
+      await CloudStore.deleteDoc(CloudStore.productLikes, videoId);
+    } catch (_) {}
+  }
+
   static Future<int> recordVideoShare(String videoId) async {
     final video = getShopVideo(videoId);
     if (video == null) return 0;
