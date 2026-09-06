@@ -9,6 +9,7 @@ import 'package:hubsom_app/core/services/admin_treasury_store.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/core/services/payment_account_store.dart';
+import 'package:hubsom_app/core/services/withdrawal_store.dart';
 import 'package:hubsom_app/models/order.dart';
 import 'package:hubsom_app/models/payment_account.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -54,6 +55,7 @@ Future<void> _init() async {
   await LocalStore.setString(AdminTreasuryStore.payoutsKey, null);
   await LocalStore.setString(AdminTreasuryStore.intakesKey, null);
   await LocalStore.setString('paymentAccounts', null);
+  await LocalStore.setString(WithdrawalStore.key, null);
   await LocalStore.saveCredentialVault({
     _seller.email: {
       'email': _seller.email,
@@ -120,15 +122,63 @@ void main() {
     expect(sellerAccount.balanceGhs, 94);
     expect(sellerAccount.canReceive, isFalse);
 
+    final user = AdminAccountStore.cached()
+        .firstWhere((a) => a.email == _seller.email)
+        .user;
     final out = await PaymentAccountStore.withdraw(
-      user: AdminAccountStore.cached()
-          .firstWhere((a) => a.email == _seller.email)
-          .user,
+      user: user,
       amountGhs: 40,
       rail: 'mtn-momo',
       handle: '0240000000',
     );
     expect(out.account.balanceGhs, 54);
     expect(out.user.walletBalanceGhs, 54);
+    expect(out.request.isPending, isTrue);
+    expect(out.request.handle, '0240000000');
+    expect(out.request.amountGhs, 40);
+    expect(WithdrawalStore.pending(), hasLength(1));
+
+    final processed = await PaymentAccountStore.processWithdrawal(out.request.id);
+    expect(processed.isProcessed, isTrue);
+    expect(processed.processedAt, isNotEmpty);
+    expect(WithdrawalStore.pending(), isEmpty);
+    expect(
+      PaymentAccountStore.cachedForUser(out.user)?.balanceGhs,
+      54,
+    );
+  });
+
+  test('withdraw needs a number and stays pending until processed', () async {
+    final user = _seller.copyWith(walletBalanceGhs: 80);
+    final funded = await PaymentAccountStore.withdrawAccountFor(user);
+    expect(funded.balanceGhs, 80);
+
+    await expectLater(
+      PaymentAccountStore.withdraw(
+        user: user,
+        amountGhs: 20,
+        rail: 'mtn-momo',
+        handle: '',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('MoMo number'),
+        ),
+      ),
+    );
+
+    final submitted = await PaymentAccountStore.withdraw(
+      user: user,
+      amountGhs: 20,
+      rail: 'mtn-momo',
+      handle: '0551234567',
+    );
+    expect(submitted.request.status, 'pending');
+    expect(WithdrawalStore.forUser(_seller.id).single.isPending, isTrue);
+
+    await PaymentAccountStore.processWithdrawal(submitted.request.id);
+    expect(WithdrawalStore.forUser(_seller.id).single.isProcessed, isTrue);
   });
 }

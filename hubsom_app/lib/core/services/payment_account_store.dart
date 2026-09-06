@@ -4,9 +4,11 @@ import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../models/payment_account.dart';
 import '../../models/user.dart';
+import '../../models/withdrawal_request.dart';
 import 'admin_account_store.dart';
 import 'cloud_store.dart';
 import 'local_store.dart';
+import 'withdrawal_store.dart';
 
 /// Admin receive account + withdraw-only seller/user accounts.
 abstract final class PaymentAccountStore {
@@ -131,7 +133,13 @@ abstract final class PaymentAccountStore {
     return (admin: nextAdmin, user: nextUser, userProfile: profile);
   }
 
-  static Future<({PaymentAccount account, HubsomUser user})> withdraw({
+  /// Hold the amount and send a pending withdrawal for review.
+  static Future<
+      ({
+        PaymentAccount account,
+        HubsomUser user,
+        WithdrawalRequest request,
+      })> withdraw({
     required HubsomUser user,
     required double amountGhs,
     required String rail,
@@ -140,6 +148,10 @@ abstract final class PaymentAccountStore {
     final account = await withdrawAccountFor(user);
     if (account.canReceive) {
       throw StateError('The admin receive account is not a user withdraw account');
+    }
+    final number = handle.replaceAll(RegExp(r'\s+'), '');
+    if (number.replaceAll(RegExp(r'\D'), '').length < 9) {
+      throw StateError('Enter the MoMo number to receive this withdrawal');
     }
     final amount = HubsomCommission.roundGhs(amountGhs);
     if (amount <= 0) throw StateError('Enter an amount to withdraw');
@@ -151,13 +163,29 @@ abstract final class PaymentAccountStore {
     final next = account.copyWith(
       balanceGhs: HubsomCommission.roundGhs(account.balanceGhs - amount),
       withdrawRail: rail,
-      withdrawHandle: handle,
+      withdrawHandle: number,
     );
     final profile = user.copyWith(walletBalanceGhs: next.balanceGhs);
+    final request = WithdrawalRequest(
+      id: 'wd-${DateTime.now().microsecondsSinceEpoch}',
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      amountGhs: amount,
+      rail: rail,
+      handle: number,
+      status: 'pending',
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
     await _save(next);
     await AdminAccountStore.save(profile);
     await _mirrorSession(profile);
-    return (account: next, user: profile);
+    await WithdrawalStore.upsert(request);
+    return (account: next, user: profile, request: request);
+  }
+
+  static Future<WithdrawalRequest> processWithdrawal(String id) {
+    return WithdrawalStore.markProcessed(id);
   }
 
   static Future<PaymentAccount> spendFromWithdrawAccount({

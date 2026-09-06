@@ -4,9 +4,11 @@ import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../core/services/admin_treasury_store.dart';
 import '../../core/services/payment_account_store.dart';
+import '../../core/services/withdrawal_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/seller_payout.dart';
+import '../../models/withdrawal_request.dart';
 
 class AdminPayoutsPage extends StatefulWidget {
   const AdminPayoutsPage({super.key});
@@ -17,6 +19,7 @@ class AdminPayoutsPage extends StatefulWidget {
 
 class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
   List<SellerPayout> _payouts = const [];
+  List<WithdrawalRequest> _withdrawals = const [];
   TreasurySnapshot _snap = const TreasurySnapshot();
   bool _loading = true;
   String? _busyId;
@@ -35,10 +38,12 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
     });
     try {
       await AdminTreasuryStore.syncFromOrders();
+      await WithdrawalStore.mergeCloud();
       final payouts = await AdminTreasuryStore.listPayouts();
       if (!mounted) return;
       setState(() {
         _payouts = payouts;
+        _withdrawals = WithdrawalStore.listAll();
         _snap = AdminTreasuryStore.snapshot(payouts: payouts);
         _loading = false;
       });
@@ -94,11 +99,33 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
     }
   }
 
+  Future<void> _processWithdrawal(WithdrawalRequest row) async {
+    setState(() => _busyId = row.id);
+    try {
+      await PaymentAccountStore.processWithdrawal(row.id);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Marked ${formatGhs(row.amountGhs)} as processed'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e'.replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final pending = _payouts.where((p) => p.isPending).toList();
     final paid = _payouts.where((p) => p.isPaid).toList();
+    final pendingWithdrawals = _withdrawals.where((w) => w.isPending).toList();
+    final processedWithdrawals =
+        _withdrawals.where((w) => w.isProcessed).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
@@ -157,7 +184,33 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
           )
         else ...[
           Text(
-            'Pending',
+            'Pending withdrawals',
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          if (pendingWithdrawals.isEmpty)
+            const Text('No withdrawal submissions waiting')
+          else
+            for (final row in pendingWithdrawals)
+              _WithdrawalAdminTile(
+                request: row,
+                busy: _busyId == row.id,
+                onProcess: () => _processWithdrawal(row),
+              ),
+          const SizedBox(height: 24),
+          Text(
+            'Processed withdrawals',
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          if (processedWithdrawals.isEmpty)
+            const Text('No processed withdrawals yet')
+          else
+            for (final row in processedWithdrawals.take(40))
+              _WithdrawalAdminTile(request: row),
+          const SizedBox(height: 24),
+          Text(
+            'Pending seller payouts',
             style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
@@ -182,6 +235,40 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
               _PayoutTile(payout: payout),
         ],
       ],
+    );
+  }
+}
+
+class _WithdrawalAdminTile extends StatelessWidget {
+  const _WithdrawalAdminTile({
+    required this.request,
+    this.onProcess,
+    this.busy = false,
+  });
+
+  final WithdrawalRequest request;
+  final VoidCallback? onProcess;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(request.userName.isEmpty ? request.userEmail : request.userName),
+      subtitle: Text(
+        [
+          formatGhs(request.amountGhs),
+          request.handle,
+          request.rail,
+          if (request.userEmail.isNotEmpty) request.userEmail,
+        ].join(' · '),
+      ),
+      trailing: request.isProcessed
+          ? const Chip(label: Text('Processed'))
+          : FilledButton(
+              onPressed: busy || onProcess == null ? null : onProcess,
+              child: Text(busy ? 'Updating…' : 'Mark processed'),
+            ),
     );
   }
 }
