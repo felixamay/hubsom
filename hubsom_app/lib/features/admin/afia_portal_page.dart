@@ -247,8 +247,24 @@ class _AfiaShellState extends State<_AfiaShell> {
   }
 }
 
-class _OverviewTab extends StatelessWidget {
+class _OverviewTab extends StatefulWidget {
   const _OverviewTab();
+
+  @override
+  State<_OverviewTab> createState() => _OverviewTabState();
+}
+
+class _OverviewTabState extends State<_OverviewTab> {
+  List<AdminAccount> _users = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _users = AdminAccountStore.cached();
+    AdminAccountStore.list().then((rows) {
+      if (mounted) setState(() => _users = rows);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +275,7 @@ class _OverviewTab extends StatelessWidget {
     final orders = LocalHuberStore.listOrders();
     final offers = LocalPurchaseOfferStore.all();
     final promos = LocalPromotionStore.all();
-    final users = AdminAccountStore.cached();
+    final users = _users;
     final text = Theme.of(context).textTheme;
 
     return ListView(
