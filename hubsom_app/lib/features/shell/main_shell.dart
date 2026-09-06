@@ -50,6 +50,7 @@ class MainShell extends ConsumerWidget {
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
     ('sell', Icons.add_business_outlined, 'Sell'),
     ('dashboard', Icons.insights_outlined, 'Dashboard'),
+    ('contact', Icons.mail_outline, 'Contact us'),
   ];
 
   static const signedInBrowseItems = guestBrowseItems;
@@ -116,6 +117,7 @@ class MainShell extends ConsumerWidget {
       'flash' => '/flash-sales',
       'sell' => '/sell',
       'dashboard' => '/dashboard',
+      'contact' => '/contact',
       'account' => '/account',
       'profile' => '/account/profile',
       'saved' => '/account/saved',

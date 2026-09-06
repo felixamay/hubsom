@@ -59,6 +59,7 @@ import '../settings/settings_page.dart';
 import '../social/timeline_page.dart';
 import '../stores/store_page.dart';
 import '../stores/stores_list_page.dart';
+import '../support/contact_us_page.dart';
 import '../wallet/gift_points_page.dart';
 import '../wallet/received_gifts_page.dart';
 import '../wallet/wallet_page.dart';
@@ -327,6 +328,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           message: 'Sign in to checkout securely',
           child: CheckoutPage(),
         ),
+      ),
+      GoRoute(
+        path: '/contact',
+        builder: (_, __) => const ContactUsPage(),
       ),
       GoRoute(
         path: '/messages',
