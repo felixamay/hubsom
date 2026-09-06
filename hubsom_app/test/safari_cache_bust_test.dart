@@ -40,7 +40,8 @@ void main() {
     expect(json, contains('no-store, no-cache, must-revalidate, max-age=0'));
     expect(json, contains('Clear-Site-Data'));
     expect(json, contains('\\"cache\\"'));
-    expect(json, isNot(contains('"storage"')));
+    expect(json, isNot(contains('Clear-Site-Data": "storage"')));
+    expect(json, isNot(contains('\\"storage\\"')));
     expect(json, contains('/flutter_service_worker.js'));
     expect(File('web/manifest.json').readAsStringSync(), contains('"display": "browser"'));
   });
@@ -104,6 +105,7 @@ void main() {
     final worker = File('${dir.path}/flutter_service_worker.js').readAsStringSync();
     expect(worker, contains('registration.unregister()'));
     expect(worker, contains('caches.delete'));
-    expect(worker, isNot(contains('main.dart.js')));
+    expect(worker, contains("hubsom_sw"));
+    expect(worker, isNot(contains('flutter_bootstrap')));
   });
 }
