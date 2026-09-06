@@ -480,7 +480,6 @@ class AuthRepository {
     try {
       await _api.post('/api/auth/signout');
     } catch (_) {}
-    await AfiaAccess.lock();
     await LocalStore.clearSession();
   }
 

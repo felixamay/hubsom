@@ -5,7 +5,11 @@ import 'package:crypto/crypto.dart';
 import '../../models/user.dart';
 import '../services/local_store.dart';
 
-/// Hidden Hubsom admin door at `/Afia`. Not linked from any account menu.
+/// Hubsom admin portal at `/Afia`. Not linked from buyer/seller menus.
+///
+/// The door is a standalone login (owner email + portal password). A Hubsom
+/// storefront session is not required — visiting the URL always shows a real
+/// admin webpage.
 abstract final class AfiaAccess {
   static const path = '/Afia';
   static const ownerEmail = 'felixames0808@gmail.com';
@@ -23,21 +27,40 @@ abstract final class AfiaAccess {
 
   static bool isOwner(HubsomUser? user) => isOwnerEmail(user?.email);
 
+  static String _normalizedPath(String location) {
+    var value = location.split('?').first.trim();
+    if (value.length > 1 && value.endsWith('/')) {
+      value = value.substring(0, value.length - 1);
+    }
+    return value;
+  }
+
+  /// True for `/Afia`, `/afia`, `/AFIA/`, etc.
+  static bool matchesPath(String location) =>
+      _normalizedPath(location).toLowerCase() == '/afia';
+
+  /// Canonicalize any Afia casing / trailing slash to `/Afia`.
+  static String? canonicalRedirect(String location) {
+    if (!matchesPath(location)) return null;
+    return _normalizedPath(location) == path ? null : path;
+  }
+
   static bool checkPassword(String password) {
     final hash = sha256.convert(utf8.encode('$_salt::$password::hubsom')).toString();
     return hash == _passwordHash;
   }
 
-  static bool isUnlocked(HubsomUser? user) {
-    if (!isOwner(user)) return false;
+  static bool isUnlocked([HubsomUser? user]) {
     return LocalStore.getString(_unlockKey) == ownerEmail;
   }
 
   static Future<bool> unlock({
-    required HubsomUser? user,
+    HubsomUser? user,
+    String? email,
     required String password,
   }) async {
-    if (!isOwner(user) || !checkPassword(password)) return false;
+    final resolved = email ?? user?.email;
+    if (!isOwnerEmail(resolved) || !checkPassword(password)) return false;
     await LocalStore.setString(_unlockKey, ownerEmail);
     return true;
   }

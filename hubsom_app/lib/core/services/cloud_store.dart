@@ -20,6 +20,7 @@ class CloudStore {
   static const hubers = 'hubers';
   static const offers = 'huberOffers';
   static const purchaseOffers = 'purchaseOffers';
+  static const promotions = 'promotions';
   static const deliveries = 'huberDeliveries';
   static const orders = 'orders';
   static const shipments = 'shipments';
@@ -343,6 +344,8 @@ class CloudStore {
       'localProductReviews': productReviews,
       'localShopVideos': shopVideos,
       'localDirectMessages': directMessages,
+      'purchaseOffers': purchaseOffers,
+      'promotions': promotions,
     };
     for (final entry in mapping.entries) {
       final rows = await listDocs(entry.value);

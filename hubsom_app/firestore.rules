@@ -59,5 +59,11 @@ service cloud.firestore {
     match /directMessages/{id} {
       allow read, write: if true;
     }
+    match /purchaseOffers/{id} {
+      allow read, write: if true;
+    }
+    match /promotions/{id} {
+      allow read, write: if true;
+    }
   }
 }

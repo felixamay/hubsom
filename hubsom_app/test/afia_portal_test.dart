@@ -1,17 +1,20 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/auth/afia_access.dart';
+import 'package:hubsom_app/core/auth/auth_routes.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/providers/core_providers.dart';
 import 'package:hubsom_app/core/repositories/auth_repository.dart';
+import 'package:hubsom_app/core/repositories/catalog_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
+import 'package:hubsom_app/core/services/local_promotion_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/features/admin/afia_portal_page.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -58,10 +61,36 @@ Future<void> _init() async {
   await AfiaAccess.lock();
 }
 
+Future<void> _pumpPortal(WidgetTester tester) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
+      ],
+      child: const MaterialApp(home: AfiaPortalPage()),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(_init);
+
+  test('Afia paths canonicalize to /Afia and stay public', () {
+    expect(AfiaAccess.matchesPath('/Afia'), isTrue);
+    expect(AfiaAccess.matchesPath('/afia'), isTrue);
+    expect(AfiaAccess.matchesPath('/AFIA/'), isTrue);
+    expect(AfiaAccess.matchesPath('/account'), isFalse);
+    expect(AfiaAccess.canonicalRedirect('/Afia'), isNull);
+    expect(AfiaAccess.canonicalRedirect('/afia'), AfiaAccess.path);
+    expect(AfiaAccess.canonicalRedirect('/Afia/'), AfiaAccess.path);
+    expect(AuthRoutes.isPublic('/Afia'), isTrue);
+    expect(AuthRoutes.isPublic('/afia'), isTrue);
+    expect(AuthRoutes.requiresAdmin('/Afia'), isFalse);
+  });
 
   test('only the owner email unlocks Afia with the portal password', () async {
     expect(AfiaAccess.isOwnerEmail('felixames0808@gmail.com'), isTrue);
@@ -72,70 +101,102 @@ void main() {
 
     expect(await AfiaAccess.unlock(user: _other, password: 'Newmoney@2025'), isFalse);
     expect(AfiaAccess.isUnlocked(_other), isFalse);
+    expect(await AfiaAccess.unlock(email: 'buyer@hubsom.test', password: 'Newmoney@2025'), isFalse);
     expect(await AfiaAccess.unlock(user: _owner, password: 'wrong'), isFalse);
-    expect(await AfiaAccess.unlock(user: _owner, password: 'Newmoney@2025'), isTrue);
-    expect(AfiaAccess.isUnlocked(_owner), isTrue);
+    expect(await AfiaAccess.unlock(email: _owner.email, password: 'Newmoney@2025'), isTrue);
+    expect(AfiaAccess.isUnlocked(), isTrue);
     await AfiaAccess.lock();
-    expect(AfiaAccess.isUnlocked(_owner), isFalse);
+    expect(AfiaAccess.isUnlocked(), isFalse);
   });
 
-  testWidgets('Afia stays hidden to other accounts', (tester) async {
-    await tester.runAsync(() async {
-      await LocalStore.setSessionToken('sess');
-      await LocalStore.setUserJson(jsonEncode(_other.toJson()));
-    });
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
-        ],
-        child: const MaterialApp(home: AfiaPortalPage()),
-      ),
+  test('promotions persist and list by placement', () async {
+    await LocalPromotionStore.create(
+      title: 'Weekend live',
+      href: '/live',
+      placements: ['landing', 'marketplace'],
     );
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('Page not found'), findsOneWidget);
-    expect(find.text('Password'), findsNothing);
+    expect(LocalPromotionStore.all(), hasLength(1));
+    expect(LocalPromotionStore.forPlacement('landing').single.title, 'Weekend live');
+    expect(LocalPromotionStore.forPlacement('marketplace'), hasLength(1));
+    expect(LocalPromotionStore.forPlacement('product'), isEmpty);
+
+    final catalog = CatalogRepository(_unusedApi());
+    final landing = await catalog.listPromotions('landing');
+    expect(landing.single.title, 'Weekend live');
+  });
+
+  testWidgets('Afia URL shows a real admin login without a Hubsom session',
+      (tester) async {
+    await _pumpPortal(tester);
+    expect(find.text('Hubsom Admin'), findsOneWidget);
+    expect(find.text('Afia portal'), findsOneWidget);
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Page not found'), findsNothing);
     expect(find.text('Overview'), findsNothing);
   });
 
-  testWidgets('owner unlocks Afia and sees the portal, not a menu leak',
-      (tester) async {
+  testWidgets('wrong Afia credentials stay on the login page', (tester) async {
+    await _pumpPortal(tester);
+    await tester.enterText(find.byType(TextField).at(0), 'buyer@hubsom.test');
+    await tester.enterText(find.byType(TextField).at(1), 'Newmoney@2025');
+    await tester.tap(find.text('Sign in'));
+    await tester.pump();
     await tester.runAsync(() async {
-      await LocalStore.setSessionToken('sess');
-      await LocalStore.setUserJson(jsonEncode(_owner.toJson()));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
     });
+    await tester.pump();
+    expect(find.text('Email or password is not valid for this portal.'), findsOneWidget);
+    expect(find.text('Overview'), findsNothing);
+  });
+
+  testWidgets('owner email and password open the integrated admin portal',
+      (tester) async {
+    await _pumpPortal(tester);
+    await tester.enterText(find.byType(TextField).at(0), 'felixames0808@gmail.com');
+    await tester.enterText(find.byType(TextField).at(1), 'Newmoney@2025');
+    await tester.tap(find.text('Sign in'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    });
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Hubsom Admin'), findsWidgets);
+    expect(find.text('Overview'), findsWidgets);
+    expect(find.text('Promotions'), findsWidgets);
+    expect(find.text('Offers'), findsWidgets);
+    expect(find.text('Orders'), findsWidgets);
+    expect(find.text('Send purchase offers'), findsNothing);
+
+    await tester.tap(find.text('Promotions'));
+    await tester.pump();
+    expect(find.text('Hubsom promotions'), findsOneWidget);
+    expect(find.text('Save promotion to Hubsom'), findsOneWidget);
+  });
+
+  testWidgets('/Afia route builds the admin webpage', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/Afia',
+      routes: [
+        GoRoute(path: '/', builder: (_, __) => const Text('storefront-home')),
+        GoRoute(path: AfiaAccess.path, builder: (_, __) => const AfiaPortalPage()),
+      ],
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
         ],
-        child: const MaterialApp(home: AfiaPortalPage()),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pump();
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-    });
     await tester.pump();
-    await tester.pump();
-
-    expect(find.text('Page not found'), findsNothing);
-    expect(find.text('Afia'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'Newmoney@2025');
-    await tester.tap(find.text('Continue'));
-    await tester.pump();
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-    });
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('Overview'), findsWidgets);
-    expect(find.text('Offers'), findsWidgets);
-    expect(find.text('Orders'), findsWidgets);
-    expect(find.text('Send purchase offers'), findsNothing);
+    expect(find.text('storefront-home'), findsNothing);
+    expect(find.text('Hubsom Admin'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
   });
 }

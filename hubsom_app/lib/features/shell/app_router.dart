@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -74,9 +75,41 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: _rootKey,
-    initialLocation: '/',
+    initialLocation: _webInitialLocation(),
     refreshListenable: authRefresh,
+    errorBuilder: (context, state) => Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Page not found',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'That Hubsom page is not available.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => context.go('/'),
+                  child: const Text('Home'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
     redirect: (context, state) {
+      final afia = AfiaAccess.canonicalRedirect(state.uri.path);
+      if (afia != null) return afia;
+
       final auth = ref.read(authStateProvider);
       final loggingIn = auth.isLoading;
       if (loggingIn) return null;
@@ -476,3 +509,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+String _webInitialLocation() {
+  if (!kIsWeb) return '/';
+  var path = Uri.base.path;
+  if (path.isEmpty || path == '/index.html') path = '/';
+  if (AfiaAccess.matchesPath(path)) return AfiaAccess.path;
+  final query = Uri.base.hasQuery ? '?${Uri.base.query}' : '';
+  return '$path$query';
+}

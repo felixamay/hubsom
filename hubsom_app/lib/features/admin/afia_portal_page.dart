@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/auth/afia_access.dart';
-import '../../core/providers/core_providers.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_huber_store.dart';
+import '../../core/services/local_promotion_store.dart';
 import '../../core/services/local_purchase_offer_store.dart';
 import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -13,21 +11,24 @@ import '../../core/utils/money.dart';
 import '../../models/user.dart';
 import '../../widgets/hubsom_logo.dart';
 import 'admin_offers_page.dart';
+import 'afia_promotions_tab.dart';
 
-class AfiaPortalPage extends ConsumerStatefulWidget {
+class AfiaPortalPage extends StatefulWidget {
   const AfiaPortalPage({super.key});
 
   @override
-  ConsumerState<AfiaPortalPage> createState() => _AfiaPortalPageState();
+  State<AfiaPortalPage> createState() => _AfiaPortalPageState();
 }
 
-class _AfiaPortalPageState extends ConsumerState<AfiaPortalPage> {
+class _AfiaPortalPageState extends State<AfiaPortalPage> {
+  final _email = TextEditingController();
   final _password = TextEditingController();
   String? _error;
   bool _busy = false;
 
   @override
   void dispose() {
+    _email.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -37,91 +38,43 @@ class _AfiaPortalPageState extends ConsumerState<AfiaPortalPage> {
       _busy = true;
       _error = null;
     });
-    final user = ref.read(authStateProvider).valueOrNull;
     final ok = await AfiaAccess.unlock(
-      user: user,
+      email: _email.text,
       password: _password.text,
     );
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _error = ok ? null : 'Could not open this page.';
+      _error = ok ? null : 'Email or password is not valid for this portal.';
       if (ok) _password.clear();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authStateProvider);
-    final user = auth.valueOrNull;
-    if (auth.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (!AfiaAccess.isOwner(user)) {
-      return const _HiddenPage();
-    }
-    if (!AfiaAccess.isUnlocked(user)) {
-      return _UnlockPage(
+    if (!AfiaAccess.isUnlocked()) {
+      return _AfiaLoginPage(
+        email: _email,
         password: _password,
         busy: _busy,
         error: _error,
         onUnlock: _unlock,
       );
     }
-    return const _AfiaShell();
+    return _AfiaShell(onLocked: () => setState(() {}));
   }
 }
 
-class _HiddenPage extends StatelessWidget {
-  const _HiddenPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const HubsomLogo(height: 48, showWordmark: true),
-                const SizedBox(height: 24),
-                Text(
-                  'Page not found',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: HubsomColors.forest,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'That Hubsom page is not available.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () => context.go('/'),
-                  child: const Text('Home'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _UnlockPage extends StatelessWidget {
-  const _UnlockPage({
+class _AfiaLoginPage extends StatelessWidget {
+  const _AfiaLoginPage({
+    required this.email,
     required this.password,
     required this.busy,
     required this.error,
     required this.onUnlock,
   });
 
+  final TextEditingController email;
   final TextEditingController password;
   final bool busy;
   final String? error;
@@ -130,47 +83,77 @@ class _UnlockPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
+      backgroundColor: HubsomColors.forest,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const HubsomLogo(height: 48, showWordmark: true),
-                const SizedBox(height: 24),
-                Text(
-                  'Afia',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: HubsomColors.forest,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const HubsomLogo(
+                        height: 48,
+                        showWordmark: true,
+                        linkToHome: false,
                       ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: password,
-                  obscureText: true,
-                  enabled: !busy,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                  onSubmitted: (_) => onUnlock(),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Hubsom Admin',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: HubsomColors.forest,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Afia portal',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: email,
+                        enabled: !busy,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.username],
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        onSubmitted: (_) => onUnlock(),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: password,
+                        obscureText: true,
+                        enabled: !busy,
+                        autofillHints: const [AutofillHints.password],
+                        decoration: const InputDecoration(labelText: 'Password'),
+                        onSubmitted: (_) => onUnlock(),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: busy ? null : onUnlock,
+                        child: Text(busy ? 'Opening…' : 'Sign in'),
+                      ),
+                    ],
                   ),
-                ],
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: busy ? null : onUnlock,
-                    child: Text(busy ? 'Opening…' : 'Continue'),
-                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -180,18 +163,31 @@ class _UnlockPage extends StatelessWidget {
 }
 
 class _AfiaShell extends StatelessWidget {
-  const _AfiaShell();
+  const _AfiaShell({required this.onLocked});
+
+  final VoidCallback onLocked;
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Afia'),
+          title: const Text('Hubsom Admin'),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await AfiaAccess.lock();
+                onLocked();
+              },
+              child: const Text('Lock'),
+            ),
+          ],
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(text: 'Overview'),
+              Tab(text: 'Promotions'),
               Tab(text: 'Offers'),
               Tab(text: 'Orders'),
             ],
@@ -200,6 +196,7 @@ class _AfiaShell extends StatelessWidget {
         body: const TabBarView(
           children: [
             _OverviewTab(),
+            AfiaPromotionsTab(),
             AdminOffersPage(embedded: true),
             _OrdersTab(),
           ],
@@ -233,6 +230,7 @@ class _OverviewTab extends StatelessWidget {
     final liveNow = lives.where((s) => s.isLive).length;
     final orders = LocalHuberStore.listOrders();
     final offers = LocalPurchaseOfferStore.all();
+    final promos = LocalPromotionStore.all();
     final users = _vaultUsers();
 
     return ListView(
@@ -248,6 +246,7 @@ class _OverviewTab extends StatelessWidget {
             _StatChip(label: 'Live now', value: '$liveNow'),
             _StatChip(label: 'Orders', value: '${orders.length}'),
             _StatChip(label: 'Offers', value: '${offers.length}'),
+            _StatChip(label: 'Promos', value: '${promos.length}'),
           ],
         ),
         const SizedBox(height: 24),

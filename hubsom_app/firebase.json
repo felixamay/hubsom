@@ -15,6 +15,22 @@
     ],
     "rewrites": [
       {
+        "source": "/Afia",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/afia",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/Afia/**",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/afia/**",
+        "destination": "/index.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
