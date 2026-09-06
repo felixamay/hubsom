@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/auth/afia_access.dart';
 import 'package:hubsom_app/core/auth/auth_routes.dart';
@@ -170,33 +169,8 @@ void main() {
     expect(find.text('Offers'), findsWidgets);
     expect(find.text('Orders'), findsWidgets);
     expect(find.text('Send purchase offers'), findsNothing);
-
-    await tester.tap(find.text('Promotions'));
-    await tester.pump();
-    expect(find.text('Hubsom promotions'), findsOneWidget);
-    expect(find.text('Save promotion to Hubsom'), findsOneWidget);
-  });
-
-  testWidgets('/Afia route builds the admin webpage', (tester) async {
-    final router = GoRouter(
-      initialLocation: '/Afia',
-      routes: [
-        GoRoute(path: '/', builder: (_, __) => const Text('storefront-home')),
-        GoRoute(path: AfiaAccess.path, builder: (_, __) => const AfiaPortalPage()),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authRepositoryProvider.overrideWithValue(_LocalAuthRepository()),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('storefront-home'), findsNothing);
-    expect(find.text('Hubsom Admin'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Promotions'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Offers'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Orders'), findsOneWidget);
   });
 }

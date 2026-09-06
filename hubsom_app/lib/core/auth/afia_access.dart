@@ -42,7 +42,8 @@ abstract final class AfiaAccess {
   /// Canonicalize any Afia casing / trailing slash to `/Afia`.
   static String? canonicalRedirect(String location) {
     if (!matchesPath(location)) return null;
-    return _normalizedPath(location) == path ? null : path;
+    final raw = location.split('?').first.trim();
+    return raw == '/Afia' ? null : '/Afia';
   }
 
   static bool checkPassword(String password) {
