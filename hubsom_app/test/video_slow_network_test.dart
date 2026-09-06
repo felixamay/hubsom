@@ -7,6 +7,7 @@ import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/providers/core_providers.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/cloud_video_media.dart';
+import 'package:hubsom_app/core/services/shop_video_merge.dart';
 import 'package:hubsom_app/features/home/home_page.dart';
 import 'package:hubsom_app/models/product.dart';
 import 'package:hubsom_app/models/shop_video.dart';
@@ -79,6 +80,32 @@ void main() {
     ]);
     expect(out, isNotNull);
     expect(utf8.decode(out!), 'HELLO-WORLD');
+  });
+
+  test('cloud hydrate keeps a local video thumbnail on Home cards', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'thumbnailUrl': 'https://cdn.hubsom.test/clip-thumb.jpg',
+          'videoUrl': 'https://cdn.hubsom.test/clip.mp4',
+        },
+      ],
+      incoming: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/clip.mp4',
+        },
+      ],
+    );
+    expect(merged, hasLength(1));
+    expect(merged.first['thumbnailUrl'], 'https://cdn.hubsom.test/clip-thumb.jpg');
   });
 
   test('shop video json keeps a video-frame thumbnail, not a product photo', () {

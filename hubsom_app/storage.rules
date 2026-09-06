@@ -4,6 +4,9 @@ service firebase.storage {
     match /shopVideos/{videoId} {
       allow read, write: if true;
     }
+    match /shopVideoThumbs/{fileName} {
+      allow read, write: if true;
+    }
     match /productDemos/{productId} {
       allow read, write: if true;
     }

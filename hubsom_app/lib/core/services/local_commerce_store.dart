@@ -14,6 +14,7 @@ import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'shop_video_merge.dart';
 import 'storage_media.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
@@ -1501,27 +1502,14 @@ class LocalCommerceStore {
     try {
       final videos = await CloudStore.listDocs(CloudStore.shopVideos);
       if (videos.isNotEmpty) {
-        final byId = <String, Map<String, dynamic>>{
+        final local = [
           for (final v in _readList(_shopVideosKey))
-            if (v is Map) '${v['id']}': Map<String, dynamic>.from(v),
-        };
-        for (final v in videos) {
-          final id = '${v['id']}';
-          final incoming = Map<String, dynamic>.from(v);
-          final existing = byId[id];
-          if (existing != null) {
-            final merged = <String, dynamic>{...existing, ...incoming};
-            final localUrl = '${existing['videoUrl'] ?? ''}';
-            final remoteUrl = '${incoming['videoUrl'] ?? ''}';
-            if (remoteUrl.isEmpty && localUrl.isNotEmpty) {
-              merged['videoUrl'] = localUrl;
-            }
-            byId[id] = merged;
-          } else {
-            byId[id] = incoming;
-          }
-        }
-        await _writeList(_shopVideosKey, byId.values.toList());
+            if (v is Map) Map<String, dynamic>.from(v),
+        ];
+        await _writeList(
+          _shopVideosKey,
+          mergeShopVideoDocs(local: local, incoming: videos),
+        );
       }
     } catch (_) {}
   }
@@ -1597,13 +1585,17 @@ class LocalCommerceStore {
     String soundTitle = '',
     String mimeType = 'video/mp4',
     String? videoUrl,
+    String? thumbnailUrl,
+    String? id,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
     }
     final seller = await ensureSellerForUser(author);
     final video = ShopVideo(
-      id: 'vid-${_uuid.v4().substring(0, 10)}',
+      id: (id != null && id.trim().isNotEmpty)
+          ? id.trim()
+          : 'vid-${_uuid.v4().substring(0, 10)}',
       authorId: author.id,
       authorName: author.name,
       authorImage: author.image ?? seller.avatar,
@@ -1616,6 +1608,7 @@ class LocalCommerceStore {
       mimeType: mimeType,
       shareCount: 0,
       videoUrl: videoUrl,
+      thumbnailUrl: thumbnailUrl,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);
