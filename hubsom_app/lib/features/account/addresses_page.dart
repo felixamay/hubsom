@@ -24,12 +24,12 @@ class AddressesPage extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'No delivery pin yet',
+                      'No delivery address yet',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Allow location to save the GPS coordinate riders should use.',
+                      'Allow location to save your delivery address.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -46,17 +46,17 @@ class AddressesPage extends ConsumerWidget {
               itemCount: addresses.length,
               itemBuilder: (_, i) {
                 final a = addresses[i];
-                final area = a.displayArea;
                 return ListTile(
                   leading: const Icon(
-                    Icons.my_location,
+                    Icons.place_outlined,
                     color: HubsomColors.forest,
                   ),
-                  title: Text(a.displayLine),
+                  title: Text(
+                    a.displayLine.isEmpty ? a.label : a.displayLine,
+                  ),
                   subtitle: Text(
                     [
                       a.label,
-                      if (area.isNotEmpty) 'Near $area',
                       if (a.phone != null && a.phone!.isNotEmpty) a.phone!,
                     ].join(' · '),
                   ),
@@ -75,11 +75,11 @@ class AddressesPage extends ConsumerWidget {
   }
 
   Future<void> _addAddress(BuildContext context, WidgetRef ref) async {
-    GeoLocation? pin;
+    UserAddress? draft;
     var busy = false;
     String? error;
 
-    final saved = await showModalBottomSheet<GeoLocation>(
+    final saved = await showModalBottomSheet<UserAddress>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -92,7 +92,8 @@ class AddressesPage extends ConsumerWidget {
                 error = null;
               });
               try {
-                pin = await ref.read(locationServiceProvider).current();
+                final pin = await ref.read(locationServiceProvider).current();
+                draft = await UserAddressStore.fromAllowedGps(pin);
               } catch (e) {
                 error = '$e';
               } finally {
@@ -112,7 +113,7 @@ class AddressesPage extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Delivery GPS pin',
+                    'Delivery address',
                     style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -120,9 +121,8 @@ class AddressesPage extends ConsumerWidget {
                   const SizedBox(height: 12),
                   GpsPinCard(
                     title: 'Your address',
-                    subtitle:
-                        'This saved pin is your address — not a default Accra location.',
-                    pin: pin,
+                    pin: draft?.location,
+                    address: draft?.displayLine,
                     busy: busy,
                     error: error,
                     onUseLocation: allow,
@@ -130,15 +130,15 @@ class AddressesPage extends ConsumerWidget {
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: () {
-                      if (pin == null) {
+                      if (draft == null) {
                         setLocal(
                           () => error = 'Allow location to save this address.',
                         );
                         return;
                       }
-                      Navigator.pop(ctx, pin);
+                      Navigator.pop(ctx, draft);
                     },
-                    child: const Text('Save GPS address'),
+                    child: const Text('Save address'),
                   ),
                 ],
               ),
@@ -150,9 +150,11 @@ class AddressesPage extends ConsumerWidget {
     if (saved == null) return;
     final user = ref.read(authStateProvider).valueOrNull;
     if (user == null) return;
+    final pin = saved.location;
+    if (pin == null) return;
     final next = await UserAddressStore.saveAllowedGps(
       user: user,
-      pin: saved,
+      pin: pin,
     );
     ref.read(authStateProvider.notifier).applyLocalUser(next);
   }

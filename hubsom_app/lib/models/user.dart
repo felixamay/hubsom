@@ -93,29 +93,50 @@ class UserAddress extends Equatable {
     String label = 'Home',
     String? phone,
     bool isDefault = true,
+    String? line1,
     String? city,
     String? region,
   }) {
+    final placeCity = (city ?? '').trim();
+    final placeRegion = (region ?? '').trim();
+    final placeLine = (line1 ?? '').trim();
+    final resolvedLine = placeLine.isNotEmpty && !looksLikeCoordinates(placeLine)
+        ? placeLine
+        : [
+            if (placeCity.isNotEmpty) placeCity,
+            if (placeRegion.isNotEmpty && placeRegion != placeCity) placeRegion,
+          ].join(', ');
     return UserAddress(
       id: id,
       label: label,
-      line1: location.coordinateLabel,
-      city: city ?? '',
-      region: region ?? '',
+      line1: resolvedLine,
+      city: placeCity,
+      region: placeRegion,
       phone: phone,
       isDefault: isDefault,
       location: location,
     );
   }
 
+  static final _coordinateLine = RegExp(
+    r'^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$',
+  );
+
+  static bool looksLikeCoordinates(String value) =>
+      _coordinateLine.hasMatch(value.trim());
+
   String get displayLine {
-    if (location != null) return location!.coordinateLabel;
-    if (line1.trim().isNotEmpty) return line1.trim();
-    return [city, region].where((e) => e.trim().isNotEmpty).join(', ');
+    final line = line1.trim();
+    if (line.isNotEmpty && !looksLikeCoordinates(line)) return line;
+    if (displayArea.isNotEmpty) return displayArea;
+    return '';
   }
 
   String get displayArea {
-    return [city, region].where((e) => e.trim().isNotEmpty).join(', ');
+    return [city, region]
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .join(', ');
   }
 
   @override

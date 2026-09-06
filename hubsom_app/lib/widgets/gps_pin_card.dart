@@ -8,15 +8,17 @@ class GpsPinCard extends StatelessWidget {
   const GpsPinCard({
     super.key,
     required this.title,
-    required this.subtitle,
     required this.pin,
     required this.busy,
     required this.onUseLocation,
+    this.subtitle,
+    this.address,
     this.error,
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
+  final String? address;
   final GeoLocation? pin;
   final bool busy;
   final VoidCallback onUseLocation;
@@ -24,7 +26,7 @@ class GpsPinCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loc = pin;
+    final place = (address ?? '').trim();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -36,17 +38,19 @@ class GpsPinCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-          if (loc != null) ...[
+          if ((subtitle ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (place.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.my_location, color: HubsomColors.live),
+                const Icon(Icons.place_outlined, color: HubsomColors.live),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${loc.coordinateLabel}${loc.source == 'gps' ? ' · GPS' : ''}',
+                    place,
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -63,7 +67,7 @@ class GpsPinCard extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.my_location),
-            label: Text(loc == null ? 'Allow location' : 'Update GPS pin'),
+            label: Text(pin == null ? 'Allow location' : 'Update location'),
           ),
           if (error != null) ...[
             const SizedBox(height: 8),
