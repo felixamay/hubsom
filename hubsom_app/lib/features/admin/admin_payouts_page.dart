@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../core/services/admin_treasury_store.dart';
+import '../../core/services/payment_account_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/seller_payout.dart';
@@ -108,9 +109,10 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Every checkout is collected by Hubsom Admin (${AfiaAccess.ownerEmail}). '
-          'Pay sellers ${HubsomCommission.sellerPercentLabel} of merchandise. '
-          'Hubsom keeps a ${HubsomCommission.percentLabel} commission.',
+          'The admin payment account (${AfiaAccess.ownerEmail}) is the only '
+          'account that receives product payments. Pay sellers into their '
+          'withdraw accounts at ${HubsomCommission.sellerPercentLabel} after a '
+          '${HubsomCommission.percentLabel} commission.',
           style: text.bodyMedium?.copyWith(
             color: HubsomColors.ink.withValues(alpha: 0.7),
           ),
@@ -120,6 +122,10 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
           spacing: 10,
           runSpacing: 10,
           children: [
+            _MoneyChip(
+              label: 'Admin account',
+              value: PaymentAccountStore.adminCached().balanceGhs,
+            ),
             _MoneyChip(label: 'Collected', value: _snap.collectedGhs),
             _MoneyChip(label: 'Commission 6%', value: _snap.commissionGhs),
             _MoneyChip(label: 'Pending sellers', value: _snap.pendingPayoutsGhs),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/order.dart';
+import '../../models/payment_account.dart';
 import '../../models/user.dart';
 import '../config/app_config.dart';
 import 'admin_treasury_store.dart';
@@ -14,13 +15,14 @@ import 'local_commerce_store.dart';
 import 'local_huber_store.dart';
 import 'local_message_store.dart';
 import 'local_store.dart';
+import 'payment_account_store.dart';
 import 'shipment_fee.dart';
 
 /// Payment rails preserved from Hubsom: Stripe, Paystack, MTN MoMo,
 /// Telecel Cash, AirtelTigo Money.
 ///
-/// Every successful checkout settles to Hubsom Admin. Sellers are paid
-/// 94% of merchandise later (6% Hubsom commission).
+/// Product checkout always settles on the admin receive account.
+/// Seller/user accounts are withdraw-only after a 6% commission.
 class PaymentService {
   PaymentService(this._api);
 
@@ -95,6 +97,17 @@ class PaymentService {
         lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
     final orderId =
         'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}';
+    if (paymentMethods.contains('wallet')) {
+      final payer = user;
+      if (payer == null) {
+        throw StateError('Sign in to pay from your payment account');
+      }
+      await PaymentAccountStore.spendFromWithdrawAccount(
+        user: payer,
+        amountGhs: merchandise + shipmentFee,
+        ref: orderId,
+      );
+    }
     final order = Order(
       id: orderId,
       subtotalGhs: merchandise + shipmentFee,
@@ -109,6 +122,7 @@ class PaymentService {
       lines: lines,
       shipping: dest,
       paymentMethods: paymentMethods,
+      paidToAccountId: PaymentAccount.adminId,
       deliveryEstimate: shipmentFee > 0
           ? ShipmentFee.customerNotice(
               orderId: orderId,

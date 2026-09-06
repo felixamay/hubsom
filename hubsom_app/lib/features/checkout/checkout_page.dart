@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_constants.dart';
-import '../../core/constants/hubsom_commission.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/payment_service.dart';
 import '../../core/services/user_address_store.dart';
@@ -148,18 +147,10 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
       final ship = order is Map
           ? (order['shipmentFeeGhs'] as num?)?.toDouble() ?? 0
           : 0.0;
-      final merchandise = order is Map
-          ? ((order['subtotalGhs'] as num?)?.toDouble() ?? 0) - ship
-          : cartQuoted.fold<double>(0, (s, e) => s + e.lineTotal);
       setState(() {
-        final placed = ship > 0
-            ? 'Order placed: $id. Shipment ${zone.isEmpty ? '' : '$zone · '}${formatGhs(ship)} sent to you. '
-            : 'Order placed: $id. ';
-        _result = placed +
-            HubsomCommission.buyerNotice(
-              merchandiseGhs: merchandise < 0 ? 0 : merchandise,
-              shipmentGhs: ship,
-            );
+        _result = ship > 0
+            ? 'Order placed: $id. Shipment ${zone.isEmpty ? '' : '$zone · '}${formatGhs(ship)} sent to you.'
+            : 'Order placed: $id';
       });
     } catch (e) {
       setState(() => _result = 'Checkout failed: $e');
@@ -214,14 +205,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             shipment > 0
                 ? 'Subtotal ${formatGhs(subtotal)} · Ship ${formatGhs(shipment)} · Total ${formatGhs(payable)}'
                 : 'Subtotal ${formatGhs(subtotal)} · ${AppConstants.deliveryEstimate}',
-          ),
-          const SizedBox(height: 8),
-          Text(
-            HubsomCommission.buyerNotice(
-              merchandiseGhs: subtotal,
-              shipmentGhs: shipment,
-            ),
-            style: Theme.of(context).textTheme.bodySmall,
           ),
           if (_result != null) ...[
             const SizedBox(height: 12),

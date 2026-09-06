@@ -73,6 +73,7 @@ Future<void> _init() async {
   await LocalStore.init();
   await LocalStore.setString(AdminTreasuryStore.payoutsKey, null);
   await LocalStore.setString(AdminTreasuryStore.intakesKey, null);
+  await LocalStore.setString('paymentAccounts', null);
   await LocalStore.setString('localOrders', null);
   await LocalStore.saveCredentialVault({
     _seller.email: {
@@ -112,6 +113,7 @@ void main() {
     expect(snap.pendingPayoutsGhs, 94);
     expect(snap.shipmentHeldGhs, 12);
     expect(AdminTreasuryStore.cachedPayouts(), hasLength(1));
+    expect(order.paidToAccountId, 'pay_admin');
 
     final paid = await AdminTreasuryStore.paySeller(
       AdminTreasuryStore.payoutId(order.id, 's1'),
