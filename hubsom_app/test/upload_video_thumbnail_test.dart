@@ -49,7 +49,7 @@ void main() {
     expect(find.text('Publish video'), findsOneWidget);
     expect(find.text('Publishing video…'), findsNothing);
     expect(
-      find.textContaining('not the product photo'),
+      find.textContaining('grab one automatically'),
       findsOneWidget,
     );
   });

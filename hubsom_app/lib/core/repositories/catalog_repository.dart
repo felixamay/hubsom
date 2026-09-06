@@ -21,12 +21,12 @@ import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
 import '../services/video_frame_thumb.dart';
 import '../services/local_blob_store.dart';
+import '../services/local_blob_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
-import '../services/local_blob_store.dart';
 import '../services/video_for_slow_network.dart';
 
 class CatalogRepository {
