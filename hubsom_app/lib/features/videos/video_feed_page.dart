@@ -5,7 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/cloud_video_media.dart';
+import '../../core/services/shop_video_poster_url.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../models/shop_video.dart';
@@ -139,6 +139,22 @@ class _VideoFeedPageState extends ConsumerState<VideoFeedPage> {
                       for (final x in _all) if (x.id == v.id) v else x,
                     ];
                   });
+                },
+                onDeleted: (videoId) {
+                  final nextVideos = _videos.where((v) => v.id != videoId).toList();
+                  final nextAll = _all.where((v) => v.id != videoId).toList();
+                  final nextIndex = nextVideos.isEmpty
+                      ? 0
+                      : _index.clamp(0, nextVideos.length - 1);
+                  setState(() {
+                    _videos = nextVideos;
+                    _all = nextAll;
+                    _index = nextIndex;
+                  });
+                  ref.invalidate(shopVideosProvider);
+                  if (nextVideos.isEmpty && mounted) {
+                    context.go('/videos');
+                  }
                 },
               ),
             ),
@@ -357,12 +373,14 @@ class _VideoSlide extends ConsumerStatefulWidget {
     required this.video,
     required this.active,
     required this.onChanged,
+    this.onDeleted,
     this.keepMedia = false,
   });
   final ShopVideo video;
   final bool active;
   final bool keepMedia;
   final ValueChanged<ShopVideo> onChanged;
+  final ValueChanged<String>? onDeleted;
 
   @override
   ConsumerState<_VideoSlide> createState() => _VideoSlideState();
@@ -545,6 +563,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
 
   Future<void> _shareMenu() async {
     if (!ensureSignedIn(context, ref, message: 'Sign in to share')) return;
+    final isOwner = ref.read(authStateProvider).valueOrNull?.id == _video.authorId;
     final choice = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -563,11 +582,24 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
                   style: TextStyle(color: Colors.white)),
               onTap: () => Navigator.pop(ctx, 'timeline'),
             ),
+            if (isOwner)
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red.shade300),
+                title: Text(
+                  'Delete video',
+                  style: TextStyle(color: Colors.red.shade300),
+                ),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
           ],
         ),
       ),
     );
     if (!mounted || choice == null) return;
+    if (choice == 'delete') {
+      await _confirmDeleteVideo();
+      return;
+    }
     if (choice == 'link') {
       await _share();
       return;
@@ -582,6 +614,43 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Shared to your timeline')),
     );
+  }
+
+  Future<void> _confirmDeleteVideo() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete video?'),
+        content: const Text(
+          'This clip will be removed from your feed, timeline, and linked product cards.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ref.read(catalogRepositoryProvider).deleteShopVideo(_video.id);
+      if (!mounted) return;
+      widget.onDeleted?.call(_video.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video deleted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
   }
 
   void _openAuthor() {
@@ -605,7 +674,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     final showMore = caption.length > 90 && !_captionExpanded;
     final shownCaption = showMore ? '${caption.substring(0, 90)}...more' : caption;
 
-    final poster = _video.videoPosterUrl;
+    final poster = ShopVideoPosterUrl.resolve(_video);
     return Stack(
       fit: StackFit.expand,
       children: [

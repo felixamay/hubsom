@@ -26,6 +26,7 @@ import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
+import '../services/local_blob_store.dart';
 import '../services/video_for_slow_network.dart';
 
 class CatalogRepository {
@@ -337,7 +338,33 @@ class CatalogRepository {
     // shopper is watching can start.
     // ignore: unawaited_futures
     _backfillShopVideoUrls(list);
-    return list;
+    final out = <ShopVideo>[];
+    for (var i = 0; i < list.length; i++) {
+      final video = list[i];
+      out.add(i < 12 ? await _persistStorageThumbIfMissing(video) : video);
+    }
+    return out;
+  }
+
+  Future<ShopVideo> _persistStorageThumbIfMissing(ShopVideo video) async {
+    final thumb = video.thumbnailUrl?.trim() ?? '';
+    if (thumb.startsWith('http://') || thumb.startsWith('https://')) {
+      return video;
+    }
+    final resolved = LocalBlobStore.resolve(thumb) ?? thumb;
+    if (resolved.isNotEmpty &&
+        !LocalBlobStore.isRef(resolved) &&
+        (resolved.startsWith('data:image') ||
+            resolved.startsWith('http://') ||
+            resolved.startsWith('https://'))) {
+      return video;
+    }
+    if (!video.hasPublishedMedia) return video;
+    final remote = await CloudMedia.getShopVideoThumbUrl(videoId: video.id);
+    if (remote == null || remote.isEmpty) return video;
+    final patched = video.copyWith(thumbnailUrl: remote);
+    await LocalCommerceStore.updateShopVideo(patched);
+    return patched;
   }
 
   Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
@@ -444,7 +471,7 @@ class CatalogRepository {
         draft.copyWith(thumbnailUrl: thumbUrl);
     // Metadata first so Home shows the card while the clip uploads.
     try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toCloudJson()]);
     } catch (_) {}
     try {
       Product? linked;
@@ -469,6 +496,33 @@ class CatalogRepository {
       ),
     );
     return video;
+  }
+
+  Future<void> deleteShopVideo(String videoId) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to delete a video');
+    final video = LocalCommerceStore.getShopVideo(videoId);
+    if (video == null) throw StateError('Video not found');
+    if (video.authorId != user.id) {
+      throw StateError('You can only delete your own videos');
+    }
+
+    await LocalCommerceStore.deleteShopVideo(videoId);
+    await ProductDemoVideoStore.remove(videoId);
+    await _patchLikedVideo(videoId, false);
+    await _patchSavedVideo(videoId, false);
+    unawaited(_deleteShopVideoInBackground(videoId));
+  }
+
+  Future<void> _deleteShopVideoInBackground(String videoId) async {
+    try {
+      await CloudMedia.deleteShopVideoAssets(videoId: videoId);
+      await CloudVideoMedia.deletePublished(videoId: videoId);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('CatalogRepository._deleteShopVideoInBackground: $e');
+      }
+    }
   }
 
   Future<void> _publishShopVideoInBackground({
@@ -500,7 +554,7 @@ class CatalogRepository {
       );
       await LocalCommerceStore.updateShopVideo(patched);
       try {
-        await CloudStore.upsertDocs(CloudStore.shopVideos, [patched.toJson()]);
+        await CloudStore.upsertDocs(CloudStore.shopVideos, [patched.toCloudJson()]);
       } catch (_) {}
     } catch (e) {
       if (kDebugMode) {

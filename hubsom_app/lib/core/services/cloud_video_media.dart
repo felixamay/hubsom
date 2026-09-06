@@ -201,4 +201,28 @@ class CloudVideoMedia {
     if (i < 0 || i == id.length - 1) return 0;
     return int.tryParse(id.substring(i + 1)) ?? 0;
   }
+
+  /// Remove Firestore chunk docs and meta for a deleted shop video.
+  static Future<void> deletePublished({required String videoId}) async {
+    if (videoId.isEmpty) return;
+    try {
+      final meta = await CloudStore.getDoc(metaCollection, videoId);
+      final expected = (meta?['chunkCount'] as num?)?.toInt() ?? 0;
+      for (var i = 0; i < expected; i++) {
+        await CloudStore.deleteDoc(chunkCollection, '${videoId}_$i');
+      }
+      await CloudStore.deleteDoc(metaCollection, videoId);
+
+      final rows = await CloudStore.listDocs(chunkCollection);
+      for (final row in rows) {
+        final owner = '${row['videoId'] ?? ''}';
+        final docId = '${row['id'] ?? ''}';
+        if (owner != videoId && !docId.startsWith('${videoId}_')) continue;
+        if (docId.isEmpty) continue;
+        await CloudStore.deleteDoc(chunkCollection, docId);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudVideoMedia.deletePublished failed: $e');
+    }
+  }
 }

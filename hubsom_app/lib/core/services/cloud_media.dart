@@ -57,4 +57,32 @@ class CloudMedia {
       return null;
     }
   }
+
+  static Future<String?> getShopVideoThumbUrl({required String videoId}) async {
+    if (!FirebaseBootstrap.ready || videoId.isEmpty) return null;
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('shopVideos/${videoId}_thumb.jpg');
+      return await ref.getDownloadURL();
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudMedia.getShopVideoThumbUrl failed: $e');
+      return null;
+    }
+  }
+
+  /// Best-effort cleanup when a seller deletes their shop clip.
+  static Future<void> deleteShopVideoAssets({required String videoId}) async {
+    if (!FirebaseBootstrap.ready || videoId.isEmpty) return;
+    for (final path in [
+      'shopVideos/$videoId',
+      'shopVideos/${videoId}_thumb.jpg',
+    ]) {
+      try {
+        await FirebaseStorage.instance.ref().child(path).delete();
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudMedia.deleteShopVideoAssets $path: $e');
+      }
+    }
+  }
 }

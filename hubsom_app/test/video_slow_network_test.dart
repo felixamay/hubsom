@@ -8,6 +8,7 @@ import 'package:hubsom_app/core/providers/core_providers.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/cloud_video_media.dart';
 import 'package:hubsom_app/core/services/shop_video_merge.dart';
+import 'package:hubsom_app/core/services/shop_video_poster_url.dart';
 import 'package:hubsom_app/features/home/home_page.dart';
 import 'package:hubsom_app/models/product.dart';
 import 'package:hubsom_app/models/shop_video.dart';
@@ -108,6 +109,42 @@ void main() {
     expect(merged.first['thumbnailUrl'], 'https://cdn.hubsom.test/clip-thumb.jpg');
   });
 
+  test('cloud hydrate keeps https thumbnail over device blob refs', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'thumbnailUrl': 'https://cdn.hubsom.test/clip-thumb.jpg',
+          'videoUrl': 'https://cdn.hubsom.test/clip.mp4',
+        },
+      ],
+      incoming: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'thumbnailUrl': 'hubsom-blob://deadbeef',
+          'videoUrl': 'https://cdn.hubsom.test/clip.mp4',
+        },
+      ],
+    );
+    expect(merged.first['thumbnailUrl'], 'https://cdn.hubsom.test/clip-thumb.jpg');
+  });
+
+  test('published shop videos without metadata use the storage still on Home',
+      () {
+    final clip = _clip(thumbnailUrl: null);
+    final poster = ShopVideoPosterUrl.resolve(clip);
+    expect(
+      poster,
+      contains('shopVideos%2Fvid-slow_thumb.jpg'),
+    );
+  });
+
   test('shop video json keeps a video-frame thumbnail, not a product photo', () {
     final parsed = ShopVideo.fromJson({
       'id': 'v1',
@@ -163,5 +200,43 @@ void main() {
     expect(thumbs, contains('https://cdn.hubsom.test/clip-thumb.jpg'));
     expect(thumbs, isNot(contains('https://cdn.hubsom.test/bag.jpg')));
     expect(thumbs, isNot(contains('https://cdn.hubsom.test/ama.png')));
+  });
+
+  testWidgets('home shop video cards fall back to storage still when metadata is empty',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          streamsProvider.overrideWith((ref) async => const []),
+          productsProvider.overrideWith((ref, args) async => [_product()]),
+          promotionsProvider.overrideWith((ref, placement) async => const []),
+          shopVideosProvider.overrideWith(
+            (ref) async => [_clip(thumbnailUrl: null)],
+          ),
+          sellersProvider.overrideWith((ref) async => const []),
+        ],
+        child: const MaterialApp(home: Scaffold(body: HomePage())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final card = find.ancestor(
+      of: find.text('Slow-network clip'),
+      matching: find.byType(InkWell),
+    );
+    final thumbs = tester
+        .widgetList<HubsomImage>(
+          find.descendant(of: card, matching: find.byType(HubsomImage)),
+        )
+        .map((w) => w.url)
+        .toList();
+    expect(
+      thumbs.single,
+      contains('shopVideos%2Fvid-slow_thumb.jpg'),
+    );
   });
 }

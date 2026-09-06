@@ -5,7 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/cloud_video_media.dart';
+import '../../core/services/shop_video_poster_url.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -702,7 +702,9 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                   mimeType: _video?.mimeType ?? 'video/mp4',
                   autoplay: widget.active,
                   mountPlayer: widget.active || widget.keepMedia,
-                  posterUrl: _video?.videoPosterUrl ?? post.videoThumbnailUrl,
+                  posterUrl: _video == null
+                      ? post.videoThumbnailUrl
+                      : ShopVideoPosterUrl.resolve(_video!),
                 )
               : _ProductHero(
                   imageUrl: post.productImage,

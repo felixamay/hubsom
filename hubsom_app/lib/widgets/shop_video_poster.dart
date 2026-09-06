@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/services/shop_video_poster_url.dart';
 import '../models/shop_video.dart';
 import 'hubsom_image.dart';
 
@@ -17,7 +18,7 @@ class ShopVideoPoster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stored = video.videoPosterUrl;
+    final stored = ShopVideoPosterUrl.resolve(video);
     if (stored != null) {
       return HubsomImage(
         url: stored,

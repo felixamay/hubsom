@@ -1,3 +1,21 @@
+String? _pickMediaUrl(String? previous, String? incoming) {
+  final keep = previous?.trim() ?? '';
+  final remote = incoming?.trim() ?? '';
+  if (keep.isEmpty) return remote.isEmpty ? null : remote;
+  if (remote.isEmpty) return keep;
+  final keepHttp = keep.startsWith('http://') || keep.startsWith('https://');
+  final remoteHttp =
+      remote.startsWith('http://') || remote.startsWith('https://');
+  if (keepHttp && !remoteHttp) return keep;
+  if (remoteHttp && !keepHttp) return remote;
+  return remote;
+}
+
+bool _isDeviceLocalMedia(String value) {
+  return value.startsWith('hubsom-blob://') ||
+      (value.startsWith('data:') && value.contains('base64,'));
+}
+
 /// Merge cloud shop-video docs into the on-device list without dropping a
 /// thumbnail or playback URL the phone already has.
 List<Map<String, dynamic>> mergeShopVideoDocs({
@@ -20,9 +38,16 @@ List<Map<String, dynamic>> mergeShopVideoDocs({
     }
     final merged = <String, dynamic>{...prev, ...next};
     for (final key in const ['videoUrl', 'thumbnailUrl', 'posterUrl', 'thumbUrl']) {
-      final keep = '${prev[key] ?? ''}'.trim();
-      final remote = '${next[key] ?? ''}'.trim();
-      if (remote.isEmpty && keep.isNotEmpty) merged[key] = keep;
+      final picked = _pickMediaUrl('${prev[key]}', '${next[key]}');
+      if (picked != null) merged[key] = picked;
+    }
+    final localThumb = '${prev['thumbnailUrl'] ?? ''}'.trim();
+    final remoteThumb = '${next['thumbnailUrl'] ?? ''}'.trim();
+    if (localThumb.isNotEmpty &&
+        _isDeviceLocalMedia(localThumb) &&
+        remoteThumb.isNotEmpty &&
+        _isDeviceLocalMedia(remoteThumb)) {
+      merged['thumbnailUrl'] = localThumb;
     }
     byId[id] = merged;
   }
