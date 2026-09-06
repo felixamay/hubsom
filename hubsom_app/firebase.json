@@ -8,6 +8,8 @@
   },
   "hosting": {
     "public": "build/web",
+    "cleanUrls": true,
+    "trailingSlash": false,
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -16,15 +18,19 @@
     "rewrites": [
       {
         "source": "/afia",
-        "destination": "/Afia/index.html"
+        "destination": "/Afia.html"
       },
       {
         "source": "/afia/**",
-        "destination": "/Afia/index.html"
+        "destination": "/Afia.html"
+      },
+      {
+        "source": "/Afia",
+        "destination": "/Afia.html"
       },
       {
         "source": "/Afia/**",
-        "destination": "/Afia/index.html"
+        "destination": "/Afia.html"
       },
       {
         "source": "**",
