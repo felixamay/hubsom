@@ -621,8 +621,17 @@ class AuthRepository {
 
     // Database first — do not create a browser-only account.
     try {
-      await CloudStore.putAccount(email, record);
-    } catch (e) {
+      await CloudStore.putAccount(email, record, createOnly: true);
+    } on StateError catch (e) {
+      if ('$e'.contains(CloudStore.alreadyExistsCode)) {
+        throw AuthException(
+          'An account with this email already exists. Please sign in.',
+        );
+      }
+      throw AuthException(
+        'Could not create your account. Check your connection and try again.',
+      );
+    } catch (_) {
       throw AuthException(
         'Could not create your account. Check your connection and try again.',
       );

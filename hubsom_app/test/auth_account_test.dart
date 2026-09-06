@@ -131,6 +131,40 @@ void main() {
     );
     expect(signedIn.email, 'ama@hubsom.test');
   });
+
+  test('one email cannot create two accounts', () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-dup',
+      email: 'ama@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'ama@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+
+    final repo = AuthRepository(ApiClient());
+    expect(
+      () => repo.signUp(
+        email: '  Ama@HUBSOM.test  ',
+        password: 'password9',
+        name: 'Ama Two',
+      ),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('already exists'),
+        ),
+      ),
+    );
+  });
 }
 
 /// Same formula as AuthRepository: sha256('$salt::$password::hubsom').
