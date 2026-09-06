@@ -17,7 +17,7 @@ class SellerHubPage extends StatelessWidget {
       ('Orders & shipments', '/seller/orders', Icons.local_shipping_outlined),
       ('Go live', '/seller/go-live', Icons.videocam),
       ('Analytics', '/seller/analytics', Icons.insights),
-      ('Payment account', '/wallet', Icons.account_balance_wallet_outlined),
+      ('Wallet', '/wallet', Icons.account_balance_wallet_outlined),
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('Seller hub')),
