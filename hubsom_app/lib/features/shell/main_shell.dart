@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
+import '../../widgets/hubsom_phone_app_bar.dart';
 import '../../widgets/responsive_scaffold.dart';
 
 /// Footer: Home / Categories / Sell / Timeline / Dashboard
@@ -60,18 +61,11 @@ class MainShell extends ConsumerWidget {
 
   /// Live / inbox icons move into ☰ below this width so Search never
   /// sits on top of the Hubsom wordmark on large phones.
-  static bool inlineHeaderExtras(double width) => width >= 520;
+  static bool inlineHeaderExtras(double width) =>
+      HubsomPhoneAppBar.inlineExtras(width);
 
-  static Widget phoneTitle({required double width}) {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: HubsomLogo(
-        height: width < 360 ? 26 : 30,
-        showWordmark: width >= 320,
-      ),
-    );
-  }
+  static Widget phoneTitle({required double width}) =>
+      HubsomPhoneAppBar.title(width: width);
 
   static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
@@ -303,67 +297,21 @@ class MainShell extends ConsumerWidget {
     }
 
     final width = MediaQuery.sizeOf(context).width;
-    const iconDensity = VisualDensity(horizontal: -2, vertical: -2);
-    final extras = inlineHeaderExtras(width);
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        title: phoneTitle(width: width),
-        actions: [
-          IconButton(
-            tooltip: 'Search',
-            visualDensity: iconDensity,
-            onPressed: () => context.go('/marketplace'),
-            icon: const Icon(Icons.search),
-          ),
-          if (extras)
-            IconButton(
-              tooltip: 'Live',
-              visualDensity: iconDensity,
-              onPressed: () => context.go('/live'),
-              icon: const Icon(Icons.videocam_outlined),
-            ),
-          if (signedIn && extras)
-            IconButton(
-              tooltip: 'Notifications',
-              visualDensity: iconDensity,
-              onPressed: () => context.go('/notifications'),
-              icon: Badge(
-                isLabelVisible: unreadNotifications > 0,
-                label: Text('$unreadNotifications'),
-                child: const Icon(Icons.notifications_outlined),
-              ),
-            ),
-          if (signedIn && extras)
-            IconButton(
-              tooltip: 'Messages',
-              visualDensity: iconDensity,
-              onPressed: () => context.go('/messages'),
-              icon: Badge(
-                isLabelVisible: unreadMessages > 0,
-                label: Text('$unreadMessages'),
-                child: const Icon(Icons.chat_bubble_outline),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Cart',
-            visualDensity: iconDensity,
-            onPressed: () => context.go('/cart'),
-            icon: Badge(
-              isLabelVisible: cartCount > 0,
-              label: Text('$cartCount'),
-              child: const Icon(Icons.shopping_bag_outlined),
-            ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Menu',
-            icon: const Icon(Icons.menu),
-            onSelected: (value) => _onMenuSelected(context, ref, value),
-            itemBuilder: (_) => menu,
-          ),
-          const SizedBox(width: 4),
-        ],
+      appBar: HubsomPhoneAppBar(
+        width: width,
+        signedIn: signedIn,
+        cartCount: cartCount,
+        unreadMessages: unreadMessages,
+        unreadNotifications: unreadNotifications,
+        menuEntries: menu,
+        onSearch: () => context.go('/marketplace'),
+        onLive: () => context.go('/live'),
+        onNotifications: () => context.go('/notifications'),
+        onMessages: () => context.go('/messages'),
+        onCart: () => context.go('/cart'),
+        onMenuSelected: (value) => _onMenuSelected(context, ref, value),
       ),
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
