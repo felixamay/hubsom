@@ -25,36 +25,12 @@ if [ ! -d "$ROOT/build/web" ]; then
   exit 1
 fi
 
-# Flutter keeps main.dart.js / flutter_bootstrap.js at the same URL every
-# release. Stamp query params so browsers do not keep a year-old bundle.
-# Also disable Flutter's service worker — older SWs cached main.dart.js forever.
+# Safari treats main.dart.js?v=stamp as the same cached URL as main.dart.js.
+# Copy JS to unique filenames and replace Flutter's service worker with a
+# kill-switch so an old PWA worker cannot keep serving last year's HTML.
 STAMP="${HOSTING_STAMP:-$(date -u +%Y%m%d%H%M%S)}"
-find "$ROOT/build/web" -name '*.html' -print0 | while IFS= read -r -d '' html; do
-  sed -i \
-    -e "s|src=\"flutter_bootstrap.js[^\"]*\"|src=\"flutter_bootstrap.js?v=${STAMP}\"|g" \
-    -e "s|content=\"flutter_bootstrap.js[^\"]*\"|content=\"flutter_bootstrap.js?v=${STAMP}\"|g" \
-    "$html"
-done
-for f in flutter_bootstrap.js flutter.js; do
-  target="$ROOT/build/web/$f"
-  if [ -f "$target" ]; then
-    python3 - "$target" "$STAMP" <<'PY'
-import pathlib, re, sys
-path = pathlib.Path(sys.argv[1])
-stamp = sys.argv[2]
-text = path.read_text()
-text = re.sub(
-    r"_flutter\.loader\.load\(\{[\s\S]*?\}\);",
-    "_flutter.loader.load({});",
-    text,
-    count=1,
-)
-text = re.sub(r"main\.dart\.js(\?v=[^\"']*)?", f"main.dart.js?v={stamp}", text)
-path.write_text(text)
-PY
-  fi
-done
-echo "Stamped hosting assets with v=${STAMP} (service worker disabled)"
+python3 "$ROOT/scripts/stamp_hosting.py" --web-dir "$ROOT/build/web" --stamp "$STAMP"
+echo "Stamped hosting assets with unique filenames (${STAMP})"
 
 export PATH="${HOME}/.npm-global/bin:${PATH}"
 if ! command -v firebase >/dev/null 2>&1; then

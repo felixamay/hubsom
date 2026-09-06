@@ -2,7 +2,7 @@
     "name": "Hubsom",
     "short_name": "Hubsom",
     "start_url": ".",
-    "display": "standalone",
+    "display": "browser",
     "background_color": "#0A3D5C",
     "theme_color": "#0A3D5C",
     "description": "Hubsom live commerce marketplace for Ghana.",
