@@ -163,7 +163,7 @@ void main() {
     expect(rows.single.sellerId, 's1');
   });
 
-  test('checkout sends the sale through Hubsom Admin', () async {
+  test('checkout records the sale on the admin receive account', () async {
     final res = await PaymentService(ApiClient()).checkout(
       items: [
         {
