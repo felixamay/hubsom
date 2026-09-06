@@ -39,7 +39,7 @@ class _AfiaPortalPageState extends State<AfiaPortalPage> {
       _error = null;
     });
     final ok = await AfiaAccess.unlock(
-      email: _email.text,
+      email: _email.text.trim(),
       password: _password.text,
     );
     if (!mounted) return;

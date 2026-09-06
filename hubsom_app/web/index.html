@@ -21,7 +21,10 @@
   <style>
     html, body { height: 100%; margin: 0; background: #0A3D5C; }
     #hubsom-boot {
-      min-height: 100%;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -41,16 +44,10 @@
     <p id="hubsom-boot-copy">Loading…</p>
   </div>
   <script>
-    (function () {
-      var path = (location.pathname || '').replace(/\/+$/, '');
-      if (path.toLowerCase() === '/afia') {
-        document.title = 'Hubsom Admin';
-        var title = document.getElementById('hubsom-boot-title');
-        var copy = document.getElementById('hubsom-boot-copy');
-        if (title) title.textContent = 'Hubsom Admin';
-        if (copy) copy.textContent = 'Opening the Afia portal…';
-      }
-    })();
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.getElementById('hubsom-boot');
+      if (boot) boot.remove();
+    });
   </script>
   <script>
     if ('serviceWorker' in navigator) {

@@ -29,9 +29,9 @@ fi
 # release. Stamp query params so browsers do not keep a year-old bundle.
 # Also disable Flutter's service worker — older SWs cached main.dart.js forever.
 STAMP="${HOSTING_STAMP:-$(date -u +%Y%m%d%H%M%S)}"
-if [ -f "$ROOT/build/web/index.html" ]; then
-  sed -i "s|flutter_bootstrap.js[^\"']*|flutter_bootstrap.js?v=${STAMP}|g" "$ROOT/build/web/index.html"
-fi
+find "$ROOT/build/web" -name '*.html' -print0 | while IFS= read -r -d '' html; do
+  sed -i "s|flutter_bootstrap.js[^\"']*|flutter_bootstrap.js?v=${STAMP}|g" "$html"
+done
 for f in flutter_bootstrap.js flutter.js; do
   target="$ROOT/build/web/$f"
   if [ -f "$target" ]; then

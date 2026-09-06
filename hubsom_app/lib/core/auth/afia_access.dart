@@ -47,7 +47,8 @@ abstract final class AfiaAccess {
   }
 
   static bool checkPassword(String password) {
-    final hash = sha256.convert(utf8.encode('$_salt::$password::hubsom')).toString();
+    final hash =
+        sha256.convert(utf8.encode('$_salt::${password.trim()}::hubsom')).toString();
     return hash == _passwordHash;
   }
 

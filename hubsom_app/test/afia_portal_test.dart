@@ -124,6 +124,17 @@ void main() {
     expect(landing.single.title, 'Weekend live');
   });
 
+  testWidgets('a saved Afia unlock opens the admin shell', (tester) async {
+    await AfiaAccess.unlock(
+      email: 'felixames0808@gmail.com',
+      password: 'Newmoney@2025',
+    );
+    await _pumpPortal(tester);
+    expect(find.text('Overview'), findsWidgets);
+    expect(find.text('Promotions'), findsWidgets);
+    expect(find.text('Sign in'), findsNothing);
+  });
+
   testWidgets('Afia URL shows a real admin login without a Hubsom session',
       (tester) async {
     await _pumpPortal(tester);

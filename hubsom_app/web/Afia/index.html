@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hubsom Admin — Afia portal">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <link rel="icon" type="image/png" href="/favicon.png"/>
+  <title>Hubsom Admin</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0A3D5C; }
+    #afia-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: #0A3D5C;
+    }
+    .afia-card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-sizing: border-box;
+    }
+    .afia-card h1 {
+      margin: 0 0 6px;
+      text-align: center;
+      color: #0A3D5C;
+      font-size: 26px;
+    }
+    .afia-card p { margin: 0 0 20px; text-align: center; color: #5b6b75; }
+    .afia-card label { display: block; margin: 0 0 6px; color: #0A3D5C; font-weight: 600; }
+    .afia-card input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border: 1px solid #c5d4de;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+    .afia-card button {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #0A3D5C;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #afia-error { color: #b42318; min-height: 1.2em; margin: 0 0 12px; }
+    #afia-opening { color: #fff; text-align: center; }
+    #afia-opening h1 { margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <div id="afia-gate">
+    <form id="afia-form" class="afia-card" autocomplete="on">
+      <h1>Hubsom Admin</h1>
+      <p>Afia portal</p>
+      <label for="afia-email">Email</label>
+      <input id="afia-email" name="email" type="email" autocomplete="username" required>
+      <label for="afia-password">Password</label>
+      <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
+      <p id="afia-error"></p>
+      <button type="submit">Sign in</button>
+    </form>
+    <div id="afia-opening" hidden>
+      <h1>Hubsom Admin</h1>
+      <p>Opening…</p>
+    </div>
+  </div>
+  <script type="application/json" id="hubsom-flutter-boot">flutter_bootstrap.js</script>
+  <script src="/afia_gate.js"></script>
+  <script>hubsomAfiaStart();</script>
+</body>
+</html>
