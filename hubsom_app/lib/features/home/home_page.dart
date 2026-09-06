@@ -362,6 +362,8 @@ class HomePage extends ConsumerWidget {
               child: _SectionHeader(
                 title: 'Stores',
                 titleStyle: _sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/stores'),
               ),
             ),
             SliverToBoxAdapter(
