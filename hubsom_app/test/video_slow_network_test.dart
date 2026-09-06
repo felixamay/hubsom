@@ -200,6 +200,15 @@ void main() {
     expect(thumbs, contains('https://cdn.hubsom.test/clip-thumb.jpg'));
     expect(thumbs, isNot(contains('https://cdn.hubsom.test/bag.jpg')));
     expect(thumbs, isNot(contains('https://cdn.hubsom.test/ama.png')));
+    expect(
+      find.ancestor(
+        of: find.byType(ShopVideoPoster),
+        matching: find.byWidgetPredicate(
+          (w) => w is ListView && w.scrollDirection == Axis.horizontal,
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('home shop video cards fall back to storage still when metadata is empty',

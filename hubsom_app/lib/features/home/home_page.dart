@@ -335,11 +335,18 @@ class HomePage extends ConsumerWidget {
               ),
             )
           else
-            SliverGrid(
-              gridDelegate: ContainedVideoGridDelegate.forContext(context),
-              delegate: SliverChildBuilderDelegate(
-                (_, i) => _HomeShopVideoCard(video: videos[i]),
-                childCount: videos.length.clamp(0, 12),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: _homeShopVideoCardWidth * 14 / 9,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: videos.length.clamp(0, 20),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) => SizedBox(
+                    width: _homeShopVideoCardWidth,
+                    child: _HomeShopVideoCard(video: videos[i]),
+                  ),
+                ),
               ),
             ),
 
@@ -447,7 +454,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// At least 3 vertical columns of portrait shop-video tiles.
+/// At least 3 vertical columns of portrait tiles (Live now grid).
 class ContainedVideoGridDelegate {
   ContainedVideoGridDelegate._();
 
@@ -476,6 +483,8 @@ class ContainedVideoGridDelegate {
 ///
 /// Do not mount a video player here — initializing every card on Home
 /// saturates a slow network before the shopper taps one clip.
+const _homeShopVideoCardWidth = 132.0;
+
 class _HomeShopVideoCard extends StatelessWidget {
   const _HomeShopVideoCard({
     required this.video,
