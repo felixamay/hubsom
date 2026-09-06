@@ -40,9 +40,13 @@ void main() {
     expect(json, contains('no-store, no-cache, must-revalidate, max-age=0'));
     expect(json, contains('Clear-Site-Data'));
     expect(json, contains('\\"cache\\"'));
-    expect(json, isNot(contains('Clear-Site-Data": "storage"')));
     expect(json, isNot(contains('\\"storage\\"')));
     expect(json, contains('/flutter_service_worker.js'));
+    // "/" and "/afia" are rewrites, not *.html — keep the header on "**".
+    expect(
+      json.contains('"source": "**"') && json.contains('Clear-Site-Data'),
+      isTrue,
+    );
     expect(File('web/manifest.json').readAsStringSync(), contains('"display": "browser"'));
   });
 
