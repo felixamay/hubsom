@@ -6,9 +6,33 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Hubsom Admin — Afia portal">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <link rel="icon" type="image/png" href="/favicon.png"/>
   <title>Hubsom Admin</title>
+  <script>
+    (function () {
+      var alreadyReloaded = false;
+      try { alreadyReloaded = sessionStorage.getItem('hubsom_sw_reloaded') === '1'; } catch (_) {}
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+        }).catch(function () {});
+      }
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (reg) { return reg.unregister(); })).then(function () {
+          if (alreadyReloaded || !regs.length) return;
+          try { sessionStorage.setItem('hubsom_sw_reloaded', '1'); } catch (_) {}
+          location.reload();
+        });
+      }).catch(function () {});
+      navigator.serviceWorker.register = function () {
+        return Promise.reject(new Error('Hubsom disables service workers so Safari cannot pin an old build'));
+      };
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
@@ -94,21 +118,6 @@
       <button type="submit">Open console</button>
     </form>
   </div>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function (regs) {
-        regs.forEach(function (reg) { reg.unregister(); });
-      });
-      navigator.serviceWorker.register = function () {
-        return Promise.reject(new Error('Hubsom disables service workers so account updates are not stuck on an old build'));
-      };
-    }
-    if (window.caches && caches.keys) {
-      caches.keys().then(function (keys) {
-        keys.forEach(function (key) { caches.delete(key); });
-      });
-    }
-  </script>
   <script src="/afia_gate.js"></script>
   <script>hubsomAfiaStart();</script>
   <script src="flutter_bootstrap.js" async></script>
