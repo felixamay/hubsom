@@ -41,17 +41,22 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     super.dispose();
   }
 
-  void _applyPin(GeoLocation pin, {UserAddress? address}) {
+  Future<void> _applyPin(GeoLocation pin, {UserAddress? address}) async {
     _gps = pin;
-    _address = address ?? UserAddressStore.fromAllowedGps(pin, phone: _phone.text.trim());
+    _address = address ??
+        await UserAddressStore.fromAllowedGps(
+          pin,
+          phone: _phone.text.trim(),
+        );
     _gpsError = null;
-    _quoteCart();
+    await _quoteCart();
   }
 
   Future<void> _quoteCart() async {
     final pin = _gps;
     if (pin == null) return;
-    final address = _address ?? UserAddressStore.fromAllowedGps(pin);
+    final address =
+        _address ?? await UserAddressStore.fromAllowedGps(pin);
     await ref.read(cartProvider.notifier).applyDestination(
       city: address.city,
       region: address.region,
@@ -66,7 +71,9 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     _phone.text = user.phone ?? '';
     final saved = UserAddressStore.defaultAddress(user);
     if (saved?.location != null) {
-      setState(() => _applyPin(saved!.location!, address: saved));
+      _applyPin(saved!.location!, address: saved).then((_) {
+        if (mounted) setState(() {});
+      });
     }
   }
 
@@ -88,12 +95,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         ref.read(authStateProvider.notifier).applyLocalUser(next);
       }
       if (!mounted) return;
-      setState(() {
-        _applyPin(
-          pin,
-          address: next == null ? null : UserAddressStore.defaultAddress(next),
-        );
-      });
+      await _applyPin(
+        pin,
+        address: next == null ? null : UserAddressStore.defaultAddress(next),
+      );
+      if (mounted) setState(() {});
     } catch (e) {
       if (!mounted) return;
       setState(() => _gpsError = '$e');
@@ -112,7 +118,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     }
     setState(() { _busy = true; _result = null; });
     try {
-      final address = _address ?? UserAddressStore.fromAllowedGps(_gps!);
+      final address =
+          _address ?? await UserAddressStore.fromAllowedGps(_gps!);
       await ref.read(cartProvider.notifier).applyDestination(
         city: address.city,
         region: address.region,
@@ -158,7 +165,6 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     final subtotal = cart.fold<double>(0, (s, e) => s + e.lineTotal);
     final shipment = cart.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
     final payable = subtotal + shipment;
-    final area = _address?.displayArea ?? '';
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
       body: ListView(
@@ -172,22 +178,12 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           const SizedBox(height: 12),
           GpsPinCard(
             title: 'Your delivery address',
-            subtitle:
-                'Riders navigate to the GPS coordinate you allow — not a default Accra address.',
             pin: _gps,
+            address: _address?.displayLine,
             busy: _gpsBusy,
             error: _gpsError,
             onUseLocation: _useGps,
           ),
-          if (_gps != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              area.isEmpty
-                  ? 'Address · ${_gps!.coordinateLabel}'
-                  : 'Address · ${_gps!.coordinateLabel} · near $area',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
           const SizedBox(height: 20),
           Text('Payment', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),

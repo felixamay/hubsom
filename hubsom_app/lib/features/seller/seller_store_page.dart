@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/place_lookup.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -31,6 +32,7 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
   String? _error;
   String? _savedHint;
   GeoLocation? _gps;
+  String? _placeLabel;
   bool _gpsBusy = false;
   String? _gpsError;
 
@@ -62,6 +64,7 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
             source: 'saved',
           );
         }
+        _placeLabel = store.displayLocation.isEmpty ? null : store.displayLocation;
       });
     } else if (mounted) {
       setState(() => _storeReady = true);
@@ -120,8 +123,21 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
     });
     try {
       final pin = await ref.read(locationServiceProvider).current();
+      final place = await PlaceLookup.reverse(pin);
       if (!mounted) return;
-      setState(() => _gps = pin);
+      if (_address.text.trim().isEmpty && place.line1.isNotEmpty) {
+        _address.text = place.line1;
+      }
+      if (_city.text.trim().isEmpty && place.city.isNotEmpty) {
+        _city.text = place.city;
+      }
+      if (place.region.isNotEmpty) {
+        _region = place.region;
+      }
+      setState(() {
+        _gps = pin;
+        _placeLabel = place.displayLine;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _gpsError = '$e');
@@ -307,10 +323,9 @@ class _SellerStorePageState extends ConsumerState<SellerStorePage> {
           ),
           const SizedBox(height: 12),
           GpsPinCard(
-            title: 'Store GPS pin',
-            subtitle:
-                'Allow location so riders can navigate to your store on OpenStreetMap.',
+            title: 'Store address',
             pin: _gps,
+            address: _placeLabel,
             busy: _gpsBusy,
             error: _gpsError,
             onUseLocation: _useGps,

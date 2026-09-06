@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import '../../models/user.dart';
-import 'ghana_places.dart';
 import 'local_store.dart';
+import 'place_lookup.dart';
 
 /// Persist the GPS pin the user allowed as their delivery address.
 class UserAddressStore {
@@ -18,20 +18,21 @@ class UserAddressStore {
     return withPin ?? (user.addresses.isEmpty ? null : user.addresses.first);
   }
 
-  static UserAddress fromAllowedGps(
+  static Future<UserAddress> fromAllowedGps(
     GeoLocation pin, {
     String? id,
     String? phone,
     bool isDefault = true,
-  }) {
-    final near = GhanaPlaces.nearest(pin.latitude, pin.longitude);
+  }) async {
+    final place = await PlaceLookup.reverse(pin);
     return UserAddress.fromGps(
       id: id ?? 'addr_${DateTime.now().millisecondsSinceEpoch}',
       location: pin,
       phone: phone,
       isDefault: isDefault,
-      city: near.city,
-      region: near.region,
+      line1: place.line1,
+      city: place.city,
+      region: place.region,
     );
   }
 
@@ -40,7 +41,7 @@ class UserAddressStore {
     required GeoLocation pin,
     String? phone,
   }) async {
-    final nextAddress = fromAllowedGps(
+    final nextAddress = await fromAllowedGps(
       pin,
       phone: phone ?? user.phone,
     );
@@ -53,6 +54,7 @@ class UserAddressStore {
           label: existing.label,
           phone: phone ?? existing.phone ?? user.phone,
           isDefault: true,
+          line1: nextAddress.line1,
           city: nextAddress.city,
           region: nextAddress.region,
         )
