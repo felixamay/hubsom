@@ -62,6 +62,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       type: 'video',
       videoId: video.id,
       videoUrl: video.videoUrl,
+      videoThumbnailUrl: video.thumbnailUrl,
       productId: linked?.id ??
           (video.productIds.isNotEmpty ? video.productIds.first : video.id),
       productName: linked?.name ??
@@ -138,6 +139,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
             productImage: post.productImage ?? synthesized.productImage,
             videoId: video.id,
             videoUrl: video.videoUrl ?? post.videoUrl,
+            videoThumbnailUrl:
+                video.thumbnailUrl ?? post.videoThumbnailUrl,
           );
         }
       }
@@ -699,7 +702,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                   mimeType: _video?.mimeType ?? 'video/mp4',
                   autoplay: widget.active,
                   mountPlayer: widget.active || widget.keepMedia,
-                  posterUrl: post.productImage,
+                  posterUrl: _video?.videoPosterUrl ?? post.videoThumbnailUrl,
                 )
               : _ProductHero(
                   imageUrl: post.productImage,

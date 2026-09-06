@@ -51,6 +51,7 @@ class TimelinePost extends Equatable {
     this.productImage,
     this.videoId,
     this.videoUrl,
+    this.videoThumbnailUrl,
     this.streamId,
     this.caption = '',
     required this.createdAt,
@@ -68,6 +69,8 @@ class TimelinePost extends Equatable {
   final String? videoId;
   /// Remote shop-video URL when this post is a video.
   final String? videoUrl;
+  /// Frame from the shop video (not the linked product photo).
+  final String? videoThumbnailUrl;
   /// Live show id when this post is a shared live.
   final String? streamId;
   final String caption;
@@ -99,6 +102,7 @@ class TimelinePost extends Equatable {
     String? productImage,
     String? videoId,
     String? videoUrl,
+    String? videoThumbnailUrl,
     String? streamId,
     String? caption,
   }) =>
@@ -113,6 +117,7 @@ class TimelinePost extends Equatable {
         productImage: productImage ?? this.productImage,
         videoId: videoId ?? this.videoId,
         videoUrl: videoUrl ?? this.videoUrl,
+        videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
         streamId: streamId ?? this.streamId,
         caption: caption ?? this.caption,
         createdAt: createdAt,
@@ -138,6 +143,8 @@ class TimelinePost extends Equatable {
       productImage: json['productImage'] as String?,
       videoId: videoId,
       videoUrl: json['videoUrl'] as String?,
+      videoThumbnailUrl: json['videoThumbnailUrl'] as String? ??
+          json['thumbnailUrl'] as String?,
       streamId: streamId,
       caption: json['caption'] as String? ?? '',
       createdAt: json['createdAt'] as String? ?? '',
@@ -155,6 +162,8 @@ class TimelinePost extends Equatable {
         if (productImage != null) 'productImage': productImage,
         if (videoId != null) 'videoId': videoId,
         if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
+        if (videoThumbnailUrl != null && videoThumbnailUrl!.isNotEmpty)
+          'videoThumbnailUrl': videoThumbnailUrl,
         if (streamId != null && streamId!.isNotEmpty) 'streamId': streamId,
         'caption': caption,
         'createdAt': createdAt,
@@ -162,5 +171,15 @@ class TimelinePost extends Equatable {
 
   @override
   List<Object?> get props =>
-      [id, type, productId, videoId, videoUrl, streamId, authorId, createdAt];
+      [
+        id,
+        type,
+        productId,
+        videoId,
+        videoUrl,
+        videoThumbnailUrl,
+        streamId,
+        authorId,
+        createdAt,
+      ];
 }

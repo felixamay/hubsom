@@ -14,6 +14,7 @@ class ShopVideo extends Equatable {
     this.mimeType = 'video/mp4',
     this.shareCount = 0,
     this.videoUrl,
+    this.thumbnailUrl,
     required this.createdAt,
   });
 
@@ -30,7 +31,15 @@ class ShopVideo extends Equatable {
   final int shareCount;
   /// Firebase Storage (or CDN) URL so other devices can play the clip.
   final String? videoUrl;
+  /// JPEG still grabbed from the clip — never a linked product photo.
+  final String? thumbnailUrl;
   final String createdAt;
+
+  /// Poster for cards / players: a frame from the video when we have one.
+  String? get videoPosterUrl {
+    final t = thumbnailUrl?.trim() ?? '';
+    return t.isEmpty ? null : t;
+  }
 
   String get displaySound {
     final s = soundTitle.trim();
@@ -64,6 +73,9 @@ class ShopVideo extends Equatable {
         mimeType: json['mimeType'] as String? ?? 'video/mp4',
         shareCount: (json['shareCount'] as num?)?.toInt() ?? 0,
         videoUrl: json['videoUrl'] as String? ?? json['url'] as String?,
+        thumbnailUrl: json['thumbnailUrl'] as String? ??
+            json['posterUrl'] as String? ??
+            json['thumbUrl'] as String?,
         createdAt: json['createdAt'] as String? ?? '',
       );
 
@@ -79,6 +91,8 @@ class ShopVideo extends Equatable {
         'mimeType': mimeType,
         'shareCount': shareCount,
         if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
+        if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty)
+          'thumbnailUrl': thumbnailUrl,
         'createdAt': createdAt,
       };
 
@@ -90,6 +104,7 @@ class ShopVideo extends Equatable {
     List<String>? productIds,
     int? shareCount,
     String? videoUrl,
+    String? thumbnailUrl,
   }) =>
       ShopVideo(
         id: id,
@@ -103,10 +118,11 @@ class ShopVideo extends Equatable {
         mimeType: mimeType,
         shareCount: shareCount ?? this.shareCount,
         videoUrl: videoUrl ?? this.videoUrl,
+        thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
         createdAt: createdAt,
       );
 
   @override
   List<Object?> get props =>
-      [id, authorId, productIds, shareCount, videoUrl, createdAt];
+      [id, authorId, productIds, shareCount, videoUrl, thumbnailUrl, createdAt];
 }

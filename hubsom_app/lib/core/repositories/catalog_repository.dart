@@ -14,8 +14,10 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
+import '../services/video_frame_thumb.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_promotion_store.dart';
 import '../services/local_purchase_offer_store.dart';
@@ -350,6 +352,35 @@ class CatalogRepository {
         await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
       } catch (_) {}
     }
+    await _backfillShopVideoThumbs(list);
+  }
+
+  /// Uploader's device: grab a video frame for older clips that only have
+  /// product photos as cards.
+  Future<void> _backfillShopVideoThumbs(List<ShopVideo> list) async {
+    final needs = list
+        .where((v) => (v.thumbnailUrl ?? '').trim().isEmpty)
+        .take(6)
+        .toList();
+    for (final video in needs) {
+      try {
+        final stored = await ProductDemoVideoStore.load(video.id);
+        if (stored == null) continue;
+        final frame = await captureShopVideoFrame(
+          bytes: stored.bytes,
+          mimeType: stored.mimeType,
+        );
+        if (frame == null || frame.isEmpty) continue;
+        final url = await CloudMedia.uploadShopVideoThumb(
+          videoId: video.id,
+          bytes: frame,
+        );
+        if (url == null || url.isEmpty) continue;
+        await LocalCommerceStore.updateShopVideo(
+          video.copyWith(thumbnailUrl: url),
+        );
+      } catch (_) {}
+    }
   }
 
   Future<ShopVideo?> getShopVideo(String id) async {
@@ -399,12 +430,27 @@ class CatalogRepository {
       bytes: prepared.bytes,
       mimeType: prepared.mimeType,
     );
-    final video = remoteUrl == null || remoteUrl.isEmpty
+    String? thumbUrl;
+    try {
+      final frame = await captureShopVideoFrame(
+        bytes: prepared.bytes,
+        mimeType: prepared.mimeType,
+      );
+      if (frame != null && frame.isNotEmpty) {
+        thumbUrl = await CloudMedia.uploadShopVideoThumb(
+          videoId: draft.id,
+          bytes: frame,
+        );
+      }
+    } catch (_) {}
+    final patched = draft.copyWith(
+      videoUrl: remoteUrl,
+      thumbnailUrl: thumbUrl,
+    );
+    final video = (remoteUrl == null || remoteUrl.isEmpty) &&
+            (thumbUrl == null || thumbUrl.isEmpty)
         ? draft
-        : (await LocalCommerceStore.updateShopVideo(
-              draft.copyWith(videoUrl: remoteUrl),
-            )) ??
-            draft.copyWith(videoUrl: remoteUrl);
+        : (await LocalCommerceStore.updateShopVideo(patched)) ?? patched;
     // Force metadata to cloud even if media publish failed (other devices
     // still see the card; media hydrates when bytes become available).
     try {
@@ -547,15 +593,22 @@ class CatalogRepository {
         // Enrich existing posts with remote videoUrl when missing.
         for (final entry in byId.entries.toList()) {
           final post = entry.value;
-          if (!post.isLivePost &&
-              post.videoId == video.id &&
-              (post.videoUrl == null || post.videoUrl!.isEmpty) &&
-              video.videoUrl != null &&
-              video.videoUrl!.isNotEmpty) {
-            byId[entry.key] = post.copyWith(
-              type: 'video',
-              videoUrl: video.videoUrl,
-            );
+          if (!post.isLivePost && post.videoId == video.id) {
+            final needUrl = (post.videoUrl == null || post.videoUrl!.isEmpty) &&
+                video.videoUrl != null &&
+                video.videoUrl!.isNotEmpty;
+            final needThumb = (post.videoThumbnailUrl == null ||
+                    post.videoThumbnailUrl!.isEmpty) &&
+                video.thumbnailUrl != null &&
+                video.thumbnailUrl!.isNotEmpty;
+            if (needUrl || needThumb) {
+              byId[entry.key] = post.copyWith(
+                type: 'video',
+                videoUrl: needUrl ? video.videoUrl : post.videoUrl,
+                videoThumbnailUrl:
+                    needThumb ? video.thumbnailUrl : post.videoThumbnailUrl,
+              );
+            }
           }
         }
         continue;
@@ -573,6 +626,7 @@ class CatalogRepository {
         type: 'video',
         videoId: video.id,
         videoUrl: video.videoUrl,
+        videoThumbnailUrl: video.thumbnailUrl,
         productId: linked?.id ??
             (video.productIds.isNotEmpty ? video.productIds.first : video.id),
         productName: linked?.name ??

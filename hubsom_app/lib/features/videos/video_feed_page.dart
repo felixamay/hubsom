@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/cloud_video_media.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../models/shop_video.dart';
@@ -383,6 +384,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
   late final AnimationController _discCtrl;
   late final AnimationController _heartBurst;
   Offset? _burstAt;
+  int _mediaGen = 0;
 
   @override
   void initState() {
@@ -399,6 +401,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     if (widget.active) _discCtrl.repeat();
     _syncSocial();
     _loadProducts();
+    _hydrateMedia();
   }
 
   @override
@@ -408,6 +411,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
       _video = widget.video;
       _syncSocial();
       _loadProducts();
+      _hydrateMedia();
     } else if (oldWidget.video != widget.video) {
       _video = widget.video;
     }
@@ -437,6 +441,25 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
       _comments = catalog.videoCommentCount(_video.id);
       _saves = catalog.videoSaveCount(_video.id);
     });
+  }
+
+  Future<void> _hydrateMedia() async {
+    final catalog = ref.read(catalogRepositoryProvider);
+    try {
+      final fresh = await catalog.getShopVideo(_video.id);
+      if (fresh != null && mounted) {
+        setState(() => _video = fresh);
+      }
+    } catch (_) {}
+    if (_video.hasRemoteVideo) return;
+    try {
+      final ok = await CloudVideoMedia.ensureLocalBytes(
+        videoId: _video.id,
+        videoUrl: _video.videoUrl,
+        mimeType: _video.mimeType,
+      );
+      if (ok && mounted) setState(() => _mediaGen++);
+    } catch (_) {}
   }
 
   Future<void> _loadProducts() async {
@@ -582,9 +605,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     final showMore = caption.length > 90 && !_captionExpanded;
     final shownCaption = showMore ? '${caption.substring(0, 90)}...more' : caption;
 
-    final poster = _products.isNotEmpty && _products.first.images.isNotEmpty
-        ? _products.first.images.first
-        : _video.authorImage;
+    final poster = _video.videoPosterUrl;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -593,6 +614,7 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
           onDoubleTap: () => _toggleLike(at: _burstAt),
           child: widget.active || widget.keepMedia
               ? ProductDemoVideoPlayer(
+                  key: ValueKey('feed-${_video.id}-$_mediaGen'),
                   productId: _video.id,
                   remoteUrl: _video.hasRemoteVideo ? _video.videoUrl : null,
                   expand: true,

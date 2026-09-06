@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,9 +10,11 @@ import 'package:hubsom_app/core/services/cloud_video_media.dart';
 import 'package:hubsom_app/features/home/home_page.dart';
 import 'package:hubsom_app/models/product.dart';
 import 'package:hubsom_app/models/shop_video.dart';
+import 'package:hubsom_app/widgets/hubsom_image.dart';
 import 'package:hubsom_app/widgets/product_demo_video_player.dart';
+import 'package:hubsom_app/widgets/shop_video_poster.dart';
 
-ShopVideo _clip() => ShopVideo(
+ShopVideo _clip({String? thumbnailUrl}) => ShopVideo(
       id: 'vid-slow',
       authorId: 'u1',
       authorName: 'Ama Seller',
@@ -18,6 +22,7 @@ ShopVideo _clip() => ShopVideo(
       caption: 'Slow-network clip',
       productIds: const ['p1'],
       videoUrl: 'https://cdn.hubsom.test/clip.mp4',
+      thumbnailUrl: thumbnailUrl,
       createdAt: '2026-09-06T00:00:00Z',
     );
 
@@ -48,7 +53,48 @@ void main() {
     expect(ok, isFalse);
   });
 
-  testWidgets('home shop video cards show a still instead of starting players',
+  test('old firestore chunk docs still assemble when ids are not sequential',
+      () {
+    final a = utf8.encode('HELLO-');
+    final b = utf8.encode('WORLD');
+    final out = CloudVideoMedia.assembleChunkDocs('vid-old', [
+      {
+        'id': 'legacy-chunk-b',
+        'videoId': 'vid-old',
+        'index': 1,
+        'data': base64Encode(b),
+      },
+      {
+        'id': 'legacy-chunk-a',
+        'videoId': 'vid-old',
+        'index': 0,
+        'data': base64Encode(a),
+      },
+      {
+        'id': 'other_0',
+        'videoId': 'someone-else',
+        'index': 0,
+        'data': base64Encode(utf8.encode('NOPE')),
+      },
+    ]);
+    expect(out, isNotNull);
+    expect(utf8.decode(out!), 'HELLO-WORLD');
+  });
+
+  test('shop video json keeps a video-frame thumbnail, not a product photo', () {
+    final parsed = ShopVideo.fromJson({
+      'id': 'v1',
+      'authorId': 'u1',
+      'authorName': 'Ama',
+      'createdAt': '2026-09-06T00:00:00Z',
+      'videoUrl': 'https://cdn.hubsom.test/clip.mp4',
+      'thumbnailUrl': 'https://cdn.hubsom.test/clip-thumb.jpg',
+    });
+    expect(parsed.videoPosterUrl, 'https://cdn.hubsom.test/clip-thumb.jpg');
+    expect(parsed.toJson()['thumbnailUrl'], parsed.thumbnailUrl);
+  });
+
+  testWidgets('home shop video cards show a video frame, not the product photo',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -59,7 +105,11 @@ void main() {
           streamsProvider.overrideWith((ref) async => const []),
           productsProvider.overrideWith((ref, args) async => [_product()]),
           promotionsProvider.overrideWith((ref, placement) async => const []),
-          shopVideosProvider.overrideWith((ref) async => [_clip()]),
+          shopVideosProvider.overrideWith(
+            (ref) async => [
+              _clip(thumbnailUrl: 'https://cdn.hubsom.test/clip-thumb.jpg'),
+            ],
+          ),
           sellersProvider.overrideWith((ref) async => const []),
         ],
         child: const MaterialApp(home: Scaffold(body: HomePage())),
@@ -70,6 +120,21 @@ void main() {
 
     expect(find.text('Slow-network clip'), findsOneWidget);
     expect(find.byType(ProductDemoVideoPlayer), findsNothing);
+    expect(find.byType(ShopVideoPoster), findsOneWidget);
     expect(find.byIcon(Icons.play_circle_fill), findsWidgets);
+
+    final card = find.ancestor(
+      of: find.text('Slow-network clip'),
+      matching: find.byType(InkWell),
+    );
+    final thumbs = tester
+        .widgetList<HubsomImage>(
+          find.descendant(of: card, matching: find.byType(HubsomImage)),
+        )
+        .map((w) => w.url)
+        .toList();
+    expect(thumbs, contains('https://cdn.hubsom.test/clip-thumb.jpg'));
+    expect(thumbs, isNot(contains('https://cdn.hubsom.test/bag.jpg')));
+    expect(thumbs, isNot(contains('https://cdn.hubsom.test/ama.png')));
   });
 }

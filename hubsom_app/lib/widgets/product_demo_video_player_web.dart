@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/services/cloud_video_media.dart';
 import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
@@ -113,54 +114,68 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       });
     }
 
-    // Stream https first. Loading a full Hive blob on web blocks the first
-    // frame on a slow phone even when the CDN could start after 100KB.
+    // Stream https first. If that fails (old moov-at-end MP4, dead URL,
+    // Safari), pull Firestore chunks / Hive so the clip still plays on a
+    // new phone that never uploaded it.
     final remote = widget.remoteUrl?.trim();
     if (_isPlayableRemote(remote)) {
-      await _attachController(
+      final streamed = await _attachController(
         VideoPlayerController.networkUrl(
           Uri.parse(remote!),
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
         ),
         gen: gen,
       );
-      return;
+      if (streamed) return;
     }
 
-    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (await _attachStored(gen)) return;
+
+    await CloudVideoMedia.ensureLocalBytes(
+      videoId: widget.productId,
+      videoUrl: widget.remoteUrl,
+      allowChunkFallbackForHttp: true,
+    );
     if (!mounted || gen != _loadGen) return;
-
-    if (stored != null && stored.bytes.isNotEmpty) {
-      final blobUrl = await createDemoVideoObjectUrl(
-        bytes: stored.bytes,
-        mimeType: stored.mimeType.isEmpty ? 'video/mp4' : stored.mimeType,
-      );
-      if (!mounted || gen != _loadGen) {
-        revokeDemoVideoObjectUrl(blobUrl);
-        return;
-      }
-      _ownedBlobUrl = blobUrl;
-      await _attachController(
-        VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
-        gen: gen,
-      );
-      return;
-    }
+    if (await _attachStored(gen)) return;
 
     if (mounted && gen == _loadGen) {
       setState(() => _error = widget.expand ? null : 'No demo video');
     }
   }
 
-  Future<void> _attachController(
+  Future<bool> _attachStored(int gen) async {
+    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (!mounted || gen != _loadGen) return false;
+    if (stored == null || stored.bytes.isEmpty) return false;
+    final blobUrl = await createDemoVideoObjectUrl(
+      bytes: stored.bytes,
+      mimeType: stored.mimeType.isEmpty ? 'video/mp4' : stored.mimeType,
+    );
+    if (!mounted || gen != _loadGen) {
+      revokeDemoVideoObjectUrl(blobUrl);
+      return false;
+    }
+    _ownedBlobUrl = blobUrl;
+    return _attachController(
+      VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
+      gen: gen,
+    );
+  }
+
+  Future<bool> _attachController(
     VideoPlayerController controller, {
     required int gen,
   }) async {
     try {
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 12));
       if (!mounted || gen != _loadGen) {
         await controller.dispose();
-        return;
+        return false;
+      }
+      if (controller.value.hasError) {
+        await controller.dispose();
+        return false;
       }
       await controller.setLooping(true);
       // Start muted so a later autoplay play() is allowed by the browser.
@@ -176,15 +191,12 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       if (widget.autoplay) {
         await _playMuted(controller);
       }
+      return true;
     } catch (_) {
       try {
         await controller.dispose();
       } catch (_) {}
-      if (mounted && gen == _loadGen) {
-        setState(
-          () => _error = widget.expand ? null : 'Could not play demo video',
-        );
-      }
+      return false;
     }
   }
 
