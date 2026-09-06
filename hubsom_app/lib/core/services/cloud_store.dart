@@ -433,11 +433,17 @@ class CloudStore {
       'paymentAccounts': paymentAccounts,
       'withdrawals': withdrawals,
     };
-    for (final entry in mapping.entries) {
-      final rows = await listDocs(entry.value);
-      if (rows.isEmpty) continue;
-      await LocalStore.setString(entry.key, jsonEncode(rows));
-    }
+    await Future.wait(mapping.entries.map((entry) async {
+      try {
+        final rows = await listDocs(entry.value);
+        if (rows.isEmpty) return;
+        await LocalStore.setString(entry.key, jsonEncode(rows));
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('CloudStore.hydrateLocalCache ${entry.value}: $e');
+        }
+      }
+    }));
   }
 
   static Map<String, dynamic> encodeFields(Map<String, dynamic> data) {

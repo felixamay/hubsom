@@ -68,10 +68,6 @@
             "value": "0"
           },
           {
-            "key": "Clear-Site-Data",
-            "value": "\"cache\""
-          },
-          {
             "key": "X-Content-Type-Options",
             "value": "nosniff"
           },
@@ -86,11 +82,47 @@
         ]
       },
       {
-        "source": "**/*.html",
+        "source": "/main.dart.*.js",
         "headers": [
           {
-            "key": "Clear-Site-Data",
-            "value": "\"cache\""
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_bootstrap.*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/afia_gate.*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/canvaskit/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(wasm|woff2|woff|ttf|png|jpg|jpeg|webp|svg|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
           }
         ]
       },
