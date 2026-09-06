@@ -189,6 +189,7 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
       );
       state = AsyncValue.data(user);
     } catch (e, st) {
+      await _repo.invalidateSession();
       state = const AsyncValue.data(null);
       Error.throwWithStackTrace(e, st);
     }

@@ -102,12 +102,12 @@ class AuthRepository {
         final userMap = data['user'] as Map? ?? data;
         var user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
         final token = data['token'] as String? ?? _issueLocalToken(user);
-        user = await _persist(user, token);
         await _storeLocalCredentials(
           email: normalized,
           password: password,
           user: user,
         );
+        user = await _persist(user, token);
         await _ensureHuberProfile(user, huber);
         return user;
       }
@@ -522,8 +522,8 @@ class AuthRepository {
       role: isHuber ? 'huber' : role,
       huberId: isHuber ? 'huber-$id' : null,
     );
-    user = await _persist(user, _issueLocalToken(user));
     await _storeLocalCredentials(email: email, password: password, user: user);
+    user = await _persist(user, _issueLocalToken(user));
     await _ensureHuberProfile(user, huber);
     await CloudStore.hydrateLocalCache();
     return user;
