@@ -97,10 +97,9 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
             thumbnailBytes: _thumbBytes,
           )
           .timeout(
-            Duration(seconds: (120 + (bytes.length / (200 * 1024)).ceil())
-                .clamp(120, 240)),
+            const Duration(seconds: 45),
             onTimeout: () => throw StateError(
-              'Publishing took too long. Check your connection and try again.',
+              'Saving your video took too long. Try a shorter clip or check storage space.',
             ),
           );
       ref.invalidate(shopVideosProvider);
