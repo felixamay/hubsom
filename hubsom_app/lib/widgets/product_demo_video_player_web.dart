@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import 'hubsom_image.dart';
 
 /// Web: play from local bytes (blob URL) and/or a real http(s) remote URL.
 ///
@@ -19,6 +20,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.expand = false,
     this.borderRadius = 14,
     this.showPlayOverlay = true,
+    this.posterUrl,
   });
 
   final String productId;
@@ -28,6 +30,8 @@ class ProductDemoVideoPlayer extends StatefulWidget {
   final bool expand;
   final double borderRadius;
   final bool showPlayOverlay;
+  /// Still shown instantly while the first video bytes arrive.
+  final String? posterUrl;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -109,6 +113,20 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       });
     }
 
+    // Stream https first. Loading a full Hive blob on web blocks the first
+    // frame on a slow phone even when the CDN could start after 100KB.
+    final remote = widget.remoteUrl?.trim();
+    if (_isPlayableRemote(remote)) {
+      await _attachController(
+        VideoPlayerController.networkUrl(
+          Uri.parse(remote!),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+        ),
+        gen: gen,
+      );
+      return;
+    }
+
     final stored = await ProductDemoVideoStore.load(widget.productId);
     if (!mounted || gen != _loadGen) return;
 
@@ -124,15 +142,6 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       _ownedBlobUrl = blobUrl;
       await _attachController(
         VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
-        gen: gen,
-      );
-      return;
-    }
-
-    final remote = widget.remoteUrl?.trim();
-    if (_isPlayableRemote(remote)) {
-      await _attachController(
-        VideoPlayerController.networkUrl(Uri.parse(remote!)),
         gen: gen,
       );
       return;
@@ -236,6 +245,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         expand: widget.expand,
         borderRadius: widget.borderRadius,
         showPlayOverlay: widget.showPlayOverlay,
+        posterUrl: widget.posterUrl,
         onToggle: _onTapToggle,
       );
 }
@@ -252,6 +262,7 @@ class _DemoVideoScaffold extends StatelessWidget {
     required this.borderRadius,
     required this.showPlayOverlay,
     required this.onToggle,
+    this.posterUrl,
   });
 
   final String? error;
@@ -264,6 +275,7 @@ class _DemoVideoScaffold extends StatelessWidget {
   final double borderRadius;
   final bool showPlayOverlay;
   final VoidCallback onToggle;
+  final String? posterUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -284,13 +296,25 @@ class _DemoVideoScaffold extends StatelessWidget {
       );
     }
     if (!ready || controller == null || controller!.value.hasError) {
+      final poster = posterUrl?.trim() ?? '';
       return ColoredBox(
         color: Colors.black,
-        child: Center(
-          child: CircularProgressIndicator(
-            color: expand ? Colors.white54 : HubsomColors.forest,
-            strokeWidth: expand ? 2 : 3,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (poster.isNotEmpty)
+              HubsomImage(
+                url: poster,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(color: Colors.black),
+              ),
+            Center(
+              child: CircularProgressIndicator(
+                color: expand ? Colors.white54 : HubsomColors.forest,
+                strokeWidth: expand ? 2 : 3,
+              ),
+            ),
+          ],
         ),
       );
     }

@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import 'hubsom_image.dart';
 
 class ProductDemoVideoPlayer extends StatefulWidget {
   const ProductDemoVideoPlayer({
@@ -17,6 +18,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.autoplay = false,
     this.borderRadius = 12,
     this.showPlayOverlay = true,
+    this.posterUrl,
   });
 
   final String productId;
@@ -28,6 +30,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
 
   /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
   final bool showPlayOverlay;
+  final String? posterUrl;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -98,20 +101,22 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
 
     try {
       late final VideoPlayerController controller;
-      final stored = await ProductDemoVideoStore.load(widget.productId);
-      if (!mounted || gen != _loadGen) return;
-
-      if (stored != null && stored.bytes.isNotEmpty) {
-        final path = await createDemoVideoObjectUrl(
-          bytes: stored.bytes,
-          mimeType: stored.mimeType,
+      final remote = widget.remoteUrl?.trim();
+      if (_isPlayableRemote(remote)) {
+        controller = VideoPlayerController.networkUrl(
+          Uri.parse(remote!),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
         );
-        _ownedPath = path;
-        controller = VideoPlayerController.file(File(path));
       } else {
-        final remote = widget.remoteUrl?.trim();
-        if (_isPlayableRemote(remote)) {
-          controller = VideoPlayerController.networkUrl(Uri.parse(remote!));
+        final stored = await ProductDemoVideoStore.load(widget.productId);
+        if (!mounted || gen != _loadGen) return;
+        if (stored != null && stored.bytes.isNotEmpty) {
+          final path = await createDemoVideoObjectUrl(
+            bytes: stored.bytes,
+            mimeType: stored.mimeType,
+          );
+          _ownedPath = path;
+          controller = VideoPlayerController.file(File(path));
         } else {
           if (mounted && gen == _loadGen) {
             setState(() => _error = widget.expand ? null : 'No demo video');
@@ -184,13 +189,25 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       );
     }
     if (!_ready || _controller == null) {
+      final poster = widget.posterUrl?.trim() ?? '';
       return ColoredBox(
         color: Colors.black,
-        child: Center(
-          child: CircularProgressIndicator(
-            color: widget.expand ? Colors.white54 : HubsomColors.forest,
-            strokeWidth: widget.expand ? 2 : 3,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (poster.isNotEmpty)
+              HubsomImage(
+                url: poster,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(color: Colors.black),
+              ),
+            Center(
+              child: CircularProgressIndicator(
+                color: widget.expand ? Colors.white54 : HubsomColors.forest,
+                strokeWidth: widget.expand ? 2 : 3,
+              ),
+            ),
+          ],
         ),
       );
     }

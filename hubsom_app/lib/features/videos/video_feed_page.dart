@@ -121,12 +121,14 @@ class _VideoFeedPageState extends ConsumerState<VideoFeedPage> {
             PageView.builder(
               controller: _pageCtrl,
               scrollDirection: Axis.vertical,
+              allowImplicitScrolling: true,
               itemCount: _videos.length,
               onPageChanged: (i) => setState(() => _index = i),
               itemBuilder: (_, i) => _VideoSlide(
                 key: ValueKey(_videos[i].id),
                 video: _videos[i],
                 active: i == _index,
+                keepMedia: (i - _index).abs() <= 1,
                 onChanged: (v) {
                   setState(() {
                     _videos = [
@@ -354,9 +356,11 @@ class _VideoSlide extends ConsumerStatefulWidget {
     required this.video,
     required this.active,
     required this.onChanged,
+    this.keepMedia = false,
   });
   final ShopVideo video;
   final bool active;
+  final bool keepMedia;
   final ValueChanged<ShopVideo> onChanged;
 
   @override
@@ -364,7 +368,9 @@ class _VideoSlide extends ConsumerStatefulWidget {
 }
 
 class _VideoSlideState extends ConsumerState<_VideoSlide>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => widget.active || widget.keepMedia;
   List<Product> _products = const [];
   late ShopVideo _video;
   bool _liked = false;
@@ -570,24 +576,29 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final bottomPad = MediaQuery.paddingOf(context).bottom + 12;
     final caption = _video.caption.trim();
     final showMore = caption.length > 90 && !_captionExpanded;
     final shownCaption = showMore ? '${caption.substring(0, 90)}...more' : caption;
 
+    final poster = _products.isNotEmpty && _products.first.images.isNotEmpty
+        ? _products.first.images.first
+        : _video.authorImage;
     return Stack(
       fit: StackFit.expand,
       children: [
         GestureDetector(
           onDoubleTapDown: (d) => _burstAt = d.localPosition,
           onDoubleTap: () => _toggleLike(at: _burstAt),
-          child: widget.active
+          child: widget.active || widget.keepMedia
               ? ProductDemoVideoPlayer(
                   productId: _video.id,
-                  remoteUrl: _video.videoUrl,
+                  remoteUrl: _video.hasRemoteVideo ? _video.videoUrl : null,
                   expand: true,
-                  autoplay: true,
+                  autoplay: widget.active,
                   borderRadius: 0,
+                  posterUrl: poster,
                 )
               : const ColoredBox(color: Colors.black),
         ),

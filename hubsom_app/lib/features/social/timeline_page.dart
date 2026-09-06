@@ -699,6 +699,7 @@ class _TimelineSlideState extends ConsumerState<_TimelineSlide>
                   mimeType: _video?.mimeType ?? 'video/mp4',
                   autoplay: widget.active,
                   mountPlayer: widget.active || widget.keepMedia,
+                  posterUrl: post.productImage,
                 )
               : _ProductHero(
                   imageUrl: post.productImage,
@@ -1091,6 +1092,7 @@ class _TimelineVideoSurface extends StatefulWidget {
     required this.mimeType,
     required this.autoplay,
     required this.mountPlayer,
+    this.posterUrl,
   });
 
   final String videoId;
@@ -1098,6 +1100,7 @@ class _TimelineVideoSurface extends StatefulWidget {
   final String mimeType;
   final bool autoplay;
   final bool mountPlayer;
+  final String? posterUrl;
 
   @override
   State<_TimelineVideoSurface> createState() => _TimelineVideoSurfaceState();
@@ -1171,18 +1174,28 @@ class _TimelineVideoSurfaceState extends State<_TimelineVideoSurface> {
   Widget build(BuildContext context) {
     final showPlayer = _hydrated && (_playerLocked || widget.mountPlayer);
 
-    // Always black — never flash a product still under a broken/loading video.
     if (!showPlayer) {
+      final poster = widget.posterUrl?.trim() ?? '';
       return ColoredBox(
         color: Colors.black,
-        child: widget.mountPlayer && !_hydrated
-            ? const Center(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (poster.isNotEmpty)
+              HubsomImage(
+                url: poster,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(color: Colors.black),
+              ),
+            if (widget.mountPlayer && !_hydrated)
+              const Center(
                 child: CircularProgressIndicator(
                   color: Colors.white54,
                   strokeWidth: 2,
                 ),
-              )
-            : null,
+              ),
+          ],
+        ),
       );
     }
 
@@ -1194,6 +1207,7 @@ class _TimelineVideoSurfaceState extends State<_TimelineVideoSurface> {
       autoplay: widget.autoplay,
       borderRadius: 0,
       showPlayOverlay: false,
+      posterUrl: widget.posterUrl,
     );
   }
 }

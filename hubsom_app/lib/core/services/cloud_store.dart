@@ -294,6 +294,43 @@ class CloudStore {
     }
   }
 
+  /// One document by id. Used for shop-video chunks so a slow phone does not
+  /// download every video in the collection just to play one clip.
+  static Future<Map<String, dynamic>?> getDoc(
+    String collection,
+    String id,
+  ) async {
+    if (!useNetwork || id.isEmpty) return null;
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        final snap = await sdk.collection(collection).doc(id).get();
+        if (!snap.exists) return null;
+        final data = Map<String, dynamic>.from(snap.data() ?? const {});
+        data.putIfAbsent('id', () => snap.id);
+        return data;
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.getDoc sdk: $e');
+      }
+    }
+    try {
+      final res = await _rest.get<dynamic>(
+        '$_root/$collection/${Uri.encodeComponent(id)}',
+        queryParameters: {'key': _apiKey},
+      );
+      if (res.statusCode == 404) return null;
+      final map = _asJsonMap(res.data);
+      if (map == null || map['error'] != null) return null;
+      final decoded = decodeDocument(map);
+      if (decoded.isEmpty) return null;
+      decoded.putIfAbsent('id', () => id);
+      return decoded;
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudStore.getDoc rest: $e');
+      return null;
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> listDocs(String collection) async {
     if (!useNetwork) return const [];
     final sdk = _db;

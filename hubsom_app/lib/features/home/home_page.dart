@@ -4,8 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/cloud_video_media.dart';
-import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
@@ -15,7 +13,6 @@ import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
-import '../../widgets/product_demo_video_player.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
 
@@ -485,8 +482,11 @@ class ContainedVideoGridDelegate {
   }
 }
 
-/// Portrait shop-video card: real first frame as thumbnail, opens the feed.
-class _HomeShopVideoCard extends StatefulWidget {
+/// Portrait shop-video card: product still as thumbnail, opens the feed.
+///
+/// Do not mount a video player here — initializing every card on Home
+/// saturates a slow network before the shopper taps one clip.
+class _HomeShopVideoCard extends StatelessWidget {
   const _HomeShopVideoCard({
     required this.video,
     this.linkedProduct,
@@ -496,40 +496,11 @@ class _HomeShopVideoCard extends StatefulWidget {
   final Product? linkedProduct;
 
   @override
-  State<_HomeShopVideoCard> createState() => _HomeShopVideoCardState();
-}
-
-class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
-  late final Future<bool> _readyFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _readyFuture = _prepare();
-  }
-
-  Future<bool> _prepare() async {
-    final video = widget.video;
-    if (video.hasRemoteVideo) return true;
-    final hydrated = await CloudVideoMedia.ensureLocalBytes(
-      videoId: video.id,
-      videoUrl: video.videoUrl,
-      mimeType: video.mimeType,
-    );
-    if (hydrated) return true;
-    final local = await ProductDemoVideoStore.load(video.id);
-    return local != null;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final video = widget.video;
-    final linkedProduct = widget.linkedProduct;
     final caption = video.caption.trim();
-    final cover =
-        linkedProduct != null && linkedProduct.images.isNotEmpty
-            ? linkedProduct.images.first
-            : null;
+    final cover = linkedProduct != null && linkedProduct!.images.isNotEmpty
+        ? linkedProduct!.images.first
+        : video.authorImage;
 
     return Material(
       color: Colors.transparent,
@@ -554,37 +525,6 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
                   )
                 else
                   const ColoredBox(color: Colors.black),
-                FutureBuilder<bool>(
-                  future: _readyFuture,
-                  builder: (context, snap) {
-                    final ready = snap.data == true;
-                    if (!ready) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    }
-                    return AbsorbPointer(
-                      child: ProductDemoVideoPlayer(
-                        productId: video.id,
-                        remoteUrl: video.hasRemoteVideo ? video.videoUrl : null,
-                        expand: true,
-                        autoplay: false,
-                        borderRadius: 0,
-                        showPlayOverlay: false,
-                      ),
-                    );
-                  },
-                ),
                 Positioned(
                   left: 0,
                   right: 0,

@@ -95,9 +95,6 @@ class CloudVideoMedia {
   }) async {
     if (videoId.isEmpty) return false;
     try {
-      final existing = await ProductDemoVideoStore.load(videoId);
-      if (existing != null) return true;
-
       final url = videoUrl?.trim() ?? '';
       if (url.startsWith('http://') ||
           url.startsWith('https://') ||
@@ -105,6 +102,9 @@ class CloudVideoMedia {
           url.startsWith('data:')) {
         return false;
       }
+
+      final existing = await ProductDemoVideoStore.load(videoId);
+      if (existing != null) return true;
 
       final downloaded = await _downloadChunks(videoId);
       if (downloaded == null || downloaded.isEmpty) return false;
@@ -122,35 +122,13 @@ class CloudVideoMedia {
 
   static Future<Uint8List?> _downloadChunks(String videoId) async {
     try {
-      final metas = await CloudStore.listDocs(metaCollection);
-      Map<String, dynamic>? meta;
-      for (final row in metas) {
-        if ('${row['id']}' == videoId) {
-          meta = row;
-          break;
-        }
-      }
+      final meta = await CloudStore.getDoc(metaCollection, videoId);
+      final expected = (meta?['chunkCount'] as num?)?.toInt() ?? 0;
+      if (expected <= 0) return null;
 
-      final chunks = await CloudStore.listDocs(chunkCollection);
-      final mine = chunks
-          .where((c) => '${c['videoId']}' == videoId)
-          .toList()
-        ..sort(
-          (a, b) => ((a['index'] as num?)?.toInt() ?? 0)
-              .compareTo((b['index'] as num?)?.toInt() ?? 0),
-        );
-      if (mine.isEmpty) return null;
-
-      final expected = (meta?['chunkCount'] as num?)?.toInt() ?? mine.length;
       final builder = BytesBuilder(copy: false);
       for (var i = 0; i < expected; i++) {
-        Map<String, dynamic>? row;
-        for (final c in mine) {
-          if ((c['index'] as num?)?.toInt() == i) {
-            row = c;
-            break;
-          }
-        }
+        final row = await CloudStore.getDoc(chunkCollection, '${videoId}_$i');
         final b64 = '${row?['data'] ?? ''}';
         if (b64.isEmpty) return null;
         builder.add(base64Decode(b64));
