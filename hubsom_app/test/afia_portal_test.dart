@@ -125,10 +125,12 @@ void main() {
   });
 
   testWidgets('a saved Afia unlock opens the admin shell', (tester) async {
-    await AfiaAccess.unlock(
-      email: 'felixames0808@gmail.com',
-      password: 'Newmoney@2025',
-    );
+    await tester.runAsync(() async {
+      await AfiaAccess.unlock(
+        email: 'felixames0808@gmail.com',
+        password: 'Newmoney@2025',
+      );
+    });
     await _pumpPortal(tester);
     expect(find.text('Overview'), findsWidgets);
     expect(find.text('Promotions'), findsWidgets);
