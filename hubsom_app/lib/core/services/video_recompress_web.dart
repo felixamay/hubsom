@@ -31,7 +31,7 @@ Future<ProductDemoVideo?> recompressShopVideoForSlowNetwork({
       return null;
     }
 
-    await video.play().toDart;
+    await video.play().toDart.timeout(const Duration(seconds: 6));
     final stream = video.captureStream();
     final mime = _recorderMime();
     if (mime == null) {
@@ -73,7 +73,7 @@ Future<ProductDemoVideo?> recompressShopVideoForSlowNetwork({
     );
 
     recorder.start();
-    await video.play().toDart;
+    await video.play().toDart.timeout(const Duration(seconds: 6));
     await _once(video, 'ended').timeout(
       Duration(milliseconds: ((video.duration + 1) * 1000).round()),
     );
