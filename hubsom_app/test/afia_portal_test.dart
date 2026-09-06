@@ -78,19 +78,22 @@ void main() {
 
   setUp(_init);
 
-  test('Afia paths canonicalize to /Afia and stay public', () {
+  test('Afia paths canonicalize to /afia and stay public', () {
     expect(AfiaAccess.matchesPath('/Afia'), isTrue);
     expect(AfiaAccess.matchesPath('/afia'), isTrue);
     expect(AfiaAccess.matchesPath('/AFIA/'), isTrue);
     expect(AfiaAccess.matchesPath('/hubsom-admin'), isTrue);
     expect(AfiaAccess.matchesPath('/account'), isFalse);
-    expect(AfiaAccess.canonicalRedirect('/Afia'), isNull);
-    expect(AfiaAccess.canonicalRedirect('/afia'), AfiaAccess.path);
-    expect(AfiaAccess.canonicalRedirect('/Afia/'), AfiaAccess.path);
-    expect(AfiaAccess.canonicalRedirect('/hubsom-admin'), isNull);
+    expect(AfiaAccess.path, '/afia');
+    expect(AfiaAccess.canonicalRedirect('/afia'), isNull);
+    expect(AfiaAccess.canonicalRedirect('/Afia'), '/afia');
+    expect(AfiaAccess.canonicalRedirect('/Afia/'), '/afia');
+    expect(AfiaAccess.canonicalRedirect('/hubsom-admin'), '/afia');
+    expect(AfiaAccess.canonicalRedirect('/hubsom-admin/'), '/afia');
     expect(AuthRoutes.isPublic('/Afia'), isTrue);
     expect(AuthRoutes.isPublic('/afia'), isTrue);
     expect(AuthRoutes.isPublic('/hubsom-admin'), isTrue);
+    expect(AuthRoutes.requiresAdmin('/afia'), isFalse);
     expect(AuthRoutes.requiresAdmin('/Afia'), isFalse);
   });
 

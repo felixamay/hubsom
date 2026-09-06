@@ -2,7 +2,7 @@
   var KEY = 'flutter.hubsom_afiaUnlockedEmail';
   var EMAIL = 'felixames0808@gmail.com';
   var HASH = 'ac668d772d82fb28c85601fb52fef2d4cf127147fced8701ac69fa9c70f78601';
-  var APP = '/hubsom-admin';
+  var APP = '/afia';
 
   function unlocked() {
     try {
@@ -19,8 +19,30 @@
       .join('');
   }
 
-  function openConsole() {
-    window.location.replace(APP);
+  function hideDoor() {
+    var door = document.getElementById('afia-door');
+    if (door) door.setAttribute('hidden', 'hidden');
+  }
+
+  function showDoor() {
+    var door = document.getElementById('afia-door');
+    if (door) door.removeAttribute('hidden');
+  }
+
+  function showBoot() {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.removeAttribute('hidden');
+  }
+
+  function hideBoot() {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.setAttribute('hidden', 'hidden');
+  }
+
+  function stayOnAfia() {
+    if (window.location.pathname !== APP) {
+      window.history.replaceState({}, '', APP);
+    }
   }
 
   function bindForm() {
@@ -38,7 +60,10 @@
           return;
         }
         localStorage.setItem(KEY, JSON.stringify(EMAIL));
-        openConsole();
+        stayOnAfia();
+        hideDoor();
+        showBoot();
+        window.location.replace(APP);
       }).catch(function () {
         if (err) err.textContent = 'Could not open this portal. Try again.';
       });
@@ -46,10 +71,20 @@
   }
 
   window.hubsomAfiaStart = function () {
+    stayOnAfia();
     if (unlocked()) {
-      openConsole();
+      hideDoor();
+      showBoot();
       return;
     }
+    hideBoot();
+    showDoor();
     bindForm();
   };
+
+  window.addEventListener('flutter-first-frame', function () {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.remove();
+    if (unlocked()) hideDoor();
+  });
 })();
