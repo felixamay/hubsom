@@ -346,6 +346,17 @@ class CatalogRepository {
     return out;
   }
 
+  Future<List<ShopVideo>> myShopVideos() async {
+    final user = _currentUser();
+    if (user == null) return const [];
+    try {
+      await LocalCommerceStore.mergeCloudSocial();
+    } catch (_) {}
+    return LocalCommerceStore.listShopVideos()
+        .where((v) => v.authorId == user.id)
+        .toList();
+  }
+
   Future<ShopVideo> _persistStorageThumbIfMissing(ShopVideo video) async {
     final thumb = video.thumbnailUrl?.trim() ?? '';
     if (thumb.startsWith('http://') || thumb.startsWith('https://')) {

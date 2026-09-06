@@ -11,6 +11,7 @@ class SellerHubPage extends StatelessWidget {
     final links = [
       ('Store', '/seller/store', Icons.store),
       ('My products', '/seller/products', Icons.inventory_2_outlined),
+      ('My videos', '/seller/videos', Icons.video_library_outlined),
       ('Add product', '/seller/products/new', Icons.add_box_outlined),
       ('Add video', '/videos/upload', Icons.movie_creation_outlined),
       ('Watch videos', '/videos', Icons.play_circle_outline),

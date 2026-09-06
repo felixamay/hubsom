@@ -572,6 +572,26 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (isOwner) ...[
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red.shade300),
+                title: Text(
+                  'Delete video',
+                  style: TextStyle(color: Colors.red.shade300),
+                ),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.video_library_outlined,
+                    color: Colors.white),
+                title: const Text(
+                  'Manage in My videos',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () => Navigator.pop(ctx, 'manage'),
+              ),
+              const Divider(color: Colors.white24, height: 1),
+            ],
             ListTile(
               leading: const Icon(Icons.ios_share, color: Colors.white),
               title: const Text('Share link', style: TextStyle(color: Colors.white)),
@@ -583,15 +603,6 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
                   style: TextStyle(color: Colors.white)),
               onTap: () => Navigator.pop(ctx, 'timeline'),
             ),
-            if (isOwner)
-              ListTile(
-                leading: Icon(Icons.delete_outline, color: Colors.red.shade300),
-                title: Text(
-                  'Delete video',
-                  style: TextStyle(color: Colors.red.shade300),
-                ),
-                onTap: () => Navigator.pop(ctx, 'delete'),
-              ),
           ],
         ),
       ),
@@ -599,6 +610,10 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     if (!mounted || choice == null) return;
     if (choice == 'delete') {
       await _confirmDeleteVideo();
+      return;
+    }
+    if (choice == 'manage') {
+      await context.push('/seller/videos');
       return;
     }
     if (choice == 'link') {
@@ -676,6 +691,8 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
     final shownCaption = showMore ? '${caption.substring(0, 90)}...more' : caption;
 
     final poster = ShopVideoPosterUrl.resolve(_video);
+    final isOwner =
+        ref.watch(authStateProvider).valueOrNull?.id == _video.authorId;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -751,10 +768,10 @@ class _VideoSlideState extends ConsumerState<_VideoSlide>
               ),
               const SizedBox(height: 16),
               _ActionBtn(
-                icon: Icons.reply_rounded,
-                label: _fmt(_video.shareCount),
+                icon: isOwner ? Icons.more_horiz : Icons.reply_rounded,
+                label: isOwner ? 'More' : _fmt(_video.shareCount),
                 onTap: _shareMenu,
-                flipX: true,
+                flipX: !isOwner,
               ),
               const SizedBox(height: 18),
               RotationTransition(
