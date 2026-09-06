@@ -31,7 +31,10 @@ Future<void> main() async {
   await StorageMedia.migratePrefsBlobs();
   await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();
-  await CloudStore.hydrateLocalCache();
+  // Catalog download must not hold the HTML "Loading…" splash. Home still
+  // refreshes from the cloud after the first frame.
+  // ignore: unawaited_futures
+  CloudStore.hydrateLocalCache();
   runApp(const ProviderScope(child: HubsomApp()));
 }
 

@@ -10,6 +10,13 @@ void main() {
   final stampScript = File('scripts/stamp_hosting.py');
   final deployScript = File('scripts/deploy_hosting.sh');
 
+  test('boot does not wait for every Firestore collection before first frame', () {
+    final main = File('lib/main.dart').readAsStringSync();
+    expect(main, contains('CloudStore.hydrateLocalCache()'));
+    expect(main, isNot(contains('await CloudStore.hydrateLocalCache()')));
+    expect(main, contains('runApp('));
+  });
+
   test('source HTML keeps unstamped bootstrap tags for the deploy rewriter', () {
     final index = indexHtml.readAsStringSync();
     final afia = afiaHtml.readAsStringSync();
@@ -35,18 +42,16 @@ void main() {
     expect(indexHtml.readAsStringSync(), contains('apple-mobile-web-app-capable" content="no"'));
   });
 
-  test('hosting headers tell Safari not to keep HTML or JS', () {
+  test('hosting caches stamped JS and never sends Clear-Site-Data on assets', () {
     final json = firebase.readAsStringSync();
     expect(json, contains('no-store, no-cache, must-revalidate, max-age=0'));
-    expect(json, contains('Clear-Site-Data'));
-    expect(json, contains('\\"cache\\"'));
+    expect(json, contains('/main.dart.*.js'));
+    expect(json, contains('/flutter_bootstrap.*.js'));
+    expect(json, contains('public, max-age=31536000, immutable'));
+    expect(json, contains('/canvaskit/**'));
+    expect(json, isNot(contains('Clear-Site-Data')));
     expect(json, isNot(contains('\\"storage\\"')));
     expect(json, contains('/flutter_service_worker.js'));
-    // "/" and "/afia" are rewrites, not *.html — keep the header on "**".
-    expect(
-      json.contains('"source": "**"') && json.contains('Clear-Site-Data'),
-      isTrue,
-    );
     expect(File('web/manifest.json').readAsStringSync(), contains('"display": "browser"'));
   });
 
