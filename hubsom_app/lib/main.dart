@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'core/auth/idle_session_guard.dart';
 import 'core/config/app_config.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/firebase_bootstrap.dart';
@@ -59,6 +60,9 @@ class _HubsomAppState extends ConsumerState<HubsomApp> {
       debugShowCheckedModeBanner: false,
       theme: HubsomTheme.light(),
       routerConfig: router,
+      builder: (context, child) {
+        return IdleSessionGuard(child: child ?? const SizedBox.shrink());
+      },
     );
   }
 }
