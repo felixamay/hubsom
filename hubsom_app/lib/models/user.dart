@@ -166,6 +166,8 @@ class HubsomUser extends Equatable {
     this.walletBalanceGhs = 0,
     this.giftPoints = 0,
     this.giftEarningsGhs = 0,
+    this.suspended = false,
+    this.features = UserFeatures.open,
   });
 
   final String id;
@@ -191,6 +193,8 @@ class HubsomUser extends Equatable {
   final int giftPoints;
   /// Host earnings from gifts received on live shows.
   final double giftEarningsGhs;
+  final bool suspended;
+  final UserFeatures features;
 
   factory HubsomUser.fromJson(Map<String, dynamic> json) => HubsomUser(
         id: json['id'] as String,
@@ -217,6 +221,8 @@ class HubsomUser extends Equatable {
         walletBalanceGhs: (json['walletBalanceGhs'] as num?)?.toDouble() ?? 0,
         giftPoints: (json['giftPoints'] as num?)?.toInt() ?? 0,
         giftEarningsGhs: (json['giftEarningsGhs'] as num?)?.toDouble() ?? 0,
+        suspended: json['suspended'] as bool? ?? false,
+        features: UserFeatures.fromJson(json['features']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -241,6 +247,8 @@ class HubsomUser extends Equatable {
         'walletBalanceGhs': walletBalanceGhs,
         'giftPoints': giftPoints,
         'giftEarningsGhs': giftEarningsGhs,
+        'suspended': suspended,
+        'features': features.toJson(),
       };
 
   HubsomUser copyWith({
@@ -263,6 +271,8 @@ class HubsomUser extends Equatable {
     double? walletBalanceGhs,
     int? giftPoints,
     double? giftEarningsGhs,
+    bool? suspended,
+    UserFeatures? features,
   }) =>
       HubsomUser(
         id: id,
@@ -286,6 +296,8 @@ class HubsomUser extends Equatable {
         walletBalanceGhs: walletBalanceGhs ?? this.walletBalanceGhs,
         giftPoints: giftPoints ?? this.giftPoints,
         giftEarningsGhs: giftEarningsGhs ?? this.giftEarningsGhs,
+        suspended: suspended ?? this.suspended,
+        features: features ?? this.features,
       );
 
   bool get isHuber =>
@@ -311,5 +323,95 @@ class HubsomUser extends Equatable {
         walletBalanceGhs,
         giftPoints,
         giftEarningsGhs,
+        suspended,
+        features,
       ];
+
+  bool canUsePath(String path) {
+    if (suspended) return false;
+    if (isAfiaAdmin) return true;
+    return features.allows(path);
+  }
+}
+
+class UserFeatures extends Equatable {
+  const UserFeatures({
+    this.canShop = true,
+    this.canSell = true,
+    this.canLive = true,
+    this.canChat = true,
+    this.canWallet = true,
+    this.canRide = true,
+    this.canVideos = true,
+  });
+
+  static const open = UserFeatures();
+
+  final bool canShop;
+  final bool canSell;
+  final bool canLive;
+  final bool canChat;
+  final bool canWallet;
+  final bool canRide;
+  final bool canVideos;
+
+  factory UserFeatures.fromJson(dynamic raw) {
+    if (raw is! Map) return open;
+    bool flag(String key) => raw[key] as bool? ?? true;
+    return UserFeatures(
+      canShop: flag('canShop'),
+      canSell: flag('canSell'),
+      canLive: flag('canLive'),
+      canChat: flag('canChat'),
+      canWallet: flag('canWallet'),
+      canRide: flag('canRide'),
+      canVideos: flag('canVideos'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'canShop': canShop,
+        'canSell': canSell,
+        'canLive': canLive,
+        'canWallet': canWallet,
+        'canChat': canChat,
+        'canRide': canRide,
+        'canVideos': canVideos,
+      };
+
+  UserFeatures copyWith({
+    bool? canShop,
+    bool? canSell,
+    bool? canLive,
+    bool? canChat,
+    bool? canWallet,
+    bool? canRide,
+    bool? canVideos,
+  }) =>
+      UserFeatures(
+        canShop: canShop ?? this.canShop,
+        canSell: canSell ?? this.canSell,
+        canLive: canLive ?? this.canLive,
+        canChat: canChat ?? this.canChat,
+        canWallet: canWallet ?? this.canWallet,
+        canRide: canRide ?? this.canRide,
+        canVideos: canVideos ?? this.canVideos,
+      );
+
+  bool allows(String path) {
+    if (path == '/checkout' || path == '/cart') return canShop;
+    if (path.startsWith('/seller') || path == '/sell' || path.startsWith('/sell/')) {
+      if (path.contains('go-live')) return canLive && canSell;
+      return canSell;
+    }
+    if (path.startsWith('/messages')) return canChat;
+    if (path.startsWith('/wallet') || path == '/gifts') return canWallet;
+    if (path.startsWith('/huber')) return canRide;
+    if (path == '/videos/upload') return canVideos;
+    return true;
+  }
+
+  @override
+  List<Object?> get props =>
+      [canShop, canSell, canLive, canChat, canWallet, canRide, canVideos];
 }

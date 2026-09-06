@@ -7,6 +7,7 @@ import '../../core/auth/afia_access.dart';
 import '../../core/auth/auth_gate.dart';
 import '../../core/auth/auth_routes.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/admin_controls_store.dart';
 import '../account/account_page.dart';
 import '../admin/admin_offers_page.dart';
 import '../admin/afia_portal_page.dart';
@@ -152,6 +153,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         if (!user.isAfiaAdmin) {
           return '/';
         }
+      }
+
+      if (loggedIn && user.suspended && !user.isAfiaAdmin) {
+        return '/auth/sign-in?reason=suspended';
+      }
+
+      if (loggedIn &&
+          !user.isAfiaAdmin &&
+          (!user.canUsePath(path) || !AdminControlsStore.current().allows(path))) {
+        return '/account';
       }
 
       return null;
@@ -380,6 +391,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AfiaPortalPage(),
       ),
       GoRoute(
+        path: AfiaAccess.appPath,
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AfiaPortalPage(),
+      ),
+      GoRoute(
         path: '/admin/offers',
         builder: (_, __) => const AuthGate(
           requireAdmin: true,
@@ -514,7 +530,11 @@ String _webInitialLocation() {
   if (!kIsWeb) return '/';
   var path = Uri.base.path;
   if (path.isEmpty || path == '/index.html') path = '/';
-  if (AfiaAccess.matchesPath(path)) return AfiaAccess.path;
+  if (AfiaAccess.matchesPath(path)) {
+    return path.toLowerCase() == AfiaAccess.appPath
+        ? AfiaAccess.appPath
+        : AfiaAccess.path;
+  }
   final query = Uri.base.hasQuery ? '?${Uri.base.query}' : '';
   return '$path$query';
 }

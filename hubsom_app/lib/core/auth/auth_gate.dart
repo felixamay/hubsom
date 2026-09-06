@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/core_providers.dart';
+import '../services/admin_controls_store.dart';
 import '../theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
 
@@ -59,6 +60,30 @@ class AuthGate extends ConsumerWidget {
             },
             secondaryLabel: 'Create account',
             onSecondary: () => context.go('/auth/sign-up'),
+          );
+        }
+
+        if (user.suspended && !user.isAfiaAdmin) {
+          return _LockedScaffold(
+            title: 'Account suspended',
+            message: 'This Hubsom account is suspended. Contact Afia admin.',
+            primaryLabel: 'Home',
+            onPrimary: () => context.go('/'),
+            secondaryLabel: 'Sign in',
+            onSecondary: () => context.go('/auth/sign-in'),
+          );
+        }
+
+        final path = GoRouterState.of(context).uri.path;
+        if (!user.isAfiaAdmin &&
+            (!user.canUsePath(path) || !AdminControlsStore.current().allows(path))) {
+          return _LockedScaffold(
+            title: 'Feature paused',
+            message: 'Afia admin turned this Hubsom feature off for your account.',
+            primaryLabel: 'Account',
+            onPrimary: () => context.go('/account'),
+            secondaryLabel: 'Home',
+            onSecondary: () => context.go('/'),
           );
         }
 

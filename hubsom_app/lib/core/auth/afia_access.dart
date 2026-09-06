@@ -12,6 +12,7 @@ import '../services/local_store.dart';
 /// admin webpage.
 abstract final class AfiaAccess {
   static const path = '/Afia';
+  static const appPath = '/hubsom-admin';
   static const ownerEmail = 'felixames0808@gmail.com';
   static const _salt = 'afia-portal';
   static const _unlockKey = 'afiaUnlockedEmail';
@@ -36,14 +37,22 @@ abstract final class AfiaAccess {
   }
 
   /// True for `/Afia`, `/afia`, `/AFIA/`, etc.
-  static bool matchesPath(String location) =>
-      _normalizedPath(location).toLowerCase() == '/afia';
+  static bool matchesPath(String location) {
+    final normalized = _normalizedPath(location).toLowerCase();
+    return normalized == '/afia' || normalized == '/hubsom-admin';
+  }
 
-  /// Canonicalize any Afia casing / trailing slash to `/Afia`.
+  /// Canonicalize Afia / admin casing and trailing slashes.
   static String? canonicalRedirect(String location) {
-    if (!matchesPath(location)) return null;
+    final normalized = _normalizedPath(location).toLowerCase();
     final raw = location.split('?').first.trim();
-    return raw == '/Afia' ? null : '/Afia';
+    if (normalized == '/afia') {
+      return raw == '/Afia' ? null : path;
+    }
+    if (normalized == '/hubsom-admin') {
+      return raw == appPath ? null : appPath;
+    }
+    return null;
   }
 
   static bool checkPassword(String password) {

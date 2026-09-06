@@ -7,118 +7,65 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Hubsom Admin — Afia portal">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
   <link rel="icon" type="image/png" href="/favicon.png"/>
   <title>Hubsom Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
   <style>
     html, body { height: 100%; margin: 0; background: #0A3D5C; }
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #0A3D5C; }
-    #afia-gate, #afia-admin { position: fixed; inset: 0; }
-    #afia-gate {
-      z-index: 2;
+    body {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
-      background: #0A3D5C;
     }
-    .afia-card {
+    .card {
       width: 100%;
       max-width: 420px;
       background: #fff;
-      border-radius: 20px;
-      padding: 28px 24px;
+      border-radius: 28px;
+      padding: 32px 24px;
       box-sizing: border-box;
     }
-    .afia-card h1, #afia-admin h1 { margin: 0 0 6px; color: #0A3D5C; }
-    .afia-card p { margin: 0 0 20px; text-align: center; color: #5b6b75; }
-    .afia-card h1 { text-align: center; font-size: 26px; }
-    label { display: block; margin: 0 0 6px; font-weight: 600; }
-    input[type="text"], input[type="email"], input[type="password"], input[type="number"], textarea {
+    h1 { margin: 0 0 6px; text-align: center; color: #0A3D5C; font-size: 28px; font-weight: 800; }
+    p { margin: 0 0 22px; text-align: center; color: #5b6b75; }
+    label { display: block; margin: 0 0 6px; font-weight: 700; color: #0A3D5C; }
+    input {
       width: 100%;
       box-sizing: border-box;
-      margin: 0 0 12px;
-      padding: 12px 14px;
+      margin: 0 0 14px;
+      padding: 13px 14px;
       border: 1px solid #c5d4de;
-      border-radius: 10px;
-      font-size: 16px;
+      border-radius: 14px;
+      font: inherit;
     }
-    button, .btn {
+    button {
+      width: 100%;
       border: 0;
-      border-radius: 10px;
-      padding: 12px 16px;
+      border-radius: 14px;
+      padding: 14px 16px;
       background: #0A3D5C;
       color: #fff;
-      font-size: 16px;
-      font-weight: 700;
+      font: inherit;
+      font-weight: 800;
       cursor: pointer;
     }
-    button.secondary { background: transparent; color: #0A3D5C; }
     #afia-error { color: #b42318; min-height: 1.2em; margin: 0 0 12px; }
-    #afia-admin { z-index: 3; background: #fff; overflow: auto; display: none; }
-    #afia-admin.is-open { display: block; }
-    .admin-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px 0;
-      border-bottom: 1px solid #e6eef3;
-    }
-    .tabs { display: flex; gap: 18px; padding: 0 20px; }
-    .tabs button {
-      background: transparent;
-      color: #5b6b75;
-      border-radius: 0;
-      padding: 12px 0;
-      border-bottom: 2px solid transparent;
-    }
-    .tabs button.on { color: #0A3D5C; border-bottom-color: #0A3D5C; }
-    .panel { display: none; padding: 20px; max-width: 880px; }
-    .panel.on { display: block; }
-    .stats { display: flex; flex-wrap: wrap; gap: 10px; }
-    .stat {
-      width: 104px;
-      padding: 12px;
-      background: #D7F1FB;
-      border-radius: 12px;
-      box-sizing: border-box;
-    }
-    .stat b { display: block; font-size: 20px; }
-    .place { display: block; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef3f6; }
-    .ok { color: #7CBF2C; }
   </style>
 </head>
 <body>
-  <div id="afia-gate">
-    <form id="afia-form" class="afia-card" autocomplete="on">
-      <h1>Hubsom Admin</h1>
-      <p>Afia portal</p>
-      <label for="afia-email">Email</label>
-      <input id="afia-email" name="email" type="email" autocomplete="username" required>
-      <label for="afia-password">Password</label>
-      <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
-      <p id="afia-error"></p>
-      <button type="submit">Sign in</button>
-    </form>
-  </div>
-
-  <div id="afia-admin">
-    <div class="admin-bar">
-      <h1>Hubsom Admin</h1>
-      <button type="button" class="secondary" id="afia-lock">Lock</button>
-    </div>
-    <div class="tabs">
-      <button type="button" data-tab="overview" class="on">Overview</button>
-      <button type="button" data-tab="promotions">Promotions</button>
-      <button type="button" data-tab="offers">Offers</button>
-      <button type="button" data-tab="orders">Orders</button>
-    </div>
-    <section id="panel-overview" class="panel on"></section>
-    <section id="panel-promotions" class="panel"></section>
-    <section id="panel-offers" class="panel"></section>
-    <section id="panel-orders" class="panel"></section>
-  </div>
+  <form id="afia-form" class="card" autocomplete="on">
+    <h1>Hubsom Admin</h1>
+    <p>Afia console</p>
+    <label for="afia-email">Email</label>
+    <input id="afia-email" name="email" type="email" autocomplete="username" required>
+    <label for="afia-password">Password</label>
+    <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
+    <p id="afia-error"></p>
+    <button type="submit">Open console</button>
+  </form>
   <script src="/afia_gate.js"></script>
   <script>hubsomAfiaStart();</script>
 </body>

@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/afia_access.dart';
+import '../../core/services/admin_account_store.dart';
 import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_huber_store.dart';
 import '../../core/services/local_promotion_store.dart';
 import '../../core/services/local_purchase_offer_store.dart';
-import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
-import '../../models/user.dart';
 import '../../widgets/hubsom_logo.dart';
+import 'admin_accounts_page.dart';
+import 'admin_controls_page.dart';
 import 'admin_offers_page.dart';
 import 'afia_promotions_tab.dart';
 
@@ -82,6 +83,7 @@ class _AfiaLoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
     return Scaffold(
       backgroundColor: HubsomColors.forest,
       body: SafeArea(
@@ -90,42 +92,39 @@ class _AfiaLoginPage extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                clipBehavior: Clip.antiAlias,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const HubsomLogo(
-                        height: 48,
-                        showWordmark: true,
-                        linkToHome: false,
-                      ),
+                      const HubsomLogo(height: 48, showWordmark: true, linkToHome: false),
                       const SizedBox(height: 20),
                       Text(
                         'Hubsom Admin',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: HubsomColors.forest,
-                            ),
+                        style: text.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: HubsomColors.forest,
+                        ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Afia portal',
+                      Text(
+                        'Afia console',
                         textAlign: TextAlign.center,
+                        style: text.bodyMedium?.copyWith(
+                          color: HubsomColors.ink.withValues(alpha: 0.65),
+                        ),
                       ),
                       const SizedBox(height: 20),
                       TextField(
                         controller: email,
                         enabled: !busy,
                         keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.username],
                         decoration: const InputDecoration(labelText: 'Email'),
                         onSubmitted: (_) => onUnlock(),
                       ),
@@ -134,16 +133,12 @@ class _AfiaLoginPage extends StatelessWidget {
                         controller: password,
                         obscureText: true,
                         enabled: !busy,
-                        autofillHints: const [AutofillHints.password],
                         decoration: const InputDecoration(labelText: 'Password'),
                         onSubmitted: (_) => onUnlock(),
                       ),
                       if (error != null) ...[
                         const SizedBox(height: 12),
-                        Text(
-                          error!,
-                          style: TextStyle(color: Theme.of(context).colorScheme.error),
-                        ),
+                        Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                       ],
                       const SizedBox(height: 16),
                       FilledButton(
@@ -162,65 +157,98 @@ class _AfiaLoginPage extends StatelessWidget {
   }
 }
 
-class _AfiaShell extends StatelessWidget {
+class _AfiaShell extends StatefulWidget {
   const _AfiaShell({required this.onLocked});
 
   final VoidCallback onLocked;
 
   @override
+  State<_AfiaShell> createState() => _AfiaShellState();
+}
+
+class _AfiaShellState extends State<_AfiaShell> {
+  int _index = 0;
+
+  static const _destinations = <(IconData, String)>[
+    (Icons.dashboard_rounded, 'Overview'),
+    (Icons.people_alt_rounded, 'Accounts'),
+    (Icons.toggle_on_rounded, 'Controls'),
+    (Icons.campaign_rounded, 'Promotions'),
+    (Icons.local_offer_rounded, 'Offers'),
+    (Icons.receipt_long_rounded, 'Orders'),
+  ];
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Hubsom Admin'),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await AfiaAccess.lock();
-                onLocked();
-              },
-              child: const Text('Lock'),
-            ),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Promotions'),
-              Tab(text: 'Offers'),
-              Tab(text: 'Orders'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
-          children: [
-            _OverviewTab(),
-            AfiaPromotionsTab(),
-            AdminOffersPage(embedded: true),
-            _OrdersTab(),
-          ],
-        ),
+    final wide = MediaQuery.sizeOf(context).width >= 920;
+    final pages = [
+      const _OverviewTab(),
+      const AdminAccountsPage(),
+      const AdminControlsPage(),
+      const AfiaPromotionsTab(),
+      const AdminOffersPage(embedded: true),
+      const _OrdersTab(),
+    ];
+
+    final body = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      child: KeyedSubtree(
+        key: ValueKey(_index),
+        child: pages[_index],
       ),
+    );
+
+    return Scaffold(
+      backgroundColor: HubsomColors.mist,
+      appBar: AppBar(
+        title: const Text('Hubsom Admin'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await AfiaAccess.lock();
+              widget.onLocked();
+            },
+            child: const Text('Lock'),
+          ),
+        ],
+      ),
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  extended: true,
+                  minExtendedWidth: 188,
+                  selectedIndex: _index,
+                  onDestinationSelected: (i) => setState(() => _index = i),
+                  destinations: [
+                    for (final item in _destinations)
+                      NavigationRailDestination(
+                        icon: Icon(item.$1),
+                        label: Text(item.$2),
+                      ),
+                  ],
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: body),
+              ],
+            )
+          : body,
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: (i) => setState(() => _index = i),
+              destinations: [
+                for (final item in _destinations)
+                  NavigationDestination(icon: Icon(item.$1), label: item.$2),
+              ],
+            ),
     );
   }
 }
 
 class _OverviewTab extends StatelessWidget {
   const _OverviewTab();
-
-  static List<HubsomUser> _vaultUsers() {
-    final users = <HubsomUser>[];
-    for (final entry in LocalStore.loadCredentialVault().values) {
-      if (entry is! Map) continue;
-      final raw = entry['userJson'];
-      if (raw is! Map) continue;
-      try {
-        users.add(HubsomUser.fromJson(Map<String, dynamic>.from(raw)));
-      } catch (_) {}
-    }
-    return users;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,11 +259,22 @@ class _OverviewTab extends StatelessWidget {
     final orders = LocalHuberStore.listOrders();
     final offers = LocalPurchaseOfferStore.all();
     final promos = LocalPromotionStore.all();
-    final users = _vaultUsers();
+    final users = AdminAccountStore.cached();
+    final text = Theme.of(context).textTheme;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
+        Text(
+          'Overview',
+          style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Live picture of Hubsom accounts, stores, and commerce.',
+          style: text.bodyMedium?.copyWith(color: HubsomColors.ink.withValues(alpha: 0.7)),
+        ),
+        const SizedBox(height: 16),
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -250,35 +289,25 @@ class _OverviewTab extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
-        Text(
-          'Accounts',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
+        Text('Accounts', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         if (users.isEmpty)
-          const Text('No saved accounts on this device')
+          const Text('No Hubsom accounts yet')
         else
-          for (final user in users.take(20))
+          for (final account in users.take(12))
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(user.name),
+              title: Text(account.user.name),
               subtitle: Text(
                 [
-                  user.email,
-                  user.role,
-                  if (user.isHuber) 'rider',
+                  account.email,
+                  account.user.role,
+                  if (account.user.suspended) 'suspended',
                 ].join(' · '),
               ),
             ),
         const SizedBox(height: 16),
-        Text(
-          'Live shows',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
+        Text('Live shows', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         if (lives.isEmpty)
           const Text('No live shows')
@@ -304,7 +333,7 @@ class _OrdersTab extends StatelessWidget {
       return const Center(child: Text('No orders yet'));
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       itemCount: orders.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {
@@ -320,8 +349,7 @@ class _OrdersTab extends StatelessWidget {
               order.id,
               order.status,
               formatGhs(order.subtotalGhs),
-              if (order.buyerEmail != null && order.buyerEmail!.isNotEmpty)
-                order.buyerEmail!,
+              if (order.buyerEmail != null && order.buyerEmail!.isNotEmpty) order.buyerEmail!,
             ].join(' · '),
           ),
         );
@@ -339,11 +367,12 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 104,
-      padding: const EdgeInsets.all(12),
+      width: 112,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: HubsomColors.mint,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: HubsomColors.forest.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -351,8 +380,8 @@ class _StatChip extends StatelessWidget {
           Text(
             value,
             style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              fontSize: 22,
               color: HubsomColors.forest,
             ),
           ),

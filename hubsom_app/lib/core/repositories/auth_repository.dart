@@ -13,6 +13,7 @@ import '../auth/passkey_models.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/admin_controls_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
@@ -53,6 +54,9 @@ class AuthRepository {
     String role = 'buyer',
     HuberSignUpDetails? huber,
   }) async {
+    if (!AdminControlsStore.current().signupsOpen) {
+      throw AuthException('Hubsom is not accepting new accounts right now.');
+    }
     final normalized = CloudStore.accountDocId(email);
     _validateCredentials(normalized, password, name: name);
     if (AuthRoutes.isHuberRole(role) &&
@@ -548,6 +552,7 @@ class AuthRepository {
       if (remote['passkeys'] != null) 'passkeys': remote['passkeys'],
     };
     await LocalStore.saveCredentialVault(vault);
+    _rejectSuspended(user, remote);
     final session = await _persist(user, _issueLocalToken(user));
     await CloudStore.hydrateLocalCache();
     if (session.isHuber) {
@@ -577,6 +582,7 @@ class AuthRepository {
     }
     final userJson = entry['userJson'];
     var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
+    _rejectSuspended(user, entry);
     user = await _persist(user, _issueLocalToken(user));
     await _backfillCloudAccount(
       email: email,
@@ -759,6 +765,15 @@ class AuthRepository {
       await LocalHuberStore.ensureProfileForUser(user);
     }
     return user;
+  }
+
+  void _rejectSuspended(HubsomUser user, Map raw) {
+    final flagged = user.suspended || raw['suspended'] == true;
+    if (flagged && !AfiaAccess.isOwner(user)) {
+      throw AuthException(
+        'This Hubsom account is suspended. Contact Afia admin.',
+      );
+    }
   }
 
   void _validateCredentials(String email, String password, {String? name}) {

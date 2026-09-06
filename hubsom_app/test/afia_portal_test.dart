@@ -82,12 +82,15 @@ void main() {
     expect(AfiaAccess.matchesPath('/Afia'), isTrue);
     expect(AfiaAccess.matchesPath('/afia'), isTrue);
     expect(AfiaAccess.matchesPath('/AFIA/'), isTrue);
+    expect(AfiaAccess.matchesPath('/hubsom-admin'), isTrue);
     expect(AfiaAccess.matchesPath('/account'), isFalse);
     expect(AfiaAccess.canonicalRedirect('/Afia'), isNull);
     expect(AfiaAccess.canonicalRedirect('/afia'), AfiaAccess.path);
     expect(AfiaAccess.canonicalRedirect('/Afia/'), AfiaAccess.path);
+    expect(AfiaAccess.canonicalRedirect('/hubsom-admin'), isNull);
     expect(AuthRoutes.isPublic('/Afia'), isTrue);
     expect(AuthRoutes.isPublic('/afia'), isTrue);
+    expect(AuthRoutes.isPublic('/hubsom-admin'), isTrue);
     expect(AuthRoutes.requiresAdmin('/Afia'), isFalse);
   });
 
@@ -141,7 +144,7 @@ void main() {
       (tester) async {
     await _pumpPortal(tester);
     expect(find.text('Hubsom Admin'), findsOneWidget);
-    expect(find.text('Afia portal'), findsOneWidget);
+    expect(find.text('Afia console'), findsOneWidget);
     expect(find.text('Email'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
@@ -178,12 +181,9 @@ void main() {
 
     expect(find.text('Hubsom Admin'), findsWidgets);
     expect(find.text('Overview'), findsWidgets);
+    expect(find.text('Accounts'), findsWidgets);
+    expect(find.text('Controls'), findsWidgets);
     expect(find.text('Promotions'), findsWidgets);
-    expect(find.text('Offers'), findsWidgets);
-    expect(find.text('Orders'), findsWidgets);
     expect(find.text('Send purchase offers'), findsNothing);
-    expect(find.widgetWithText(Tab, 'Promotions'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Offers'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Orders'), findsOneWidget);
   });
 }
