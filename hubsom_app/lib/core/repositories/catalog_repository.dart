@@ -405,6 +405,7 @@ class CatalogRepository {
     required List<String> productIds,
     String caption = '',
     String soundTitle = '',
+    Uint8List? thumbnailBytes,
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
@@ -432,15 +433,20 @@ class CatalogRepository {
     );
     String? thumbUrl;
     try {
-      final frame = await captureShopVideoFrame(
-        bytes: prepared.bytes,
-        mimeType: prepared.mimeType,
-      );
+      final frame = (thumbnailBytes != null && thumbnailBytes.isNotEmpty)
+          ? thumbnailBytes
+          : await captureShopVideoFrame(
+              bytes: prepared.bytes,
+              mimeType: prepared.mimeType,
+            );
       if (frame != null && frame.isNotEmpty) {
         thumbUrl = await CloudMedia.uploadShopVideoThumb(
           videoId: draft.id,
           bytes: frame,
         );
+        if (thumbUrl == null || thumbUrl.isEmpty) {
+          thumbUrl = 'data:image/jpeg;base64,${base64Encode(frame)}';
+        }
       }
     } catch (_) {}
     final patched = draft.copyWith(
