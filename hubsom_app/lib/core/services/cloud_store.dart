@@ -180,12 +180,26 @@ class CloudStore {
     return null;
   }
 
+  static const alreadyExistsCode = 'account_already_exists';
+
   /// Writes an account and refuses to return until the server can read it back.
-  static Future<void> putAccount(String email, Map<String, dynamic> data) async {
+  ///
+  /// When [createOnly] is true, an existing Firestore account is not overwritten.
+  static Future<void> putAccount(
+    String email,
+    Map<String, dynamic> data, {
+    bool createOnly = false,
+  }) async {
     if (!useNetwork) {
       throw StateError('Account database is disabled in this environment');
     }
     final id = accountDocId(email);
+    if (createOnly) {
+      final existing = await getAccount(id);
+      if (existing != null) {
+        throw StateError(alreadyExistsCode);
+      }
+    }
     final payload = {
       ...data,
       'email': id,
