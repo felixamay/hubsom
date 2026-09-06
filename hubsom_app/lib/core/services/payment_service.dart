@@ -9,8 +9,11 @@ import '../../models/user.dart';
 import '../config/app_config.dart';
 import 'api_client.dart';
 import 'api_response.dart';
+import 'local_commerce_store.dart';
 import 'local_huber_store.dart';
+import 'local_message_store.dart';
 import 'local_store.dart';
+import 'shipment_fee.dart';
 
 /// Payment rails preserved from Hubsom: Stripe, Paystack, MTN MoMo,
 /// Telecel Cash, AirtelTigo Money.
@@ -54,30 +57,44 @@ class PaymentService {
     } catch (_) {}
 
     final user = _sessionUser();
+    final dest = OrderShipping.fromJson(shipping);
+    final quotes = <ShipmentQuote>[];
     final lines = items.map((e) {
       final qty = (e['quantity'] as num?)?.toInt() ?? 1;
       final price = (e['priceGhs'] as num?)?.toDouble() ?? 0;
-      final ship = (e['shipmentFeeGhs'] as num?)?.toDouble() ?? 0;
+      final product = LocalCommerceStore.getProduct('${e['productId'] ?? ''}');
+      final quote = product == null
+          ? null
+          : ShipmentFee.quote(
+              product,
+              city: dest.city,
+              region: dest.region,
+              location: dest.location,
+            );
+      if (quote != null) quotes.add(quote);
+      final ship = quote?.feeGhs ?? (e['shipmentFeeGhs'] as num?)?.toDouble() ?? 0;
       return OrderLine(
         productId: '${e['productId'] ?? ''}',
-        sellerId: e['sellerId'] as String?,
-        name: '${e['name'] ?? 'Item'}',
+        sellerId: e['sellerId'] as String? ?? product?.sellerId,
+        name: '${e['name'] ?? product?.name ?? 'Item'}',
         image: e['image'] as String?,
         quantity: qty,
         unitPriceGhs: price,
         lineTotalGhs: price * qty,
-        category: '${e['category'] ?? 'miscellaneous'}',
+        category: '${e['category'] ?? product?.category ?? 'miscellaneous'}',
         shipmentFeeGhs: ship < 0 ? 0 : ship,
       );
     }).toList();
     final merchandise = lines.fold<double>(0, (s, e) => s + e.lineTotalGhs);
     final shipmentFee =
         lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
-    final dest = OrderShipping.fromJson(shipping);
+    final orderId =
+        'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}';
     final order = Order(
-      id: 'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}',
+      id: orderId,
       subtotalGhs: merchandise + shipmentFee,
       shipmentFeeGhs: shipmentFee,
+      shipmentZoneLabel: _zoneLabelFor(quotes),
       status: 'paid',
       userId: user?.id,
       buyerName: dest.recipientName,
@@ -87,10 +104,66 @@ class PaymentService {
       lines: lines,
       shipping: dest,
       paymentMethods: paymentMethods,
+      deliveryEstimate: shipmentFee > 0
+          ? ShipmentFee.customerNotice(
+              orderId: orderId,
+              quotes: quotes,
+              totalGhs: shipmentFee,
+            )
+          : '',
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
+    await _sendShipmentToBuyer(order: order, quotes: quotes);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  static String _zoneLabelFor(List<ShipmentQuote> quotes) {
+    if (quotes.isEmpty) return '';
+    if (quotes.every((q) => q.outOfRegion)) return ShipmentFee.outOfRegionLabel;
+    if (quotes.every((q) => !q.outOfRegion)) {
+      final cities = quotes.map((q) => q.zoneLabel).where((e) => e.isNotEmpty);
+      return cities.isEmpty ? '' : cities.first;
+    }
+    return '${quotes.firstWhere((q) => !q.outOfRegion).zoneLabel} · ${ShipmentFee.outOfRegionLabel}';
+  }
+
+  Future<void> _sendShipmentToBuyer({
+    required Order order,
+    required List<ShipmentQuote> quotes,
+  }) async {
+    final buyerId = order.userId?.trim() ?? '';
+    if (buyerId.isEmpty || quotes.isEmpty || order.shipmentFeeGhs <= 0) return;
+    final text = order.deliveryEstimate.trim().isNotEmpty
+        ? order.deliveryEstimate
+        : ShipmentFee.customerNotice(
+            orderId: order.id,
+            quotes: quotes,
+            totalGhs: order.shipmentFeeGhs,
+          );
+    final sellerIds = order.lines
+        .map((l) => l.sellerId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    for (final sellerId in sellerIds) {
+      final seller = LocalCommerceStore.getSeller(sellerId);
+      final fromId = (seller?.ownerUserId ?? seller?.id ?? '').trim();
+      if (fromId.isEmpty || fromId == buyerId) continue;
+      try {
+        await LocalMessageStore.send(
+          from: HubsomUser(
+            id: fromId,
+            email: '',
+            name: seller?.name ?? 'Seller',
+            role: 'seller',
+            sellerId: sellerId,
+          ),
+          toUserId: buyerId,
+          text: text,
+          toUserName: order.buyerName,
+        );
+      } catch (_) {}
+    }
   }
 
   HubsomUser? _sessionUser() {

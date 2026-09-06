@@ -237,6 +237,8 @@ class LocalCommerceStore {
     required String category,
     required double priceGhs,
     double shipmentFeeGhs = 0,
+    List<String> shipmentZoneCities = const [],
+    double outOfRegionShipmentFeeGhs = 0,
     required int stock,
     List<String> images = const [],
     List<String>? supports,
@@ -263,6 +265,12 @@ class LocalCommerceStore {
       category: category,
       priceGhs: priceGhs,
       shipmentFeeGhs: shipmentFeeGhs < 0 ? 0 : shipmentFeeGhs,
+      shipmentZoneCities: shipmentZoneCities
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      outOfRegionShipmentFeeGhs:
+          outOfRegionShipmentFeeGhs < 0 ? 0 : outOfRegionShipmentFeeGhs,
       compareAtGhs: compareAtGhs,
       images: images,
       sellerId: seller.id,

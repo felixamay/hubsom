@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/services/shipment_fee.dart';
 import '../core/theme/hubsom_colors.dart';
 import '../core/utils/money.dart';
 import '../models/product.dart';
@@ -77,7 +78,7 @@ class LiveSaleProductCard extends StatelessWidget {
                           ),
                           if (product.hasShipmentFee)
                             Text(
-                              'Ship ${formatGhs(product.shipmentFeeGhs)}',
+                              ShipmentFee.listingLabel(product),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 12,

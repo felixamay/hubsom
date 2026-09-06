@@ -129,6 +129,7 @@ class Order extends Equatable {
     this.currency = 'GHS',
     required this.subtotalGhs,
     this.shipmentFeeGhs = 0,
+    this.shipmentZoneLabel = '',
     required this.status,
     this.userId,
     this.buyerName,
@@ -147,6 +148,8 @@ class Order extends Equatable {
   final double subtotalGhs;
   /// Total shipment fees paid on this order (sum of line fees).
   final double shipmentFeeGhs;
+  /// In-zone city or "Out of region" sent to the buyer after purchase.
+  final String shipmentZoneLabel;
   final String status;
   final String? userId;
   final String? buyerName;
@@ -164,6 +167,7 @@ class Order extends Equatable {
         currency: json['currency'] as String? ?? 'GHS',
         subtotalGhs: (json['subtotalGhs'] as num?)?.toDouble() ?? 0,
         shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
+        shipmentZoneLabel: json['shipmentZoneLabel'] as String? ?? '',
         status: json['status'] as String? ?? 'pending_payment',
         userId: json['userId'] as String?,
         buyerName: json['buyerName'] as String?,
@@ -187,6 +191,7 @@ class Order extends Equatable {
         'currency': currency,
         'subtotalGhs': subtotalGhs,
         if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
+        if (shipmentZoneLabel.isNotEmpty) 'shipmentZoneLabel': shipmentZoneLabel,
         'status': status,
         if (userId != null) 'userId': userId,
         if (buyerName != null) 'buyerName': buyerName,
@@ -255,7 +260,8 @@ class Order extends Equatable {
       orders.fold<double>(0, (s, o) => s + o.effectiveShipmentFeeGhs);
 
   @override
-  List<Object?> get props => [id, status, subtotalGhs, shipmentFeeGhs, lines];
+  List<Object?> get props =>
+      [id, status, subtotalGhs, shipmentFeeGhs, shipmentZoneLabel, lines];
 
   Order copyWith({
     String? status,
@@ -263,12 +269,14 @@ class Order extends Equatable {
     String? buyerEmail,
     OrderShipping? shipping,
     String? deliveryEstimate,
+    String? shipmentZoneLabel,
   }) {
     return Order(
       id: id,
       currency: currency,
       subtotalGhs: subtotalGhs,
       shipmentFeeGhs: shipmentFeeGhs,
+      shipmentZoneLabel: shipmentZoneLabel ?? this.shipmentZoneLabel,
       status: status ?? this.status,
       userId: userId,
       buyerName: buyerName ?? this.buyerName,

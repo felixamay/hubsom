@@ -511,6 +511,17 @@ class _PurchasesTab {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    if (order.effectiveShipmentFeeGhs > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        order.shipmentZoneLabel.isEmpty
+                            ? 'Shipment ${formatGhs(order.effectiveShipmentFeeGhs)} sent after purchase'
+                            : 'Shipment ${formatGhs(order.effectiveShipmentFeeGhs)} · ${order.shipmentZoneLabel}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
                     if (order.deliveryEstimate.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(

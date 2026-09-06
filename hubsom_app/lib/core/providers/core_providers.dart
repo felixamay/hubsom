@@ -18,8 +18,10 @@ import '../repositories/seller_repository.dart';
 import '../services/agora_service.dart';
 import '../services/api_client.dart';
 import '../services/cloud_store.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/location_service.dart';
+import '../services/shipment_fee.dart';
 import '../services/maps_service.dart';
 import '../services/notification_service.dart';
 import '../services/payment_service.dart';
@@ -284,7 +286,7 @@ class CartController extends StateNotifier<List<CartItem>> {
       streamId: streamId,
       name: product.name,
       priceGhs: product.effectivePrice,
-      shipmentFeeGhs: product.shipmentFeeGhs,
+      shipmentFeeGhs: product.minShipmentFeeGhs,
       image: product.images.isNotEmpty ? product.images.first : null,
       category: product.category,
     );
@@ -312,6 +314,42 @@ class CartController extends StateNotifier<List<CartItem>> {
     } else {
       state = [...state, item];
     }
+    await _persist();
+  }
+
+  Future<void> applyDestination({
+    String? city,
+    String? region,
+    double? latitude,
+    double? longitude,
+    GeoLocation? location,
+  }) async {
+    final lat = latitude ?? location?.latitude;
+    final lng = longitude ?? location?.longitude;
+    var changed = false;
+    final next = <CartItem>[];
+    for (final item in state) {
+      final product = LocalCommerceStore.getProduct(item.productId);
+      if (product == null) {
+        next.add(item);
+        continue;
+      }
+      final quote = ShipmentFee.quote(
+        product,
+        city: city,
+        region: region,
+        latitude: lat,
+        longitude: lng,
+      );
+      if ((quote.feeGhs - item.shipmentFeeGhs).abs() >= 0.001) {
+        changed = true;
+        next.add(item.copyWith(shipmentFeeGhs: quote.feeGhs));
+      } else {
+        next.add(item);
+      }
+    }
+    if (!changed) return;
+    state = next;
     await _persist();
   }
 

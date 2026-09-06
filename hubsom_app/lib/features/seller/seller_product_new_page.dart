@@ -7,11 +7,15 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/ghana_places.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
+import '../../models/seller.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/shipment_zone_fee_fields.dart';
 
 class SellerProductNewPage extends ConsumerStatefulWidget {
   const SellerProductNewPage({
@@ -39,6 +43,9 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _description = TextEditingController();
   final _price = TextEditingController();
   final _shipmentFee = TextEditingController();
+  final _outOfRegionFee = TextEditingController();
+  final _zoneCities = <String>{};
+  Seller? _seller;
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
   final _images = <String>[];
@@ -64,10 +71,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
-      _loadingEdit = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadExisting());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSeller();
+      if (_isEdit) _loadExisting();
+    });
+    if (_isEdit) _loadingEdit = true;
   }
 
   @override
@@ -85,8 +93,19 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     _description.dispose();
     _price.dispose();
     _shipmentFee.dispose();
+    _outOfRegionFee.dispose();
     _stock.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSeller() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+    try {
+      final seller = await LocalCommerceStore.ensureSellerForUser(user);
+      if (!mounted) return;
+      setState(() => _seller = seller);
+    } catch (_) {}
   }
 
   Future<void> _loadExisting() async {
@@ -114,13 +133,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _price.text = product.priceGhs.toStringAsFixed(
         product.priceGhs == product.priceGhs.roundToDouble() ? 0 : 2,
       );
-      _shipmentFee.text = product.shipmentFeeGhs <= 0
-          ? ''
-          : product.shipmentFeeGhs.toStringAsFixed(
-              product.shipmentFeeGhs == product.shipmentFeeGhs.roundToDouble()
-                  ? 0
-                  : 2,
-            );
+      _shipmentFee.text = _feeText(product.shipmentFeeGhs);
+      _outOfRegionFee.text = _feeText(product.outOfRegionShipmentFeeGhs);
+      _zoneCities
+        ..clear()
+        ..addAll(product.shipmentZoneCities.map(GhanaPlaces.displayCity));
       _stock.text = '${product.stock}';
       setState(() {
         _images
@@ -162,6 +179,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         _error = '$e';
       });
     }
+  }
+
+  String _feeText(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
   }
 
   String get _returnTo {
@@ -245,6 +269,9 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         'category': _category,
         'priceGhs': double.tryParse(_price.text) ?? 0,
         'shipmentFeeGhs': double.tryParse(_shipmentFee.text.trim()) ?? 0,
+        'shipmentZoneCities': _zoneCities.toList(),
+        'outOfRegionShipmentFeeGhs':
+            double.tryParse(_outOfRegionFee.text.trim()) ?? 0,
         'stock': int.tryParse(_stock.text) ?? 0,
         'images': List<String>.from(_images),
         'supports': _auctionLot
@@ -525,21 +552,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   ((double.tryParse(v ?? '') ?? 0) <= 0) ? 'Enter a valid price' : null,
             ),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _shipmentFee,
-              decoration: const InputDecoration(
-                labelText: 'Shipment fee (GHS)',
-                helperText:
-                    'Buyers pay this at checkout. It also prefills the Huber rider offer.',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                final raw = (v ?? '').trim();
-                if (raw.isEmpty) return null;
-                final n = double.tryParse(raw);
-                if (n == null || n < 0) return 'Enter 0 or a valid shipment fee';
-                return null;
-              },
+            ShipmentZoneFeeFields(
+              inZoneFee: _shipmentFee,
+              outOfRegionFee: _outOfRegionFee,
+              selectedCities: _zoneCities,
+              seller: _seller,
+              enabled: !_busy,
+              onCitiesChanged: () => setState(() {}),
             ),
             const SizedBox(height: 12),
             Text(
