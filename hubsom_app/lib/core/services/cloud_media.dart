@@ -57,4 +57,19 @@ class CloudMedia {
       return null;
     }
   }
+
+  /// Best-effort cleanup when a seller deletes their shop clip.
+  static Future<void> deleteShopVideoAssets({required String videoId}) async {
+    if (!FirebaseBootstrap.ready || videoId.isEmpty) return;
+    for (final path in [
+      'shopVideos/$videoId',
+      'shopVideos/${videoId}_thumb.jpg',
+    ]) {
+      try {
+        await FirebaseStorage.instance.ref().child(path).delete();
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudMedia.deleteShopVideoAssets $path: $e');
+      }
+    }
+  }
 }

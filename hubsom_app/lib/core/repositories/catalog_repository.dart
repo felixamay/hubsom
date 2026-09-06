@@ -471,6 +471,33 @@ class CatalogRepository {
     return video;
   }
 
+  Future<void> deleteShopVideo(String videoId) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to delete a video');
+    final video = LocalCommerceStore.getShopVideo(videoId);
+    if (video == null) throw StateError('Video not found');
+    if (video.authorId != user.id) {
+      throw StateError('You can only delete your own videos');
+    }
+
+    await LocalCommerceStore.deleteShopVideo(videoId);
+    await ProductDemoVideoStore.remove(videoId);
+    await _patchLikedVideo(videoId, false);
+    await _patchSavedVideo(videoId, false);
+    unawaited(_deleteShopVideoInBackground(videoId));
+  }
+
+  Future<void> _deleteShopVideoInBackground(String videoId) async {
+    try {
+      await CloudMedia.deleteShopVideoAssets(videoId: videoId);
+      await CloudVideoMedia.deletePublished(videoId: videoId);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('CatalogRepository._deleteShopVideoInBackground: $e');
+      }
+    }
+  }
+
   Future<void> _publishShopVideoInBackground({
     required String videoId,
     required Uint8List bytes,
