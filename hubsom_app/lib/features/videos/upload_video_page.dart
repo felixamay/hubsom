@@ -10,6 +10,7 @@ import '../../core/services/product_demo_video_picker.dart';
 import '../../core/services/shop_video_limits.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
+import '../../core/services/video_frame_thumb.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
@@ -58,9 +59,25 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
         _bytes = picked.bytes;
         _mime = picked.mimeType;
       });
+      if (_thumbBytes == null || _thumbBytes!.isEmpty) {
+        await _autoThumbnailFromVideo();
+      }
     } catch (e) {
       setState(() => _error = '$e');
     }
+  }
+
+  Future<void> _autoThumbnailFromVideo() async {
+    final bytes = _bytes;
+    if (bytes == null || bytes.isEmpty) return;
+    try {
+      final frame = await captureShopVideoFrame(
+        bytes: bytes,
+        mimeType: _mime,
+      ).timeout(const Duration(seconds: 12), onTimeout: () => null);
+      if (!mounted || frame == null || frame.isEmpty) return;
+      setState(() => _thumbBytes = frame);
+    } catch (_) {}
   }
 
   Future<void> _publish() async {
@@ -74,7 +91,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
       return;
     }
     if (_thumbBytes == null || _thumbBytes!.isEmpty) {
-      setState(() => _error = 'Upload a thumbnail from the video');
+      setState(() => _error = 'Add a thumbnail — pick the video again or upload a still');
       return;
     }
     if (_selected.isEmpty) {
@@ -97,7 +114,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
             thumbnailBytes: _thumbBytes,
           )
           .timeout(
-            const Duration(seconds: 45),
+            const Duration(seconds: 90),
             onTimeout: () => throw StateError(
               'Saving your video took too long. Try a shorter clip or check storage space.',
             ),
@@ -198,7 +215,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Upload a still from the clip. This is what shoppers see on Home — not the product photo.',
+                  'Upload a still from the clip, or we grab one automatically when you pick the video.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),

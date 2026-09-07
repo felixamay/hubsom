@@ -7,16 +7,31 @@ import 'firebase_bootstrap.dart';
 class CloudMedia {
   CloudMedia._();
 
+  /// Flips false after the first failed Storage call this session. The
+  /// project has no Storage bucket today, so every attempt would otherwise
+  /// burn a slow link before the Firestore fallback gets a turn.
+  static bool storageUsable = true;
+
+  static bool get _canUseStorage =>
+      storageUsable && FirebaseBootstrap.ready;
+
+  static FirebaseStorage get _storage {
+    final s = FirebaseStorage.instance;
+    s.setMaxUploadRetryTime(const Duration(seconds: 20));
+    s.setMaxOperationRetryTime(const Duration(seconds: 15));
+    return s;
+  }
+
   static Future<String?> uploadShopVideo({
     required String videoId,
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    if (!FirebaseBootstrap.ready || bytes.isEmpty || videoId.isEmpty) {
+    if (!_canUseStorage || bytes.isEmpty || videoId.isEmpty) {
       return null;
     }
     try {
-      final ref = FirebaseStorage.instance.ref().child('shopVideos/$videoId');
+      final ref = _storage.ref().child('shopVideos/$videoId');
       await ref.putData(
         bytes,
         SettableMetadata(
@@ -26,6 +41,7 @@ class CloudMedia {
       );
       return await ref.getDownloadURL();
     } catch (e) {
+      storageUsable = false;
       if (kDebugMode) debugPrint('CloudMedia.uploadShopVideo failed: $e');
       return null;
     }
@@ -36,14 +52,12 @@ class CloudMedia {
     required String videoId,
     required Uint8List bytes,
   }) async {
-    if (!FirebaseBootstrap.ready || bytes.isEmpty || videoId.isEmpty) {
+    if (!_canUseStorage || bytes.isEmpty || videoId.isEmpty) {
       return null;
     }
     try {
       // Lives under shopVideos/ so existing Storage rules allow the still.
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('shopVideos/${videoId}_thumb.jpg');
+      final ref = _storage.ref().child('shopVideos/${videoId}_thumb.jpg');
       await ref.putData(
         bytes,
         SettableMetadata(
@@ -53,17 +67,16 @@ class CloudMedia {
       );
       return await ref.getDownloadURL();
     } catch (e) {
+      storageUsable = false;
       if (kDebugMode) debugPrint('CloudMedia.uploadShopVideoThumb failed: $e');
       return null;
     }
   }
 
   static Future<String?> getShopVideoThumbUrl({required String videoId}) async {
-    if (!FirebaseBootstrap.ready || videoId.isEmpty) return null;
+    if (!_canUseStorage || videoId.isEmpty) return null;
     try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('shopVideos/${videoId}_thumb.jpg');
+      final ref = _storage.ref().child('shopVideos/${videoId}_thumb.jpg');
       return await ref.getDownloadURL();
     } catch (e) {
       if (kDebugMode) debugPrint('CloudMedia.getShopVideoThumbUrl failed: $e');
@@ -73,7 +86,7 @@ class CloudMedia {
 
   /// Best-effort cleanup when a seller deletes their shop clip.
   static Future<void> deleteShopVideoAssets({required String videoId}) async {
-    if (!FirebaseBootstrap.ready || videoId.isEmpty) return;
+    if (!_canUseStorage || videoId.isEmpty) return;
     for (final path in [
       'shopVideos/$videoId',
       'shopVideos/${videoId}_thumb.jpg',

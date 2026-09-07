@@ -15,16 +15,17 @@ abstract final class ShopVideoPosterUrl {
     return 'https://firebasestorage.googleapis.com/v0/b/$_storageBucket/o/$objectPath?alt=media';
   }
 
-  /// Prefer a local blob / data URL, else the uploaded Storage still.
+  /// Prefer a local blob / data URL / https still. Only guess the Storage
+  /// path when the clip itself streams from Storage.
   static String? resolve(ShopVideo video) {
     final raw = video.thumbnailUrl?.trim() ?? '';
-    if (raw.isNotEmpty) {
+    if (raw.isNotEmpty && raw != 'null') {
       final resolved = LocalBlobStore.resolve(raw) ?? raw;
       if (resolved.isNotEmpty && !LocalBlobStore.isRef(resolved)) {
         return resolved;
       }
     }
-    if (video.hasPublishedMedia) {
+    if (video.hasRemoteVideo) {
       return storageThumbUrl(video.id);
     }
     return null;

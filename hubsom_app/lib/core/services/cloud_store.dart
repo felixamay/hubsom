@@ -343,7 +343,11 @@ class CloudStore {
     final sdk = _db;
     if (sdk != null) {
       try {
-        final snap = await sdk.collection(collection).doc(id).get();
+        final snap = await sdk
+            .collection(collection)
+            .doc(id)
+            .get()
+            .timeout(const Duration(seconds: 20));
         if (!snap.exists) return null;
         final data = Map<String, dynamic>.from(snap.data() ?? const {});
         data.putIfAbsent('id', () => snap.id);
@@ -370,12 +374,80 @@ class CloudStore {
     }
   }
 
+  /// Docs where [field] == [value]. Used for shop-video chunks so a phone never
+  /// downloads every clip's chunks to find one video.
+  static Future<List<Map<String, dynamic>>> queryDocs(
+    String collection, {
+    required String field,
+    required String value,
+  }) async {
+    if (!useNetwork || field.isEmpty || value.isEmpty) return const [];
+    final sdk = _db;
+    if (sdk != null) {
+      try {
+        final snap = await sdk
+            .collection(collection)
+            .where(field, isEqualTo: value)
+            .get()
+            .timeout(const Duration(seconds: 45));
+        return snap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data.putIfAbsent('id', () => d.id);
+          return data;
+        }).toList();
+      } catch (e) {
+        if (kDebugMode) debugPrint('CloudStore.queryDocs sdk: $e');
+      }
+    }
+    try {
+      final res = await _rest.post<dynamic>(
+        '$_root:runQuery',
+        queryParameters: {'key': _apiKey},
+        data: {
+          'structuredQuery': {
+            'from': [
+              {'collectionId': collection},
+            ],
+            'where': {
+              'fieldFilter': {
+                'field': {'fieldPath': field},
+                'op': 'EQUAL',
+                'value': {'stringValue': value},
+              },
+            },
+          },
+        },
+      );
+      final data = res.data;
+      if (data is! List) return const [];
+      final out = <Map<String, dynamic>>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final doc = item['document'];
+        if (doc is! Map) continue;
+        final decoded = decodeDocument(doc);
+        if (decoded.isEmpty) continue;
+        final name = '${doc['name'] ?? ''}';
+        final docId = name.split('/').last;
+        if (docId.isNotEmpty) decoded.putIfAbsent('id', () => docId);
+        out.add(decoded);
+      }
+      return out;
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudStore.queryDocs rest: $e');
+      return const [];
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> listDocs(String collection) async {
     if (!useNetwork) return const [];
     final sdk = _db;
     if (sdk != null) {
       try {
-        final snap = await sdk.collection(collection).get();
+        final snap = await sdk
+            .collection(collection)
+            .get()
+            .timeout(const Duration(seconds: 30));
         return snap.docs.map((d) {
           final data = Map<String, dynamic>.from(d.data());
           data.putIfAbsent('id', () => d.id);

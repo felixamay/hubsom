@@ -112,9 +112,12 @@ void main() {
     );
   });
 
-  test('prepareShopVideoForSlowNetwork finishes immediately on a large clip',
+  test('prepareShopVideoForSlowNetwork skips slow remux on large MP4 clips',
       () async {
-    final bytes = Uint8List(500 * 1024);
+    final ftyp = _box('ftyp', [...'isom'.codeUnits, ..._u32(0), ...'isom'.codeUnits]);
+    final mdat = _box('mdat', List<int>.filled(400 * 1024, 7));
+    final moov = _box('moov', const []);
+    final bytes = Uint8List.fromList([...ftyp, ...mdat, ...moov]);
     final sw = Stopwatch()..start();
     final prepared = await prepareShopVideoForSlowNetwork(
       bytes: bytes,

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'mp4_faststart.dart';
 import 'product_demo_video.dart';
 import 'shop_video_limits.dart';
 
@@ -21,16 +20,11 @@ Future<ProductDemoVideo> prepareShopVideoForSlowNetwork({
     );
   }
 
-  var outBytes = bytes;
-  if (looksLikeMp4(outBytes) ||
-      mimeType.contains('mp4') ||
-      mimeType.contains('quicktime')) {
-    outBytes = ensureMp4FastStart(outBytes);
-  }
-
+  // Do not remux large clips during Publish — that blocked uploads on slow phones.
+  // Downloaded copies still get faststart in [CloudVideoMedia.ensureLocalBytes].
   return ProductDemoVideo(
-    bytes: outBytes,
-    mimeType: shopVideoPlaybackMime(bytes: outBytes, mimeType: mimeType),
+    bytes: bytes,
+    mimeType: shopVideoPlaybackMime(bytes: bytes, mimeType: mimeType),
     durationSeconds: durationSeconds,
     name: name,
   );

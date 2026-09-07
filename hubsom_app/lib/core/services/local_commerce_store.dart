@@ -14,6 +14,7 @@ import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'shop_video_cloud.dart';
 import 'shop_video_merge.dart';
 import 'storage_media.dart';
 
@@ -1375,6 +1376,7 @@ class LocalCommerceStore {
     required HubsomUser author,
     Product? linkedProduct,
     String caption = '',
+    bool syncCloud = true,
   }) async {
     final post = TimelinePost(
       id: 'post-${_uuid.v4().substring(0, 8)}',
@@ -1399,7 +1401,21 @@ class LocalCommerceStore {
           : caption.trim(),
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
-    return _insertTimelinePost(post);
+    return _insertTimelinePost(post, syncCloud: syncCloud);
+  }
+
+  /// Push a timeline post to Firestore (used after a video finishes publishing
+  /// so other phones get the playable URL and a portable thumbnail).
+  static Future<void> syncTimelinePost(TimelinePost post) async {
+    final rows = _readList(_timelineKey);
+    final idx = rows.indexWhere((e) => e is Map && '${e['id']}' == post.id);
+    if (idx >= 0) {
+      rows[idx] = post.toJson();
+      await _writeList(_timelineKey, rows);
+    }
+    try {
+      await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
+    } catch (_) {}
   }
 
   static Future<TimelinePost> shareLiveToTimeline({
@@ -1434,13 +1450,18 @@ class LocalCommerceStore {
     return _insertTimelinePost(post);
   }
 
-  static Future<TimelinePost> _insertTimelinePost(TimelinePost post) async {
+  static Future<TimelinePost> _insertTimelinePost(
+    TimelinePost post, {
+    bool syncCloud = true,
+  }) async {
     final rows = _readList(_timelineKey);
     rows.insert(0, post.toJson());
     await _writeList(_timelineKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
-    } catch (_) {}
+    if (syncCloud) {
+      try {
+        await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
+      } catch (_) {}
+    }
     return post;
   }
 
@@ -1587,6 +1608,7 @@ class LocalCommerceStore {
     String? videoUrl,
     String? thumbnailUrl,
     String? id,
+    bool syncCloud = true,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
@@ -1614,13 +1636,14 @@ class LocalCommerceStore {
     final rows = _readList(_shopVideosKey);
     rows.insert(0, video.toJson());
     await _writeList(_shopVideosKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toCloudJson()]);
-    } catch (_) {}
+    if (syncCloud) await syncShopVideoToCloud(video);
     return video;
   }
 
-  static Future<ShopVideo?> updateShopVideo(ShopVideo video) async {
+  static Future<ShopVideo?> updateShopVideo(
+    ShopVideo video, {
+    bool syncCloud = true,
+  }) async {
     final rows = _readList(_shopVideosKey);
     final idx = rows.indexWhere((e) {
       if (e is! Map) return false;
@@ -1629,10 +1652,18 @@ class LocalCommerceStore {
     if (idx < 0) return null;
     rows[idx] = video.toJson();
     await _writeList(_shopVideosKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toCloudJson()]);
-    } catch (_) {}
+    if (syncCloud) await syncShopVideoToCloud(video);
     return video;
+  }
+
+  /// Firestore copy of a shop video, with a thumbnail every phone can load.
+  static Future<void> syncShopVideoToCloud(ShopVideo video) async {
+    try {
+      await CloudStore.upsertDocs(
+        CloudStore.shopVideos,
+        [shopVideoCloudJson(video)],
+      );
+    } catch (_) {}
   }
 
   static Future<void> deleteShopVideo(String videoId) async {

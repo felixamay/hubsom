@@ -61,21 +61,29 @@ class ShopVideo extends Equatable {
     return hasRemoteVideo || u.startsWith('hubsom-fs://');
   }
 
+  static String? _url(Object? raw) {
+    if (raw == null) return null;
+    final v = '$raw'.trim();
+    if (v.isEmpty || v == 'null' || v == 'undefined') return null;
+    return v;
+  }
+
   factory ShopVideo.fromJson(Map<String, dynamic> json) => ShopVideo(
-        id: json['id'] as String,
+        id: '${json['id']}',
         authorId: json['authorId'] as String? ?? '',
         authorName: json['authorName'] as String? ?? 'Hubsom user',
         authorImage: json['authorImage'] as String?,
         authorSellerId: json['authorSellerId'] as String?,
         caption: json['caption'] as String? ?? '',
         soundTitle: json['soundTitle'] as String? ?? '',
-        productIds: (json['productIds'] as List?)?.cast<String>() ?? const [],
+        productIds:
+            (json['productIds'] as List?)?.map((e) => '$e').toList() ?? const [],
         mimeType: json['mimeType'] as String? ?? 'video/mp4',
         shareCount: (json['shareCount'] as num?)?.toInt() ?? 0,
-        videoUrl: json['videoUrl'] as String? ?? json['url'] as String?,
-        thumbnailUrl: json['thumbnailUrl'] as String? ??
-            json['posterUrl'] as String? ??
-            json['thumbUrl'] as String?,
+        videoUrl: _url(json['videoUrl']) ?? _url(json['url']),
+        thumbnailUrl: _url(json['thumbnailUrl']) ??
+            _url(json['posterUrl']) ??
+            _url(json['thumbUrl']),
         createdAt: json['createdAt'] as String? ?? '',
       );
 
@@ -96,13 +104,16 @@ class ShopVideo extends Equatable {
         'createdAt': createdAt,
       };
 
-  /// Firestore payload — omit device-local thumbnail refs other phones cannot load.
-  Map<String, dynamic> toCloudJson() {
+  /// Firestore payload. [thumbnail] is the portable still (https or a small
+  /// `data:` JPEG) — pass null to write no still. Device-only
+  /// `hubsom-blob://` refs are never written.
+  Map<String, dynamic> toCloudJson({String? thumbnail}) {
     final map = toJson();
-    final thumb = '${map['thumbnailUrl'] ?? ''}'.trim();
-    if (thumb.startsWith('hubsom-blob://') ||
-        (thumb.startsWith('data:') && thumb.contains('base64,'))) {
+    final thumb = (thumbnail ?? '').trim();
+    if (thumb.isEmpty || thumb.startsWith('hubsom-blob://')) {
       map.remove('thumbnailUrl');
+    } else {
+      map['thumbnailUrl'] = thumb;
     }
     return map;
   }
