@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -15,10 +16,16 @@ class CloudVideoMedia {
   static const metaCollection = 'shopVideoMedia';
   static const chunkCollection = 'shopVideoChunks';
 
-  /// Keep base64 payloads comfortably under Firestore's 1 MiB doc limit.
-  static const _chunkBytes = 350 * 1024;
+  /// Keep base64 payloads under Firestore's 1 MiB doc limit (600 KiB raw
+  /// becomes ~800 KiB base64). Fewer, larger docs publish faster.
+  static const _chunkBytes = 600 * 1024;
+
+  /// Chunk uploads in flight at once. More saturates a slow phone link.
+  static const _uploadParallelism = 3;
 
   static const fsScheme = 'hubsom-fs://';
+
+  static final Map<String, Future<bool>> _downloads = {};
 
   static bool isFirestoreRef(String? url) {
     final u = url?.trim() ?? '';
@@ -32,52 +39,107 @@ class CloudVideoMedia {
     required String videoId,
     required Uint8List bytes,
     required String mimeType,
+    void Function(double fraction)? onProgress,
   }) async {
     if (videoId.isEmpty || bytes.isEmpty) return null;
 
-    final storageUrl = await CloudMedia.uploadShopVideo(
-      videoId: videoId,
-      bytes: bytes,
-      mimeType: mimeType,
-    );
-    if (storageUrl != null && storageUrl.isNotEmpty) return storageUrl;
+    String? storageUrl;
+    try {
+      storageUrl = await CloudMedia.uploadShopVideo(
+        videoId: videoId,
+        bytes: bytes,
+        mimeType: mimeType,
+      ).timeout(const Duration(seconds: 45), onTimeout: () => null);
+    } catch (_) {
+      storageUrl = null;
+    }
+    if (storageUrl != null && storageUrl.isNotEmpty) {
+      onProgress?.call(1);
+      return storageUrl;
+    }
 
     final ok = await _uploadChunks(
       videoId: videoId,
       bytes: bytes,
       mimeType: mimeType,
+      onProgress: onProgress,
     );
     if (!ok) return null;
     return fsRefFor(videoId);
+  }
+
+  /// True when the meta doc says every chunk is already in Firestore.
+  static Future<bool> isPublished(String videoId) async {
+    if (videoId.isEmpty) return false;
+    try {
+      final meta = await CloudStore.getDoc(metaCollection, videoId);
+      final expected = (meta?['chunkCount'] as num?)?.toInt() ?? 0;
+      return expected > 0 && meta?['complete'] != false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<bool> _uploadChunks({
     required String videoId,
     required Uint8List bytes,
     required String mimeType,
+    void Function(double fraction)? onProgress,
   }) async {
     try {
       final chunkCount = (bytes.length / _chunkBytes).ceil();
-      // One doc at a time so a large video never blows a single batch.
-      for (var i = 0; i < chunkCount; i++) {
-        final start = i * _chunkBytes;
-        final end = (start + _chunkBytes).clamp(0, bytes.length);
-        final slice = bytes.sublist(start, end);
-        await CloudStore.upsertDocs(chunkCollection, [
-          {
-            'id': '${videoId}_$i',
-            'videoId': videoId,
-            'index': i,
-            'data': base64Encode(slice),
-          },
-        ]);
-      }
+      // Meta first (complete:false) so a reader knows the clip is on its way
+      // and how many chunks to expect once it flips to complete.
       await CloudStore.upsertDocs(metaCollection, [
         {
           'id': videoId,
           'mimeType': mimeType,
           'chunkCount': chunkCount,
           'size': bytes.length,
+          'complete': false,
+          'updatedAt': DateTime.now().toUtc().toIso8601String(),
+        },
+      ]);
+
+      var done = 0;
+      var failed = false;
+      Future<void> uploadOne(int i) async {
+        final start = i * _chunkBytes;
+        final end = (start + _chunkBytes).clamp(0, bytes.length);
+        final slice = bytes.sublist(start, end);
+        try {
+          await CloudStore.upsertDocs(chunkCollection, [
+            {
+              'id': '${videoId}_$i',
+              'videoId': videoId,
+              'index': i,
+              'data': base64Encode(slice),
+            },
+          ]);
+          done++;
+          onProgress?.call(done / chunkCount);
+        } catch (e) {
+          failed = true;
+          if (kDebugMode) debugPrint('chunk $i of $videoId failed: $e');
+        }
+      }
+
+      for (var i = 0; i < chunkCount; i += _uploadParallelism) {
+        final batch = <Future<void>>[];
+        for (var j = i; j < i + _uploadParallelism && j < chunkCount; j++) {
+          batch.add(uploadOne(j));
+        }
+        await Future.wait(batch);
+        if (failed) return false;
+      }
+
+      await CloudStore.upsertDocs(metaCollection, [
+        {
+          'id': videoId,
+          'mimeType': mimeType,
+          'chunkCount': chunkCount,
+          'size': bytes.length,
+          'complete': true,
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         },
       ]);
@@ -93,21 +155,34 @@ class CloudVideoMedia {
   /// HTTPS clips stream from the CDN and skip this download — unless
   /// [allowChunkFallbackForHttp] is true after the stream failed (old files
   /// with `moov` at the end, a dead Storage URL, or a new phone with no Hive).
+  /// Concurrent callers for the same clip share one download.
   static Future<bool> ensureLocalBytes({
     required String videoId,
     String? videoUrl,
     String mimeType = 'video/mp4',
     bool allowChunkFallbackForHttp = false,
-  }) async {
-    if (videoId.isEmpty) return false;
-    try {
-      final url = videoUrl?.trim() ?? '';
-      final isStreamable = url.startsWith('http://') ||
-          url.startsWith('https://') ||
-          url.startsWith('blob:') ||
-          url.startsWith('data:');
-      if (isStreamable && !allowChunkFallbackForHttp) return false;
+  }) {
+    if (videoId.isEmpty) return Future.value(false);
+    final url = videoUrl?.trim() ?? '';
+    final isStreamable = url.startsWith('http://') ||
+        url.startsWith('https://') ||
+        url.startsWith('blob:') ||
+        url.startsWith('data:');
+    if (isStreamable && !allowChunkFallbackForHttp) return Future.value(false);
 
+    final inFlight = _downloads[videoId];
+    if (inFlight != null) return inFlight;
+    final task = _ensureLocalBytes(videoId: videoId, mimeType: mimeType)
+        .whenComplete(() => _downloads.remove(videoId));
+    _downloads[videoId] = task;
+    return task;
+  }
+
+  static Future<bool> _ensureLocalBytes({
+    required String videoId,
+    required String mimeType,
+  }) async {
+    try {
       final existing = await ProductDemoVideoStore.load(videoId);
       if (existing != null) return true;
 
@@ -134,7 +209,7 @@ class CloudVideoMedia {
     try {
       final fromMeta = await _downloadByMeta(videoId);
       if (fromMeta != null && fromMeta.isNotEmpty) return fromMeta;
-      return await _downloadByListing(videoId);
+      return await _downloadByQuery(videoId);
     } catch (e) {
       if (kDebugMode) debugPrint('CloudVideoMedia._downloadChunks failed: $e');
       return null;
@@ -157,9 +232,13 @@ class CloudVideoMedia {
     return out.isEmpty ? null : out;
   }
 
-  /// Older uploads used unpredictable chunk doc ids. List and filter.
-  static Future<Uint8List?> _downloadByListing(String videoId) async {
-    final rows = await CloudStore.listDocs(chunkCollection);
+  /// Older uploads used unpredictable chunk doc ids. Query just this clip.
+  static Future<Uint8List?> _downloadByQuery(String videoId) async {
+    final rows = await CloudStore.queryDocs(
+      chunkCollection,
+      field: 'videoId',
+      value: videoId,
+    );
     return assembleChunkDocs(videoId, rows);
   }
 
@@ -213,11 +292,13 @@ class CloudVideoMedia {
       }
       await CloudStore.deleteDoc(metaCollection, videoId);
 
-      final rows = await CloudStore.listDocs(chunkCollection);
+      final rows = await CloudStore.queryDocs(
+        chunkCollection,
+        field: 'videoId',
+        value: videoId,
+      );
       for (final row in rows) {
-        final owner = '${row['videoId'] ?? ''}';
         final docId = '${row['id'] ?? ''}';
-        if (owner != videoId && !docId.startsWith('${videoId}_')) continue;
         if (docId.isEmpty) continue;
         await CloudStore.deleteDoc(chunkCollection, docId);
       }

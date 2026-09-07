@@ -140,7 +140,11 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
     if (await _attachStored(gen)) return;
 
     if (mounted && gen == _loadGen) {
-      setState(() => _error = widget.expand ? null : 'No demo video');
+      setState(
+        () => _error = widget.expand
+            ? 'Video is still uploading from the seller\'s phone.\nCheck back shortly.'
+            : 'No demo video',
+      );
     }
   }
 
@@ -292,19 +296,21 @@ class _DemoVideoScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (error != null) {
+      final message = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
       return ColoredBox(
         color: Colors.black,
         child: expand
-            ? const SizedBox.expand()
-            : SizedBox(
-                height: 160,
-                child: Center(
-                  child: Text(
-                    error!,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ),
+            ? SizedBox.expand(child: message)
+            : SizedBox(height: 160, child: message),
       );
     }
     if (!ready || controller == null || controller!.value.hasError) {

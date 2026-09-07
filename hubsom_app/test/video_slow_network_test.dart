@@ -135,6 +135,44 @@ void main() {
     expect(merged.first['thumbnailUrl'], 'https://cdn.hubsom.test/clip-thumb.jpg');
   });
 
+  test('cloud hydrate never writes the string "null" over a local thumbnail', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'thumbnailUrl': 'hubsom-blob://deadbeef',
+        },
+      ],
+      incoming: [
+        {
+          'id': 'vid-1',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'thumbnailUrl': 'null',
+        },
+      ],
+    );
+    expect(merged.first['thumbnailUrl'], 'hubsom-blob://deadbeef');
+    expect(merged.first.containsKey('videoUrl'), isFalse);
+    final parsed = ShopVideo.fromJson({...merged.first, 'videoUrl': 'null'});
+    expect(parsed.videoUrl, isNull);
+    expect(parsed.hasPublishedMedia, isFalse);
+  });
+
+  test('inline data thumbnails travel to other phones in the cloud doc', () {
+    final data = 'data:image/jpeg;base64,${'A' * 64}';
+    final clip = _clip(thumbnailUrl: data);
+    expect(clip.toCloudJson(thumbnail: data)['thumbnailUrl'], data);
+    expect(
+      clip.toCloudJson(thumbnail: null).containsKey('thumbnailUrl'),
+      isFalse,
+    );
+  });
+
   test('published shop videos without metadata use the storage still on Home',
       () {
     final clip = _clip(thumbnailUrl: null);
