@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
@@ -35,6 +36,10 @@ class LocalCommerceStore {
   static const _videoSavesKey = 'localVideoSaves';
   static const _sellerFollowersKey = 'localSellerFollowers';
   static const _uuid = Uuid();
+
+  /// Overlapping host/viewer timers share one finalize so a sold lot cannot
+  /// overwrite the auto-relisted next unit on the same device.
+  static final Map<String, Future<Order?>> _inFlightFinalize = {};
 
   /// Wipe local commerce (keeps auth vault / cart / session).
   static Future<void> clearDemoAndCommerce() async {
@@ -372,9 +377,22 @@ class LocalCommerceStore {
   }
 
   /// Prefer the auction with the freshest bids / sold order.
+  ///
+  /// Distinct lots (auto-relist or a host switch) are different auctions.
+  /// Sold status and a higher closing bid must not resurrect the prior lot
+  /// over the next open unit.
   static LiveAuction? preferFresherAuction(LiveAuction? a, LiveAuction? b) {
     if (a == null) return b;
     if (b == null) return a;
+    if (a.id != b.id) {
+      final byEnd = b.endsAt.compareTo(a.endsAt);
+      if (byEnd != 0) return byEnd > 0 ? b : a;
+      if (b.status == 'open' && a.status != 'open') return b;
+      if (a.status == 'open' && b.status != 'open') return a;
+      if (b.orderId != null && a.orderId == null) return b;
+      if (a.orderId != null && b.orderId == null) return a;
+      return a;
+    }
     if (b.orderId != null && a.orderId == null) return b;
     if (a.orderId != null && b.orderId == null) return a;
     if (b.status == 'sold' && a.status != 'sold') return b;
@@ -391,6 +409,48 @@ class LocalCommerceStore {
     return a;
   }
 
+  static Map<String, int> _mergeProductQuantities(
+    LiveStream local,
+    LiveStream remote,
+    LiveAuction? auction,
+  ) {
+    if (auction != null &&
+        auction.id == remote.auction?.id &&
+        auction.id != local.auction?.id) {
+      return Map<String, int>.from(
+        remote.productQuantities.isNotEmpty
+            ? remote.productQuantities
+            : local.productQuantities,
+      );
+    }
+    if (auction != null &&
+        auction.id == local.auction?.id &&
+        auction.id != remote.auction?.id) {
+      return Map<String, int>.from(
+        local.productQuantities.isNotEmpty
+            ? local.productQuantities
+            : remote.productQuantities,
+      );
+    }
+    final keys = {
+      ...local.productQuantities.keys,
+      ...remote.productQuantities.keys,
+    };
+    final out = <String, int>{};
+    for (final key in keys) {
+      final left = local.productQuantities[key];
+      final right = remote.productQuantities[key];
+      if (left == null) {
+        out[key] = right!;
+      } else if (right == null) {
+        out[key] = left;
+      } else {
+        out[key] = left < right ? left : right;
+      }
+    }
+    return out;
+  }
+
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
     final auction = preferFresherAuction(local.auction, remote.auction);
     final preferRemoteEnded = !remote.isLive && local.isLive;
@@ -398,6 +458,7 @@ class LocalCommerceStore {
         ? remote.viewerCount
         : local.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
+    final quantities = _mergeProductQuantities(local, remote, auction);
     return local.copyWith(
       status: preferRemoteEnded ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
@@ -405,6 +466,7 @@ class LocalCommerceStore {
       peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
       productIds: products,
+      productQuantities: quantities,
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
@@ -947,10 +1009,41 @@ class LocalCommerceStore {
   static Future<Order?> finalizeAuction(
     String streamId, {
     bool autoRelist = true,
+  }) {
+    final pending = _inFlightFinalize[streamId];
+    if (pending != null) return pending;
+    final done = Completer<Order?>();
+    _inFlightFinalize[streamId] = done.future;
+    () async {
+      try {
+        done.complete(
+          await _finalizeAuctionUnlocked(
+            streamId,
+            autoRelist: autoRelist,
+          ),
+        );
+      } catch (e, st) {
+        done.completeError(e, st);
+      } finally {
+        _inFlightFinalize.remove(streamId);
+      }
+    }();
+    return done.future;
+  }
+
+  static Future<bool> _lotStillCurrent(String streamId, String lotId) async {
+    final live = getStream(streamId)?.auction;
+    return live == null || live.id == lotId;
+  }
+
+  static Future<Order?> _finalizeAuctionUnlocked(
+    String streamId, {
+    required bool autoRelist,
   }) async {
     final stream = getStream(streamId);
     if (stream == null || stream.auction == null) return null;
     var auction = stream.auction!;
+    final lotId = auction.id;
 
     if (auction.orderId != null) {
       for (final o in LocalHuberStore.listOrders()) {
@@ -964,7 +1057,8 @@ class LocalCommerceStore {
 
     // Asking price not met — mark for seller to extend (no order yet).
     if (!auction.askMet) {
-      if (auction.status != 'reserve_not_met') {
+      if (auction.status != 'reserve_not_met' &&
+          await _lotStillCurrent(streamId, lotId)) {
         await updateStream(
           streamId,
           auction: auction.copyWith(status: 'reserve_not_met'),
@@ -975,22 +1069,27 @@ class LocalCommerceStore {
 
     // No winning bidder — just mark closed.
     if (auction.highestBidder == null && auction.highestBidderId == null) {
-      await updateStream(
-        streamId,
-        auction: auction.copyWith(status: 'closed'),
-      );
+      if (await _lotStillCurrent(streamId, lotId)) {
+        await updateStream(
+          streamId,
+          auction: auction.copyWith(status: 'closed'),
+        );
+      }
       return null;
     }
 
     final product = getProduct(auction.productId);
     final orderId = 'ord_auc_${auction.id}';
     // Idempotent if another device already saved this order id.
+    // Never write this sold snapshot over a newer auto-relisted lot.
     for (final o in LocalHuberStore.listOrders()) {
       if (o.id == orderId) {
-        await updateStream(
-          streamId,
-          auction: auction.copyWith(status: 'sold', orderId: orderId),
-        );
+        if (await _lotStillCurrent(streamId, lotId)) {
+          await updateStream(
+            streamId,
+            auction: auction.copyWith(status: 'sold', orderId: orderId),
+          );
+        }
         return o;
       }
     }
@@ -1033,6 +1132,7 @@ class LocalCommerceStore {
     try {
       await AdminTreasuryStore.recordPaidOrder(order);
     } catch (_) {}
+    if (!await _lotStillCurrent(streamId, lotId)) return order;
     await updateStream(
       streamId,
       auction: auction.copyWith(status: 'sold', orderId: orderId),
@@ -1058,11 +1158,12 @@ class LocalCommerceStore {
         );
       } catch (_) {}
     }
+    if (!await _lotStillCurrent(streamId, lotId)) return order;
     await _consumeLiveQuantity(
       streamId: streamId,
       productId: auction.productId,
     );
-    if (autoRelist) {
+    if (autoRelist && await _lotStillCurrent(streamId, lotId)) {
       await _relistSameProductAuction(streamId, sold: auction);
     }
     return order;

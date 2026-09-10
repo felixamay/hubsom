@@ -552,4 +552,171 @@ void main() {
       isFalse,
     );
   });
+
+  test('next open lot wins over a sold or stale prior lot', () {
+    final ended = DateTime.now()
+        .toUtc()
+        .subtract(const Duration(seconds: 2))
+        .toIso8601String();
+    final nextEnd = DateTime.now()
+        .toUtc()
+        .add(const Duration(seconds: 25))
+        .toIso8601String();
+    final sold = LiveAuction(
+      id: 'auction-old',
+      productId: 'p1',
+      startingBidGhs: 80,
+      currentBidGhs: 150,
+      minIncrementGhs: 5,
+      endsAt: ended,
+      status: 'sold',
+      orderId: 'ord_auc_auction-old',
+      bidderCount: 3,
+      highestBidder: 'Kojo Bidder',
+    );
+    final expiredOpen = LiveAuction(
+      id: 'auction-old',
+      productId: 'p1',
+      startingBidGhs: 80,
+      currentBidGhs: 150,
+      minIncrementGhs: 5,
+      endsAt: ended,
+      status: 'open',
+      bidderCount: 3,
+      highestBidder: 'Kojo Bidder',
+    );
+    final nextLot = LiveAuction(
+      id: 'auction-next',
+      productId: 'p1',
+      startingBidGhs: 80,
+      currentBidGhs: 80,
+      minIncrementGhs: 5,
+      endsAt: nextEnd,
+      status: 'open',
+    );
+    expect(
+      LocalCommerceStore.preferFresherAuction(sold, nextLot)?.id,
+      'auction-next',
+    );
+    expect(
+      LocalCommerceStore.preferFresherAuction(nextLot, sold)?.id,
+      'auction-next',
+    );
+    expect(
+      LocalCommerceStore.preferFresherAuction(expiredOpen, nextLot)?.id,
+      'auction-next',
+    );
+  });
+
+  test('cloud merge keeps the auto-relisted lot and remaining quantity', () {
+    final ended = DateTime.now()
+        .toUtc()
+        .subtract(const Duration(seconds: 2))
+        .toIso8601String();
+    final nextEnd = DateTime.now()
+        .toUtc()
+        .add(const Duration(seconds: 25))
+        .toIso8601String();
+    LiveStream base({
+      required LiveAuction auction,
+      required int qty,
+    }) {
+      return LiveStream(
+        id: 'live-1',
+        title: 'Sunday live',
+        description: '',
+        sellerId: 's1',
+        status: 'live',
+        channelName: 'live-1',
+        cover: 'https://cdn.hubsom.test/live.jpg',
+        productIds: const ['p1'],
+        productQuantities: {'p1': qty},
+        pinnedProductId: 'p1',
+        auction: auction,
+      );
+    }
+
+    final local = base(
+      auction: LiveAuction(
+        id: 'auction-old',
+        productId: 'p1',
+        startingBidGhs: 80,
+        currentBidGhs: 150,
+        minIncrementGhs: 5,
+        endsAt: ended,
+        status: 'sold',
+        orderId: 'ord_auc_auction-old',
+      ),
+      qty: 3,
+    );
+    final remote = base(
+      auction: LiveAuction(
+        id: 'auction-next',
+        productId: 'p1',
+        startingBidGhs: 80,
+        currentBidGhs: 80,
+        minIncrementGhs: 5,
+        endsAt: nextEnd,
+        status: 'open',
+      ),
+      qty: 2,
+    );
+    final merged = LocalCommerceStore.mergeStreams(local, remote);
+    expect(merged.auction?.id, 'auction-next');
+    expect(merged.auction?.isOpen, isTrue);
+    expect(merged.offeredQty('p1'), 2);
+
+    final viewerStale = base(
+      auction: LiveAuction(
+        id: 'auction-old',
+        productId: 'p1',
+        startingBidGhs: 80,
+        currentBidGhs: 150,
+        minIncrementGhs: 5,
+        endsAt: ended,
+        status: 'open',
+        bidderCount: 3,
+        highestBidder: 'Kojo Bidder',
+      ),
+      qty: 3,
+    );
+    final fromViewer = LocalCommerceStore.mergeStreams(viewerStale, remote);
+    expect(fromViewer.auction?.id, 'auction-next');
+    expect(fromViewer.offeredQty('p1'), 2);
+  });
+
+  test('overlapping finalize keeps one sale and the next open lot', () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+
+    final results = await Future.wait([
+      LocalCommerceStore.finalizeAuction(stream.id),
+      LocalCommerceStore.finalizeAuction(stream.id),
+    ]);
+    expect(results[0]!.id, results[1]!.id);
+    expect(results[0]!.id, 'ord_auc_${auction.id}');
+
+    final live = LocalCommerceStore.getStream(stream.id)!;
+    expect(live.offeredQty(auction.productId), 2);
+    expect(live.auction!.isOpen, isTrue);
+    expect(live.auction!.id, isNot(auction.id));
+    expect(
+      LocalHuberStore.listOrders().where((o) => o.streamId == stream.id),
+      hasLength(1),
+    );
+  });
 }

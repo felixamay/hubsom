@@ -17,6 +17,14 @@ class LiveRepository {
 
   final ApiClient _api;
 
+  static bool _sameQuantities(Map<String, int> a, Map<String, int> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
+
   HubsomUser? get _user {
     final raw = LocalStore.userJson;
     if (raw == null || raw.isEmpty) return null;
@@ -120,7 +128,11 @@ class LiveRepository {
       final merged = LocalCommerceStore.mergeStreams(local, remote);
       if (merged.auction != local.auction ||
           merged.status != local.status ||
-          merged.viewerCount != local.viewerCount) {
+          merged.viewerCount != local.viewerCount ||
+          !_sameQuantities(
+            merged.productQuantities,
+            local.productQuantities,
+          )) {
         await LocalCommerceStore.upsertStream(merged);
       }
       local = merged;
