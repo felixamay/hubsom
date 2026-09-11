@@ -1,0 +1,308 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+
+import '../core/services/cloud_video_media.dart';
+import '../core/services/product_demo_blob_url.dart';
+import '../core/services/product_demo_video_store.dart';
+import '../core/theme/hubsom_colors.dart';
+import 'hubsom_image.dart';
+
+class ProductDemoVideoPlayer extends StatefulWidget {
+  const ProductDemoVideoPlayer({
+    super.key,
+    required this.productId,
+    this.remoteUrl,
+    this.aspectRatio = 16 / 9,
+    this.expand = false,
+    this.autoplay = false,
+    this.borderRadius = 12,
+    this.showPlayOverlay = true,
+    this.posterUrl,
+  });
+
+  final String productId;
+  final String? remoteUrl;
+  final double aspectRatio;
+  final bool expand;
+  final bool autoplay;
+  final double borderRadius;
+
+  /// When false, hide the centered play/pause affordance (e.g. home thumbnails).
+  final bool showPlayOverlay;
+  final String? posterUrl;
+
+  @override
+  State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
+}
+
+class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
+  VideoPlayerController? _controller;
+  String? _ownedPath;
+  String? _error;
+  bool _ready = false;
+  bool _playing = false;
+  int _loadGen = 0;
+
+  static bool _isPlayableRemote(String? url) {
+    final u = (url ?? '').trim();
+    return u.startsWith('http://') || u.startsWith('https://');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProductDemoVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.productId != widget.productId) {
+      _load();
+      return;
+    }
+    final oldRemote = _isPlayableRemote(oldWidget.remoteUrl)
+        ? oldWidget.remoteUrl!.trim()
+        : null;
+    final newRemote =
+        _isPlayableRemote(widget.remoteUrl) ? widget.remoteUrl!.trim() : null;
+    if (oldRemote != newRemote && newRemote != null && !_ready) {
+      _load();
+      return;
+    }
+    if (oldWidget.autoplay != widget.autoplay) {
+      _applyAutoplay();
+    }
+  }
+
+  Future<void> _applyAutoplay() async {
+    final c = _controller;
+    if (c == null || !_ready) return;
+    try {
+      if (widget.autoplay) {
+        await c.play();
+      } else {
+        await c.pause();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _load() async {
+    final gen = ++_loadGen;
+    await _disposeController();
+    if (mounted) {
+      setState(() {
+        _ready = false;
+        _playing = false;
+        _error = null;
+      });
+    }
+
+    try {
+      final remote = widget.remoteUrl?.trim();
+      if (_isPlayableRemote(remote)) {
+        final streamed = await _attachNetwork(remote!, gen);
+        if (streamed) return;
+      }
+
+      if (await _attachStored(gen)) return;
+
+      await CloudVideoMedia.ensureLocalBytes(
+        videoId: widget.productId,
+        videoUrl: widget.remoteUrl,
+        allowChunkFallbackForHttp: true,
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (await _attachStored(gen)) return;
+
+      if (mounted && gen == _loadGen) {
+        setState(() => _error = widget.expand ? null : 'No demo video');
+      }
+    } catch (_) {
+      if (mounted && gen == _loadGen) {
+        setState(
+          () => _error = widget.expand ? null : 'Could not play demo video',
+        );
+      }
+    }
+  }
+
+  Future<bool> _attachNetwork(String remote, int gen) async {
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(remote),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    return _finishAttach(controller, gen);
+  }
+
+  Future<bool> _attachStored(int gen) async {
+    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (!mounted || gen != _loadGen) return false;
+    if (stored == null || stored.bytes.isEmpty) return false;
+    final path = await createDemoVideoObjectUrl(
+      bytes: stored.bytes,
+      mimeType: stored.mimeType,
+    );
+    if (!mounted || gen != _loadGen) {
+      revokeDemoVideoObjectUrl(path);
+      return false;
+    }
+    _ownedPath = path;
+    return _finishAttach(VideoPlayerController.file(File(path)), gen);
+  }
+
+  Future<bool> _finishAttach(VideoPlayerController controller, int gen) async {
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 20));
+      if (!mounted || gen != _loadGen) {
+        await controller.dispose();
+        return false;
+      }
+      if (controller.value.hasError) {
+        await controller.dispose();
+        return false;
+      }
+      await controller.setLooping(true);
+      controller.addListener(_onControllerTick);
+      _controller = controller;
+      setState(() {
+        _ready = true;
+        _playing = controller.value.isPlaying;
+        _error = null;
+      });
+      if (widget.autoplay) {
+        await controller.play();
+      }
+      return true;
+    } catch (_) {
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  void _onControllerTick() {
+    final c = _controller;
+    if (c == null || !mounted) return;
+    final playing = c.value.isPlaying;
+    if (playing != _playing) {
+      setState(() => _playing = playing);
+    }
+  }
+
+  Future<void> _disposeController() async {
+    final c = _controller;
+    _controller = null;
+    if (c != null) {
+      c.removeListener(_onControllerTick);
+      await c.dispose();
+    }
+    final path = _ownedPath;
+    _ownedPath = null;
+    if (path != null) {
+      revokeDemoVideoObjectUrl(path);
+    }
+  }
+
+  @override
+  void dispose() {
+    // Fire-and-forget; State.dispose cannot be async.
+    _disposeController();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Container(
+        height: widget.expand ? null : 160,
+        alignment: Alignment.center,
+        color: Colors.black,
+        child: Text(_error!, style: const TextStyle(color: Colors.white70)),
+      );
+    }
+    if (!_ready || _controller == null) {
+      final poster = widget.posterUrl?.trim() ?? '';
+      return ColoredBox(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (poster.isNotEmpty)
+              HubsomImage(
+                url: poster,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(color: Colors.black),
+              ),
+            Center(
+              child: CircularProgressIndicator(
+                color: widget.expand ? Colors.white54 : HubsomColors.forest,
+                strokeWidth: widget.expand ? 2 : 3,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final c = _controller!;
+    void toggle() {
+      if (c.value.isPlaying) {
+        c.pause();
+      } else {
+        c.play();
+      }
+    }
+
+    final video = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: toggle,
+      child: Stack(
+        fit: StackFit.expand,
+        alignment: Alignment.center,
+        children: [
+          ColoredBox(
+            color: Colors.black,
+            child: widget.expand
+                ? FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: c.value.size.width == 0 ? 16 : c.value.size.width,
+                      height:
+                          c.value.size.height == 0 ? 9 : c.value.size.height,
+                      child: VideoPlayer(c),
+                    ),
+                  )
+                : VideoPlayer(c),
+          ),
+          if (widget.showPlayOverlay && (!(_playing) || !widget.expand))
+            Icon(
+              _playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+              size: 56,
+              color: Colors.white,
+            ),
+        ],
+      ),
+    );
+
+    if (widget.expand) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: video,
+      );
+    }
+
+    return AspectRatio(
+      aspectRatio: c.value.aspectRatio == 0
+          ? widget.aspectRatio
+          : c.value.aspectRatio,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: video,
+      ),
+    );
+  }
+}

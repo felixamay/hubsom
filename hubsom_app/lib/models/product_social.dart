@@ -1,0 +1,185 @@
+import 'package:equatable/equatable.dart';
+
+class ProductComment extends Equatable {
+  const ProductComment({
+    required this.id,
+    required this.productId,
+    required this.userId,
+    required this.userName,
+    required this.text,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String productId;
+  final String userId;
+  final String userName;
+  final String text;
+  final String createdAt;
+
+  factory ProductComment.fromJson(Map<String, dynamic> json) => ProductComment(
+        id: json['id'] as String,
+        productId: json['productId'] as String? ?? '',
+        userId: json['userId'] as String? ?? '',
+        userName: json['userName'] as String? ?? 'Buyer',
+        text: json['text'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'userId': userId,
+        'userName': userName,
+        'text': text,
+        'createdAt': createdAt,
+      };
+
+  @override
+  List<Object?> get props => [id, productId, text, createdAt];
+}
+
+class TimelinePost extends Equatable {
+  const TimelinePost({
+    required this.id,
+    required this.authorId,
+    required this.authorName,
+    this.authorImage,
+    this.type = 'product',
+    this.productId = '',
+    this.productName = '',
+    this.productImage,
+    this.videoId,
+    this.videoUrl,
+    this.videoThumbnailUrl,
+    this.streamId,
+    this.caption = '',
+    required this.createdAt,
+  });
+
+  final String id;
+  final String authorId;
+  final String authorName;
+  final String? authorImage;
+  /// `product` | `video` | `live`
+  final String type;
+  final String productId;
+  final String productName;
+  final String? productImage;
+  final String? videoId;
+  /// Remote shop-video URL when this post is a video.
+  final String? videoUrl;
+  /// Frame from the shop video (not the linked product photo).
+  final String? videoThumbnailUrl;
+  /// Live show id when this post is a shared live.
+  final String? streamId;
+  final String caption;
+  final String createdAt;
+
+  bool get isLivePost =>
+      type == 'live' || (streamId != null && streamId!.isNotEmpty);
+
+  bool get isVideo =>
+      !isLivePost &&
+      (type == 'video' || (videoId != null && videoId!.isNotEmpty));
+
+  /// Live shares first (time-sensitive), then shop videos, then products.
+  static List<TimelinePost> rankForFeed(Iterable<TimelinePost> posts) {
+    final list = posts.toList();
+    int newest(TimelinePost a, TimelinePost b) =>
+        b.createdAt.compareTo(a.createdAt);
+    final lives = list.where((p) => p.isLivePost).toList()..sort(newest);
+    final videos = list.where((p) => p.isVideo).toList()..sort(newest);
+    final others = list.where((p) => !p.isLivePost && !p.isVideo).toList()
+      ..sort(newest);
+    return [...lives, ...videos, ...others];
+  }
+
+  TimelinePost copyWith({
+    String? type,
+    String? productId,
+    String? productName,
+    String? productImage,
+    String? videoId,
+    String? videoUrl,
+    String? videoThumbnailUrl,
+    String? streamId,
+    String? caption,
+  }) =>
+      TimelinePost(
+        id: id,
+        authorId: authorId,
+        authorName: authorName,
+        authorImage: authorImage,
+        type: type ?? this.type,
+        productId: productId ?? this.productId,
+        productName: productName ?? this.productName,
+        productImage: productImage ?? this.productImage,
+        videoId: videoId ?? this.videoId,
+        videoUrl: videoUrl ?? this.videoUrl,
+        videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
+        streamId: streamId ?? this.streamId,
+        caption: caption ?? this.caption,
+        createdAt: createdAt,
+      );
+
+  factory TimelinePost.fromJson(Map<String, dynamic> json) {
+    final videoId = json['videoId'] as String?;
+    final streamId = json['streamId'] as String?;
+    final rawType = json['type'] as String?;
+    final type = (rawType != null && rawType.isNotEmpty)
+        ? rawType
+        : (videoId != null && videoId.isNotEmpty
+            ? 'video'
+            : (streamId != null && streamId.isNotEmpty ? 'live' : 'product'));
+    return TimelinePost(
+      id: json['id'] as String,
+      authorId: json['authorId'] as String? ?? '',
+      authorName: json['authorName'] as String? ?? 'Hubsom user',
+      authorImage: json['authorImage'] as String?,
+      type: type,
+      productId: json['productId'] as String? ?? '',
+      productName: json['productName'] as String? ?? 'Product',
+      productImage: json['productImage'] as String?,
+      videoId: videoId,
+      videoUrl: json['videoUrl'] as String?,
+      videoThumbnailUrl: json['videoThumbnailUrl'] as String? ??
+          json['thumbnailUrl'] as String?,
+      streamId: streamId,
+      caption: json['caption'] as String? ?? '',
+      createdAt: json['createdAt'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'authorId': authorId,
+        'authorName': authorName,
+        if (authorImage != null) 'authorImage': authorImage,
+        'type': type,
+        'productId': productId,
+        'productName': productName,
+        if (productImage != null) 'productImage': productImage,
+        if (videoId != null) 'videoId': videoId,
+        if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
+        if (videoThumbnailUrl != null && videoThumbnailUrl!.isNotEmpty)
+          'videoThumbnailUrl': videoThumbnailUrl,
+        if (streamId != null && streamId!.isNotEmpty) 'streamId': streamId,
+        'caption': caption,
+        'createdAt': createdAt,
+      };
+
+  @override
+  List<Object?> get props =>
+      [
+        id,
+        type,
+        productId,
+        videoId,
+        videoUrl,
+        videoThumbnailUrl,
+        streamId,
+        authorId,
+        createdAt,
+      ];
+}

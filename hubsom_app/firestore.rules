@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared Hubsom account vault (password stored as salt+sha256, never plaintext).
+    match /accounts/{email} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /hubers/{id} {
+      allow read, write: if true;
+    }
+    match /huberOffers/{id} {
+      allow read, write: if true;
+    }
+    match /huberDeliveries/{id} {
+      allow read, write: if true;
+    }
+    match /orders/{id} {
+      allow read, write: if true;
+    }
+    match /shipments/{id} {
+      allow read, write: if true;
+    }
+    match /products/{id} {
+      allow read, write: if true;
+    }
+    match /sellers/{id} {
+      allow read, write: if true;
+    }
+    match /streams/{id} {
+      allow read, write: if true;
+    }
+    // WebRTC offer/answer + ICE for live seller → viewer video.
+    match /liveSignals/{id} {
+      allow read, write: if true;
+    }
+    match /productComments/{id} {
+      allow read, write: if true;
+    }
+    match /timelinePosts/{id} {
+      allow read, write: if true;
+    }
+    match /productLikes/{id} {
+      allow read, write: if true;
+    }
+    match /shopVideos/{id} {
+      allow read, write: if true;
+    }
+    match /shopVideoMedia/{id} {
+      allow read, write: if true;
+    }
+    match /shopVideoChunks/{id} {
+      allow read, write: if true;
+    }
+    match /productReviews/{id} {
+      allow read, write: if true;
+    }
+    match /directMessages/{id} {
+      allow read, write: if true;
+    }
+    match /purchaseOffers/{id} {
+      allow read, write: if true;
+    }
+    match /promotions/{id} {
+      allow read, write: if true;
+    }
+    match /adminControls/{id} {
+      allow read, write: if true;
+    }
+    match /adminPayouts/{id} {
+      allow read, write: if true;
+    }
+    match /adminIntakes/{id} {
+      allow read, write: if true;
+    }
+    match /paymentAccounts/{id} {
+      allow read, write: if true;
+    }
+  }
+}

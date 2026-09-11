@@ -1,0 +1,556 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/auth/afia_access.dart';
+import '../../core/auth/auth_gate.dart';
+import '../../core/auth/auth_routes.dart';
+import '../../core/providers/core_providers.dart';
+import '../../core/services/admin_controls_store.dart';
+import '../account/account_page.dart';
+import '../admin/admin_offers_page.dart';
+import '../admin/afia_portal_page.dart';
+import '../account/addresses_page.dart';
+import '../account/followers_page.dart';
+import '../account/following_page.dart';
+import '../account/profile_page.dart';
+import '../account/saved_page.dart';
+import '../auctions/auctions_page.dart';
+import '../authentication/sign_in_page.dart';
+import '../authentication/sign_up_page.dart';
+import '../cart/cart_page.dart';
+import '../categories/categories_page.dart';
+import '../categories/category_detail_page.dart';
+import '../chat/chat_thread_page.dart';
+import '../chat/messages_page.dart';
+import '../checkout/checkout_page.dart';
+import '../dashboard/dashboard_page.dart';
+import '../driver/delivery_map_page.dart';
+import '../huber/huber_delivery_page.dart';
+import '../huber/huber_earnings_page.dart';
+import '../huber/huber_home_page.dart';
+import '../huber/huber_hub_now_page.dart';
+import '../huber/huber_shell.dart';
+import '../huber/huber_verify_page.dart';
+import '../huber/huber_wallet_page.dart';
+import '../flash_sales/flash_sales_page.dart';
+import '../home/home_page.dart';
+import '../live/live_room_page.dart';
+import '../live/live_list_page.dart';
+import '../marketplace/marketplace_page.dart';
+import '../notifications/notifications_page.dart';
+import '../products/product_comments_page.dart';
+import '../products/product_detail_page.dart';
+import '../videos/upload_video_page.dart';
+import '../videos/video_comments_page.dart';
+import '../videos/video_feed_page.dart';
+import '../sell/sell_page.dart';
+import '../seller/seller_analytics_page.dart';
+import '../seller/seller_go_live_page.dart';
+import '../seller/seller_hub_page.dart';
+import '../seller/seller_orders_page.dart';
+import '../seller/seller_product_new_page.dart';
+import '../seller/seller_products_page.dart';
+import '../seller/seller_store_page.dart';
+import '../seller/seller_videos_page.dart';
+import '../settings/change_password_page.dart';
+import '../settings/passkeys_page.dart';
+import '../settings/settings_page.dart';
+import '../social/timeline_page.dart';
+import '../stores/store_page.dart';
+import '../stores/stores_list_page.dart';
+import '../support/contact_us_page.dart';
+import '../wallet/gift_points_page.dart';
+import '../wallet/received_gifts_page.dart';
+import '../wallet/wallet_page.dart';
+import 'main_shell.dart';
+
+final _rootKey = GlobalKey<NavigatorState>();
+
+class _AuthRefresh extends ChangeNotifier {
+  void ping() => notifyListeners();
+}
+
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final authRefresh = _AuthRefresh();
+  ref.listen(authStateProvider, (_, __) => authRefresh.ping());
+  ref.onDispose(authRefresh.dispose);
+
+  return GoRouter(
+    navigatorKey: _rootKey,
+    initialLocation: _webInitialLocation(),
+    refreshListenable: authRefresh,
+    errorBuilder: (context, state) => Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Page not found',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'That Hubsom page is not available.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => context.go('/'),
+                  child: const Text('Home'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+    redirect: (context, state) {
+      final afia = AfiaAccess.canonicalRedirect(state.uri.path);
+      if (afia != null) return afia;
+
+      final auth = ref.read(authStateProvider);
+      final loggingIn = auth.isLoading;
+      if (loggingIn) return null;
+
+      final user = auth.valueOrNull;
+      final loc = state.uri.toString();
+      final path = state.uri.path;
+      final loggedIn = user != null;
+
+      if (AuthRoutes.isAuthPage(path)) {
+        if (loggedIn) {
+          final callback = state.uri.queryParameters['callbackUrl'];
+          return AuthRoutes.homeForUser(
+            user.role,
+            callback: callback,
+            huberId: user.huberId,
+          );
+        }
+        return null;
+      }
+
+      if (!AuthRoutes.isPublic(path) && !loggedIn) {
+        final callback = Uri.encodeComponent(loc);
+        return '/auth/sign-in?callbackUrl=$callback';
+      }
+
+      if (loggedIn && AuthRoutes.requiresSeller(path)) {
+        if (!AuthRoutes.isSellerRole(user.role)) {
+          return '/account';
+        }
+      }
+
+      if (loggedIn && AuthRoutes.requiresHuber(path)) {
+        if (!user.isHuber && user.role != 'admin') {
+          return '/account';
+        }
+      }
+
+      if (loggedIn && AuthRoutes.requiresAdmin(path)) {
+        if (!user.isAfiaAdmin) {
+          return '/';
+        }
+      }
+
+      if (loggedIn && user.suspended && !user.isAfiaAdmin) {
+        return '/auth/sign-in?reason=suspended';
+      }
+
+      if (loggedIn &&
+          !user.isAfiaAdmin &&
+          (!user.canUsePath(path) || !AdminControlsStore.current().allows(path))) {
+        return '/account';
+      }
+
+      return null;
+    },
+    routes: [
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/', builder: (_, __) => const HomePage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/categories',
+                builder: (_, __) => const CategoriesPage(),
+                routes: [
+                  GoRoute(
+                    path: ':slug',
+                    builder: (_, state) =>
+                        CategoryDetailPage(slug: state.pathParameters['slug']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/sell',
+                builder: (_, __) => const AuthGate(
+                  message: 'Sign in to sell on Hubsom',
+                  child: SellPage(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/timeline',
+                builder: (_, __) => const TimelinePage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/dashboard',
+                builder: (_, __) => const AuthGate(
+                  message: 'Sign in to view your activity',
+                  child: DashboardPage(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/account',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to view your account',
+          child: AccountPage(),
+        ),
+        routes: [
+          GoRoute(
+            path: 'profile',
+            parentNavigatorKey: _rootKey,
+            builder: (_, __) => const AuthGate(child: ProfilePage()),
+          ),
+          GoRoute(
+            path: 'addresses',
+            parentNavigatorKey: _rootKey,
+            builder: (_, __) => const AuthGate(child: AddressesPage()),
+          ),
+          GoRoute(
+            path: 'following',
+            parentNavigatorKey: _rootKey,
+            builder: (_, __) => const AuthGate(child: FollowingPage()),
+          ),
+          GoRoute(
+            path: 'followers',
+            parentNavigatorKey: _rootKey,
+            builder: (_, __) => const AuthGate(child: FollowersPage()),
+          ),
+          GoRoute(
+            path: 'saved',
+            parentNavigatorKey: _rootKey,
+            builder: (_, __) => const AuthGate(child: SavedPage()),
+          ),
+        ],
+      ),
+      GoRoute(path: '/marketplace', builder: (_, __) => const MarketplacePage()),
+      GoRoute(path: '/flash-sales', builder: (_, __) => const FlashSalesPage()),
+      GoRoute(path: '/auctions', builder: (_, __) => const AuctionsPage()),
+      GoRoute(path: '/live', builder: (_, __) => const LiveListPage()),
+      GoRoute(
+        path: '/live/:id',
+        builder: (_, state) => LiveRoomPage(
+          streamId: state.pathParameters['id']!,
+          hostMode: state.uri.queryParameters['host'] == '1',
+        ),
+      ),
+      GoRoute(path: '/videos', builder: (_, __) => const VideoFeedPage()),
+      GoRoute(
+        path: '/videos/upload',
+        builder: (_, state) {
+          final raw = state.uri.queryParameters['productIds'] ?? '';
+          final ids = raw
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+          return AuthGate(
+            message: 'Sign in to add a video',
+            child: UploadVideoPage(preselectedProductIds: ids),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/videos/:id/comments',
+        builder: (_, state) => VideoCommentsPage(
+          videoId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/videos/:id',
+        builder: (_, state) => VideoFeedPage(
+          initialVideoId: state.pathParameters['id'],
+        ),
+      ),
+      GoRoute(
+        path: '/products/:id',
+        builder: (_, state) =>
+            ProductDetailPage(productId: state.pathParameters['id']!),
+        routes: [
+          GoRoute(
+            path: 'comments',
+            builder: (_, state) => ProductCommentsPage(
+              productId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/stores',
+        builder: (_, __) => const StoresListPage(),
+      ),
+      GoRoute(
+        path: '/stores/:slug',
+        builder: (_, state) => StorePage(slug: state.pathParameters['slug']!),
+      ),
+      GoRoute(path: '/cart', builder: (_, __) => const CartPage()),
+      GoRoute(
+        path: '/checkout',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to checkout securely',
+          child: CheckoutPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/contact',
+        builder: (_, __) => const ContactUsPage(),
+      ),
+      GoRoute(
+        path: '/messages',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to view your messages',
+          child: MessagesPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/messages/:userId',
+        builder: (_, state) => AuthGate(
+          message: 'Sign in to chat',
+          child: ChatThreadPage(userId: state.pathParameters['userId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/notifications',
+        builder: (_, __) => const AuthGate(child: NotificationsPage()),
+      ),
+      GoRoute(
+        path: '/wallet',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to access your wallet',
+          child: WalletPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/wallet/gifts',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to view received gifts',
+          child: ReceivedGiftsPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/gifts',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to buy gift points',
+          child: GiftPointsPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to open settings',
+          child: SettingsPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/password',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to change your password',
+          child: ChangePasswordPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/passkeys',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to manage passkeys',
+          child: PasskeysPage(),
+        ),
+      ),
+      GoRoute(
+        path: AfiaAccess.path,
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AfiaPortalPage(),
+      ),
+      GoRoute(
+        path: AfiaAccess.legacyAdminPath,
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const AfiaPortalPage(),
+      ),
+      GoRoute(
+        path: '/admin/offers',
+        builder: (_, __) => const AuthGate(
+          requireAdmin: true,
+          message: 'That Hubsom page is not available.',
+          child: AdminOffersPage(),
+        ),
+      ),
+      GoRoute(path: '/auth/sign-in', builder: (_, __) => const SignInPage()),
+      GoRoute(path: '/auth/sign-up', builder: (_, __) => const SignUpPage()),
+      GoRoute(
+        path: '/seller',
+        builder: (_, __) => const AuthGate(
+          requireSeller: true,
+          child: SellerHubPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/seller/store',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerStorePage()),
+      ),
+      GoRoute(
+        path: '/seller/orders',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerOrdersPage()),
+      ),
+      GoRoute(
+        path: '/seller/analytics',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerAnalyticsPage()),
+      ),
+      GoRoute(
+        path: '/seller/go-live',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerGoLivePage()),
+      ),
+      GoRoute(
+        path: '/seller/products',
+        builder: (_, __) =>
+            const AuthGate(requireSeller: true, child: SellerProductsPage()),
+      ),
+      GoRoute(
+        path: '/seller/videos',
+        builder: (_, __) => const AuthGate(
+          message: 'Sign in to manage your videos',
+          child: SellerVideosPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/seller/products/new',
+        builder: (_, state) => AuthGate(
+          requireSeller: true,
+          child: SellerProductNewPage(
+            returnTo: state.uri.queryParameters['returnTo'],
+            addToLiveStreamId: state.uri.queryParameters['addToLive'],
+            auctionLot: state.uri.queryParameters['kind'] == 'auction',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/seller/products/:productId/edit',
+        builder: (_, state) => AuthGate(
+          requireSeller: true,
+          child: SellerProductNewPage(
+            productId: state.pathParameters['productId'],
+            returnTo: state.uri.queryParameters['returnTo'],
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/driver/track/:shipmentId',
+        builder: (_, state) => AuthGate(
+          requireSeller: true,
+          message: 'Sign in as a seller to track deliveries',
+          child: DeliveryMapPage(shipmentId: state.pathParameters['shipmentId']!),
+        ),
+      ),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => AuthGate(
+          requireHuber: true,
+          message: 'Sign in with your Hail Rider account',
+          child: HuberShell(navigationShell: navigationShell),
+        ),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/huber', builder: (_, __) => const HuberHomePage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/huber/hub', builder: (_, __) => const HuberHubNowPage()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/huber/earnings',
+                builder: (_, __) => const HuberEarningsPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/huber/wallet',
+                builder: (_, __) => const HuberWalletPage(),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/huber/verify',
+        builder: (_, __) => const AuthGate(
+          requireHuber: true,
+          child: HuberVerifyPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/huber/delivery/:id',
+        builder: (_, state) => AuthGate(
+          requireHuber: true,
+          child: HuberDeliveryPage(deliveryId: state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(
+        path: '/huber/track/:shipmentId',
+        builder: (_, state) => AuthGate(
+          requireHuber: true,
+          child: DeliveryMapPage(shipmentId: state.pathParameters['shipmentId']!),
+        ),
+      ),
+    ],
+  );
+});
+
+String _webInitialLocation() {
+  if (!kIsWeb) return '/';
+  var path = Uri.base.path;
+  if (path.isEmpty || path == '/index.html') path = '/';
+  if (AfiaAccess.matchesPath(path)) {
+    return AfiaAccess.path;
+  }
+  final query = Uri.base.hasQuery ? '?${Uri.base.query}' : '';
+  return '$path$query';
+}

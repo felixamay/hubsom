@@ -1,0 +1,299 @@
+import 'package:equatable/equatable.dart';
+
+import 'user.dart';
+
+class OrderLine extends Equatable {
+  const OrderLine({
+    required this.productId,
+    this.sellerId,
+    required this.name,
+    this.image,
+    required this.quantity,
+    required this.unitPriceGhs,
+    required this.lineTotalGhs,
+    required this.category,
+    this.shipmentFeeGhs = 0,
+  });
+
+  final String productId;
+  final String? sellerId;
+  final String name;
+  final String? image;
+  final int quantity;
+  final double unitPriceGhs;
+  final double lineTotalGhs;
+  final String category;
+  /// Per-unit shipment fee captured at checkout from the product listing.
+  final double shipmentFeeGhs;
+
+  double get shipmentLineTotal => shipmentFeeGhs * quantity;
+
+  factory OrderLine.fromJson(Map<String, dynamic> json) => OrderLine(
+        productId: json['productId'] as String,
+        sellerId: json['sellerId'] as String?,
+        name: json['name'] as String? ?? '',
+        image: json['image'] as String?,
+        quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+        unitPriceGhs: (json['unitPriceGhs'] as num?)?.toDouble() ?? 0,
+        lineTotalGhs: (json['lineTotalGhs'] as num?)?.toDouble() ?? 0,
+        category: json['category'] as String? ?? 'miscellaneous',
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'productId': productId,
+        if (sellerId != null) 'sellerId': sellerId,
+        'name': name,
+        if (image != null) 'image': image,
+        'quantity': quantity,
+        'unitPriceGhs': unitPriceGhs,
+        'lineTotalGhs': lineTotalGhs,
+        'category': category,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
+      };
+
+  @override
+  List<Object?> get props => [productId, quantity, lineTotalGhs];
+}
+
+class OrderShipping extends Equatable {
+  const OrderShipping({
+    required this.recipientName,
+    required this.phone,
+    required this.line1,
+    this.line2,
+    required this.city,
+    required this.region,
+    this.notes,
+    this.label,
+    this.location,
+  });
+
+  final String recipientName;
+  final String phone;
+  final String line1;
+  final String? line2;
+  final String city;
+  final String region;
+  final String? notes;
+  final String? label;
+  final GeoLocation? location;
+
+  factory OrderShipping.fromJson(Map<String, dynamic> json) => OrderShipping(
+        recipientName: json['recipientName'] as String? ?? '',
+        phone: json['phone'] as String? ?? '',
+        line1: json['line1'] as String? ?? '',
+        line2: json['line2'] as String?,
+        city: json['city'] as String? ?? '',
+        region: json['region'] as String? ?? '',
+        notes: json['notes'] as String?,
+        label: json['label'] as String?,
+        location: json['location'] != null
+            ? GeoLocation.fromJson(Map<String, dynamic>.from(json['location'] as Map))
+            : null,
+      );
+
+  bool get hasCustomerContact {
+    final hasPhone = phone.trim().isNotEmpty;
+    final hasPlace = line1.trim().isNotEmpty || city.trim().isNotEmpty;
+    return hasPhone && hasPlace;
+  }
+
+  String get locationLabel {
+    final parts = [
+      if (line1.trim().isNotEmpty) line1.trim(),
+      if (city.trim().isNotEmpty) city.trim(),
+    ];
+    return parts.join(', ');
+  }
+
+  Map<String, dynamic> toJson() => {
+        'recipientName': recipientName,
+        'phone': phone,
+        'line1': line1,
+        if (line2 != null) 'line2': line2,
+        'city': city,
+        'region': region,
+        if (notes != null) 'notes': notes,
+        if (label != null) 'label': label,
+        if (location != null) 'location': location!.toJson(),
+      };
+
+  @override
+  List<Object?> get props => [recipientName, phone, line1, city, region, location];
+}
+
+class Order extends Equatable {
+  const Order({
+    required this.id,
+    this.currency = 'GHS',
+    required this.subtotalGhs,
+    this.shipmentFeeGhs = 0,
+    this.shipmentZoneLabel = '',
+    required this.status,
+    this.userId,
+    this.buyerName,
+    this.buyerEmail,
+    this.streamId,
+    this.oneTap = false,
+    required this.lines,
+    this.shipping,
+    this.paymentMethods = const [],
+    this.deliveryEstimate = '',
+    this.paidToAccountId = 'pay_admin',
+    required this.createdAt,
+  });
+
+  final String id;
+  final String currency;
+  final double subtotalGhs;
+  /// Total shipment fees paid on this order (sum of line fees).
+  final double shipmentFeeGhs;
+  /// In-zone city or "Out of region" sent to the buyer after purchase.
+  final String shipmentZoneLabel;
+  final String status;
+  final String? userId;
+  final String? buyerName;
+  final String? buyerEmail;
+  final String? streamId;
+  final bool oneTap;
+  final List<OrderLine> lines;
+  final OrderShipping? shipping;
+  final List<String> paymentMethods;
+  final String deliveryEstimate;
+  /// Product payments always settle on the admin receive account.
+  final String paidToAccountId;
+  final String createdAt;
+
+  factory Order.fromJson(Map<String, dynamic> json) => Order(
+        id: json['id'] as String,
+        currency: json['currency'] as String? ?? 'GHS',
+        subtotalGhs: (json['subtotalGhs'] as num?)?.toDouble() ?? 0,
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
+        shipmentZoneLabel: json['shipmentZoneLabel'] as String? ?? '',
+        status: json['status'] as String? ?? 'pending_payment',
+        userId: json['userId'] as String?,
+        buyerName: json['buyerName'] as String?,
+        buyerEmail: json['buyerEmail'] as String?,
+        streamId: json['streamId'] as String?,
+        oneTap: json['oneTap'] as bool? ?? false,
+        lines: (json['lines'] as List?)
+                ?.map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e as Map)))
+                .toList() ??
+            const [],
+        shipping: json['shipping'] != null
+            ? OrderShipping.fromJson(Map<String, dynamic>.from(json['shipping'] as Map))
+            : null,
+        paymentMethods: (json['paymentMethods'] as List?)?.cast<String>() ?? const [],
+        deliveryEstimate: json['deliveryEstimate'] as String? ?? '',
+        paidToAccountId: json['paidToAccountId'] as String? ?? 'pay_admin',
+        createdAt: json['createdAt'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'currency': currency,
+        'subtotalGhs': subtotalGhs,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
+        if (shipmentZoneLabel.isNotEmpty) 'shipmentZoneLabel': shipmentZoneLabel,
+        'status': status,
+        if (userId != null) 'userId': userId,
+        if (buyerName != null) 'buyerName': buyerName,
+        if (buyerEmail != null) 'buyerEmail': buyerEmail,
+        if (streamId != null) 'streamId': streamId,
+        'oneTap': oneTap,
+        'lines': lines.map((e) => e.toJson()).toList(),
+        if (shipping != null) 'shipping': shipping!.toJson(),
+        'paymentMethods': paymentMethods,
+        'deliveryEstimate': deliveryEstimate,
+        'paidToAccountId': paidToAccountId,
+        'createdAt': createdAt,
+      };
+
+  /// Live-auction win — tracked under Dashboard Bids, not Purchases.
+  bool get isAuctionWin =>
+      paymentMethods.contains('live-auction') || id.startsWith('ord_auc_');
+
+  bool isBoughtBy(HubsomUser user) {
+    if (userId != null && userId == user.id) return true;
+    final email = user.email.trim().toLowerCase();
+    if (email.isNotEmpty &&
+        buyerEmail != null &&
+        buyerEmail!.trim().toLowerCase() == email) {
+      return true;
+    }
+    return false;
+  }
+
+  /// True when this order is a sale of the signed-in seller's products.
+  bool isSoldBy(HubsomUser user) {
+    final sid = user.sellerId?.trim();
+    if (sid == null || sid.isEmpty) return false;
+    return lines.any((l) => l.sellerId == sid);
+  }
+
+  int get fulfillmentRank {
+    switch (status) {
+      case 'delivered':
+        return 5;
+      case 'shipped':
+      case 'out_for_delivery':
+        return 4;
+      case 'processing':
+        return 3;
+      case 'paid':
+        return 2;
+      case 'cancelled':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /// Keep the order that is further along in fulfillment.
+  Order preferFulfillment(Order other) {
+    return other.fulfillmentRank > fulfillmentRank ? other : this;
+  }
+
+  /// Shipment fee stored on the order, or summed from line items.
+  double get effectiveShipmentFeeGhs {
+    if (shipmentFeeGhs > 0) return shipmentFeeGhs;
+    return lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+  }
+
+  static double shipmentFeeFor(Iterable<Order> orders) =>
+      orders.fold<double>(0, (s, o) => s + o.effectiveShipmentFeeGhs);
+
+  @override
+  List<Object?> get props =>
+      [id, status, subtotalGhs, shipmentFeeGhs, shipmentZoneLabel, lines];
+
+  Order copyWith({
+    String? status,
+    String? buyerName,
+    String? buyerEmail,
+    OrderShipping? shipping,
+    String? deliveryEstimate,
+    String? shipmentZoneLabel,
+  }) {
+    return Order(
+      id: id,
+      currency: currency,
+      subtotalGhs: subtotalGhs,
+      shipmentFeeGhs: shipmentFeeGhs,
+      shipmentZoneLabel: shipmentZoneLabel ?? this.shipmentZoneLabel,
+      status: status ?? this.status,
+      userId: userId,
+      buyerName: buyerName ?? this.buyerName,
+      buyerEmail: buyerEmail ?? this.buyerEmail,
+      streamId: streamId,
+      oneTap: oneTap,
+      lines: lines,
+      shipping: shipping ?? this.shipping,
+      paymentMethods: paymentMethods,
+      deliveryEstimate: deliveryEstimate ?? this.deliveryEstimate,
+      paidToAccountId: paidToAccountId,
+      createdAt: createdAt,
+    );
+  }
+}
