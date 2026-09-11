@@ -8,6 +8,7 @@ import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'local_commerce_store.dart';
 import 'local_store.dart';
+import 'payment_account_store.dart';
 
 /// Purchasable live-gift points and in-session sends (device + cloud vault).
 class GiftStore {
@@ -94,10 +95,15 @@ class GiftStore {
       throw StateError('No gift earnings to withdraw yet');
     }
     final sellerId = user.sellerId ?? '';
-    final next = user.copyWith(
-      walletBalanceGhs: user.walletBalanceGhs + pending,
-      giftEarningsGhs: 0,
+    final withdrawCount = listLedger(userId: user.id)
+        .where((e) => e.kind == 'withdraw')
+        .length;
+    final credited = await PaymentAccountStore.creditWithdrawBalance(
+      user: user,
+      amountGhs: pending,
+      ref: 'gift_earn_${user.id}_$withdrawCount',
     );
+    final next = credited.user.copyWith(giftEarningsGhs: 0);
     final saved = await persistUser(next);
     if (sellerId.isNotEmpty) {
       final map = _hostEarnings();
@@ -160,13 +166,19 @@ class GiftStore {
     }
     var next = user;
     if (paymentMethod == 'wallet') {
-      if (user.walletBalanceGhs + 0.001 < pack.priceGhs) {
+      final account = await PaymentAccountStore.withdrawAccountFor(user);
+      if (account.balanceGhs + 0.001 < pack.priceGhs) {
         throw StateError(
           'Wallet needs ${pack.priceGhs.toStringAsFixed(0)} GHS for this pack',
         );
       }
+      final spent = await PaymentAccountStore.spendFromWithdrawAccount(
+        user: user,
+        amountGhs: pack.priceGhs,
+        ref: 'gpt_${_uuid.v4().substring(0, 8)}',
+      );
       next = user.copyWith(
-        walletBalanceGhs: user.walletBalanceGhs - pack.priceGhs,
+        walletBalanceGhs: spent.balanceGhs,
         giftPoints: user.giftPoints + pack.points,
       );
     } else {

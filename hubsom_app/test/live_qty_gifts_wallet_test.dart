@@ -13,6 +13,7 @@ import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/gift_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
+import 'package:hubsom_app/core/services/payment_account_store.dart';
 import 'package:hubsom_app/features/wallet/received_gifts_page.dart';
 import 'package:hubsom_app/features/wallet/wallet_page.dart';
 import 'package:hubsom_app/models/live_gift.dart';
@@ -177,6 +178,10 @@ void main() {
     );
     expect(GiftStore.hostEarnings(live.stream.sellerId), 0);
     expect(GiftStore.pendingEarningsGhs(withdrawn), 0);
+    expect(
+      PaymentAccountStore.cachedForUser(withdrawn)?.balanceGhs,
+      withdrawn.walletBalanceGhs,
+    );
     expect(
       GiftStore.listLedger(userId: withdrawn.id).first.kind,
       'withdraw',

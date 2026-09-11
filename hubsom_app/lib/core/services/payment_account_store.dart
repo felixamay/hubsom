@@ -195,6 +195,8 @@ abstract final class PaymentAccountStore {
   }) async {
     final account = await withdrawAccountFor(user);
     final amount = HubsomCommission.roundGhs(amountGhs);
+    final spendRef = 'spend_$ref';
+    if (account.creditedRefs.contains(spendRef)) return account;
     if (account.balanceGhs + 0.001 < amount) {
       throw StateError(
         'Payment account needs ${amount.toStringAsFixed(2)} GHS for this payment',
@@ -202,13 +204,50 @@ abstract final class PaymentAccountStore {
     }
     final next = account.copyWith(
       balanceGhs: HubsomCommission.roundGhs(account.balanceGhs - amount),
-      creditedRefs: ['spend_$ref', ...account.creditedRefs],
+      creditedRefs: [spendRef, ...account.creditedRefs],
     );
     final profile = user.copyWith(walletBalanceGhs: next.balanceGhs);
     await _save(next);
     await AdminAccountStore.save(profile);
     await _mirrorSession(profile);
     return next;
+  }
+
+  /// Credit gift earnings (or other non-product funds) onto the withdraw account.
+  ///
+  /// Product payouts must still go through [creditWithdrawPayout] so admin
+  /// treasury is debited. This path only keeps the on-device wallet and the
+  /// payment account on the same balance.
+  static Future<({PaymentAccount account, HubsomUser user})>
+      creditWithdrawBalance({
+    required HubsomUser user,
+    required double amountGhs,
+    required String ref,
+  }) async {
+    final dest = await withdrawAccountFor(user);
+    if (dest.canReceive) {
+      throw StateError('The admin receive account is not a user withdraw account');
+    }
+    final creditRef = ref.trim();
+    if (creditRef.isEmpty) {
+      throw StateError('A credit reference is required');
+    }
+    if (dest.creditedRefs.contains(creditRef)) {
+      return (account: dest, user: user.copyWith(walletBalanceGhs: dest.balanceGhs));
+    }
+    final amount = HubsomCommission.roundGhs(amountGhs);
+    if (amount <= 0) {
+      throw StateError('Credit must be greater than zero');
+    }
+    final next = dest.copyWith(
+      balanceGhs: HubsomCommission.roundGhs(dest.balanceGhs + amount),
+      creditedRefs: [creditRef, ...dest.creditedRefs],
+    );
+    final profile = user.copyWith(walletBalanceGhs: next.balanceGhs);
+    await _save(next);
+    await AdminAccountStore.save(profile);
+    await _mirrorSession(profile);
+    return (account: next, user: profile);
   }
 
   static Map<String, PaymentAccount> _byId() {
