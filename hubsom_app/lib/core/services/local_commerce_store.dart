@@ -618,28 +618,9 @@ class LocalCommerceStore {
 
     // Keep session sellerId in sync for host-mode checks.
     if (user.sellerId != seller.id) {
-      final patched = HubsomUser(
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        image: user.image,
-        phone: user.phone,
-        city: user.city,
-        region: user.region,
-        bio: user.bio,
+      final patched = user.copyWith(
         role: user.role == 'buyer' ? 'both' : user.role,
         sellerId: seller.id,
-        huberId: user.huberId,
-        followingSellerIds: user.followingSellerIds,
-        savedProductIds: user.savedProductIds,
-        likedProductIds: user.likedProductIds,
-        likedVideoIds: user.likedVideoIds,
-        savedVideoIds: user.savedVideoIds,
-        addresses: user.addresses,
-        emailVerified: user.emailVerified,
-        walletBalanceGhs: user.walletBalanceGhs,
-        giftPoints: user.giftPoints,
-        giftEarningsGhs: user.giftEarningsGhs,
       );
       await LocalStore.setUserJson(jsonEncode(patched.toJson()));
     }

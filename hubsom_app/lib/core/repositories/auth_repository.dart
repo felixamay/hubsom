@@ -218,30 +218,16 @@ class AuthRepository {
 
     final current = currentUser();
     if (current == null) throw AuthException('Sign in required');
-    final updated = HubsomUser(
-      id: current.id,
-      email: current.email,
+    // copyWith keeps admin flags (suspended / features). Rebuilding HubsomUser
+    // from a subset of fields used to reset those to the open defaults.
+    final updated = current.copyWith(
       name: patch['name'] as String? ?? current.name,
       image: patch.containsKey('image')
           ? patch['image'] as String?
           : current.image,
       phone: patch['phone'] as String? ?? current.phone,
       city: patch['city'] as String? ?? current.city,
-      region: current.region,
       bio: patch['bio'] as String? ?? current.bio,
-      role: current.role,
-      sellerId: current.sellerId,
-      huberId: current.huberId,
-      followingSellerIds: current.followingSellerIds,
-      savedProductIds: current.savedProductIds,
-      likedProductIds: current.likedProductIds,
-      likedVideoIds: current.likedVideoIds,
-      savedVideoIds: current.savedVideoIds,
-      addresses: current.addresses,
-      emailVerified: current.emailVerified,
-      walletBalanceGhs: current.walletBalanceGhs,
-      giftPoints: current.giftPoints,
-      giftEarningsGhs: current.giftEarningsGhs,
     );
     await LocalStore.setUserJson(jsonEncode(updated.toJson()));
     final vault = LocalStore.loadCredentialVault();
@@ -305,28 +291,12 @@ class AuthRepository {
       await LocalHuberStore.ensureProfileForUser(current, details: details);
       return current;
     }
-    final updated = HubsomUser(
-      id: current.id,
-      email: current.email,
-      name: current.name,
-      image: current.image,
+    final updated = current.copyWith(
       phone: details?.phone ?? current.phone,
       city: details?.city ?? current.city,
       region: details?.region ?? current.region,
-      bio: current.bio,
       role: current.role == 'buyer' ? 'huber' : current.role,
-      sellerId: current.sellerId,
       huberId: 'huber-${current.id}',
-      followingSellerIds: current.followingSellerIds,
-      savedProductIds: current.savedProductIds,
-      likedProductIds: current.likedProductIds,
-      likedVideoIds: current.likedVideoIds,
-      savedVideoIds: current.savedVideoIds,
-      addresses: current.addresses,
-      emailVerified: current.emailVerified,
-      walletBalanceGhs: current.walletBalanceGhs,
-      giftPoints: current.giftPoints,
-      giftEarningsGhs: current.giftEarningsGhs,
     );
     await LocalStore.setUserJson(jsonEncode(updated.toJson()));
     final vault = LocalStore.loadCredentialVault();
