@@ -8,6 +8,7 @@ import '../config/firebase_options.dart';
 import 'firebase_bootstrap.dart';
 import 'local_store.dart';
 import 'shop_video_merge.dart';
+import 'shop_video_tombstone.dart';
 
 /// Firestore-backed Hubsom data so accounts work on any browser/device.
 ///
@@ -527,8 +528,23 @@ class CloudStore {
           }
           await LocalStore.setString(
             entry.key,
-            jsonEncode(mergeShopVideoDocs(local: local, incoming: rows)),
+            jsonEncode(
+              mergeShopVideoDocs(
+                local: local,
+                incoming: rows,
+                excludedIds: ShopVideoTombstones.ids(),
+              ),
+            ),
           );
+          return;
+        }
+        if (entry.key == 'localTimelinePosts') {
+          final kept = [
+            for (final row in rows)
+              if (!ShopVideoTombstones.isDeletedVideoPost(row)) row,
+          ];
+          if (kept.isEmpty) return;
+          await LocalStore.setString(entry.key, jsonEncode(kept));
           return;
         }
         await LocalStore.setString(entry.key, jsonEncode(rows));

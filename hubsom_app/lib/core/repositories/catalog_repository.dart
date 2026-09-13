@@ -27,6 +27,7 @@ import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
 import '../services/shop_video_cloud.dart';
+import '../services/shop_video_tombstone.dart';
 import '../services/video_for_slow_network.dart';
 
 /// Cloud reads on the Home / feed path must never hold the UI on a slow link;
@@ -550,9 +551,14 @@ class CatalogRepository {
   }) async {
     if (!_publishing.add(videoId)) return;
     try {
+      if (ShopVideoTombstones.contains(videoId)) return;
       final draft = LocalCommerceStore.getShopVideo(videoId);
       if (draft == null) return;
       await LocalCommerceStore.syncShopVideoToCloud(draft);
+      if (ShopVideoTombstones.contains(videoId) ||
+          LocalCommerceStore.getShopVideo(videoId) == null) {
+        return;
+      }
       _thumbSynced.add(videoId);
       if (timelinePost != null) {
         await LocalCommerceStore.syncTimelinePost(
@@ -568,6 +574,7 @@ class CatalogRepository {
         mimeType: mimeType,
       ).timeout(const Duration(minutes: 20), onTimeout: () => null);
       if (remoteUrl == null || remoteUrl.isEmpty) return;
+      if (ShopVideoTombstones.contains(videoId)) return;
 
       final current = LocalCommerceStore.getShopVideo(videoId);
       if (current == null) return;

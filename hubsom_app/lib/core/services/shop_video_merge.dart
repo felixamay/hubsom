@@ -32,15 +32,17 @@ String? _pickMediaUrl(Object? previous, Object? incoming) {
 List<Map<String, dynamic>> mergeShopVideoDocs({
   required List<Map<String, dynamic>> local,
   required List<Map<String, dynamic>> incoming,
+  Set<String> excludedIds = const {},
 }) {
   final byId = <String, Map<String, dynamic>>{
     for (final row in local)
-      if ('${row['id'] ?? ''}'.isNotEmpty)
+      if ('${row['id'] ?? ''}'.isNotEmpty &&
+          !excludedIds.contains('${row['id']}'))
         '${row['id']}': _sanitize(Map<String, dynamic>.from(row)),
   };
   for (final row in incoming) {
     final id = '${row['id'] ?? ''}';
-    if (id.isEmpty) continue;
+    if (id.isEmpty || excludedIds.contains(id)) continue;
     final next = _sanitize(Map<String, dynamic>.from(row));
     final prev = byId[id];
     if (prev == null) {
