@@ -394,12 +394,18 @@ class LocalCommerceStore {
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
     final auction = preferFresherAuction(local.auction, remote.auction);
     final preferRemoteEnded = !remote.isLive && local.isLive;
+    // A viewer who cached this show before it started holds a non-live copy.
+    // Without this the cached status wins forever and the seller never shows as
+    // live on that device. Only safe while the show was never ended here.
+    final locallyEnded = (local.endedAt ?? '').trim().isNotEmpty;
+    final preferRemoteLive = remote.isLive && !local.isLive && !locallyEnded;
+    final takeRemoteStatus = preferRemoteEnded || preferRemoteLive;
     final viewers = remote.viewerCount > local.viewerCount
         ? remote.viewerCount
         : local.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
     return local.copyWith(
-      status: preferRemoteEnded ? remote.status : local.status,
+      status: takeRemoteStatus ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
       viewerCount: viewers,
       peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,

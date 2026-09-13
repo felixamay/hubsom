@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,14 +10,38 @@ import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 
 /// Live shopping directory — Watch live shows currently-on-air shows only.
-class LiveListPage extends ConsumerWidget {
+class LiveListPage extends ConsumerStatefulWidget {
   const LiveListPage({super.key, this.liveOnly = true});
 
   /// When true (default for Watch live), hide ended / scheduled shows.
   final bool liveOnly;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LiveListPage> createState() => _LiveListPageState();
+}
+
+class _LiveListPageState extends ConsumerState<LiveListPage> {
+  Timer? _refresh;
+
+  @override
+  void initState() {
+    super.initState();
+    // A seller can go live at any moment; nobody thinks to pull-to-refresh a
+    // page titled "Watch live", so poll for new shows while it is open.
+    _refresh = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (mounted) ref.invalidate(streamsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final liveOnly = widget.liveOnly;
     final streamsAsync = ref.watch(streamsProvider);
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(
