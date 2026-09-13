@@ -1,5 +1,6 @@
 import '../../models/shop_video.dart';
 import '../config/firebase_options.dart';
+import 'cloud_media.dart';
 import 'local_blob_store.dart';
 
 /// Resolve a still image URL for shop-video cards (Home, Timeline, feed).
@@ -16,7 +17,8 @@ abstract final class ShopVideoPosterUrl {
   }
 
   /// Prefer a local blob / data URL / https still. Only guess the Storage
-  /// path when the clip itself streams from Storage.
+  /// path when the clip streams from Storage and the project actually has a
+  /// bucket — otherwise every card would fire a doomed 404 image request.
   static String? resolve(ShopVideo video) {
     final raw = video.thumbnailUrl?.trim() ?? '';
     if (raw.isNotEmpty && raw != 'null') {
@@ -25,7 +27,7 @@ abstract final class ShopVideoPosterUrl {
         return resolved;
       }
     }
-    if (video.hasRemoteVideo) {
+    if (video.hasRemoteVideo && CloudMedia.storageKnownAvailable) {
       return storageThumbUrl(video.id);
     }
     return null;

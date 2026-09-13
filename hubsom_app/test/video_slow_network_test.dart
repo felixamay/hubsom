@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/providers/core_providers.dart';
+import 'package:hubsom_app/core/services/cloud_storage_status.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/cloud_video_media.dart';
+import 'package:hubsom_app/core/services/firebase_bootstrap.dart';
 import 'package:hubsom_app/core/services/shop_video_merge.dart';
 import 'package:hubsom_app/core/services/shop_video_poster_url.dart';
 import 'package:hubsom_app/features/home/home_page.dart';
@@ -40,10 +42,22 @@ Product _product() => const Product(
       images: ['https://cdn.hubsom.test/bag.jpg'],
     );
 
+/// Pretend the project has (or has not) a Google Cloud Storage bucket.
+void _withStorage(bool available) {
+  FirebaseBootstrap.ready = available;
+  CloudStorageStatus.debugOverride = available;
+}
+
 void main() {
   setUp(() {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    _withStorage(true);
+  });
+
+  tearDown(() {
+    FirebaseBootstrap.ready = false;
+    CloudStorageStatus.debugOverride = null;
   });
 
   test('https shop videos do not download the whole file into Hive first',
@@ -180,6 +194,18 @@ void main() {
     expect(
       poster,
       contains('shopVideos%2Fvid-slow_thumb.jpg'),
+    );
+  });
+
+  test('no storage bucket means no doomed thumbnail request', () {
+    _withStorage(false);
+    expect(ShopVideoPosterUrl.resolve(_clip(thumbnailUrl: null)), isNull);
+    // A real still is still shown — only the guessed Storage path is skipped.
+    expect(
+      ShopVideoPosterUrl.resolve(
+        _clip(thumbnailUrl: 'https://cdn.hubsom.test/clip-thumb.jpg'),
+      ),
+      'https://cdn.hubsom.test/clip-thumb.jpg',
     );
   });
 

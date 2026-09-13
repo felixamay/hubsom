@@ -8,6 +8,7 @@ import 'core/auth/idle_session_guard.dart';
 import 'core/config/app_config.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/firebase_bootstrap.dart';
+import 'core/services/cloud_storage_status.dart';
 import 'core/services/cloud_store.dart';
 import 'core/services/local_blob_store.dart';
 import 'core/services/local_commerce_store.dart';
@@ -31,6 +32,10 @@ Future<void> main() async {
   await StorageMedia.migratePrefsBlobs();
   await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();
+  // Learn whether this project has a Google Cloud Storage bucket before the
+  // first video card renders, so posters and uploads pick the right path.
+  // ignore: unawaited_futures
+  CloudStorageStatus.ensureAvailable();
   // Catalog download must not hold the HTML "Loading…" splash. Home still
   // refreshes from the cloud after the first frame.
   // ignore: unawaited_futures

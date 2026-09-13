@@ -41,3 +41,11 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: ./scripts/deploy_hosting.sh
+
+      # Storage holds the shop videos. This is a no-op until Firebase Storage
+      # is enabled on the project, so it must never fail the deploy.
+      - name: Deploy Storage rules (skipped until Storage is enabled)
+        continue-on-error: true
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: ./scripts/setup_storage.sh || true

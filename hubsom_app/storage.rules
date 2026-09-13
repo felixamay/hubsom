@@ -1,14 +1,31 @@
 rules_version = '2';
+
+// Hubsom has no Firebase Auth (accounts live in the `accounts` Firestore
+// collection), so these paths stay open like firestore.rules. Size and
+// content-type caps are the guard against a bucket being used as free storage.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /shopVideos/{videoId} {
-      allow read, write: if true;
+    // Shop clips: `shopVideos/{videoId}` plus the still `{videoId}_thumb.jpg`.
+    match /shopVideos/{object} {
+      allow read: if true;
+      allow write: if request.resource == null
+        || (
+          request.resource.size < 120 * 1024 * 1024
+          && (
+            request.resource.contentType.matches('video/.*')
+            || request.resource.contentType.matches('image/.*')
+          )
+        );
     }
-    match /shopVideoThumbs/{fileName} {
-      allow read, write: if true;
-    }
-    match /productDemos/{productId} {
-      allow read, write: if true;
+
+    // Legacy per-product demo clips.
+    match /productDemos/{object} {
+      allow read: if true;
+      allow write: if request.resource == null
+        || (
+          request.resource.size < 120 * 1024 * 1024
+          && request.resource.contentType.matches('video/.*')
+        );
     }
   }
 }

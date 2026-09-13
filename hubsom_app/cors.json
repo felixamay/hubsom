@@ -1,0 +1,20 @@
+[
+  {
+    "origin": [
+      "https://hubsom.com",
+      "https://www.hubsom.com",
+      "https://hubsom-web.web.app",
+      "https://hubsom-web.firebaseapp.com",
+      "http://localhost:8080"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Accept-Ranges",
+      "Cache-Control"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

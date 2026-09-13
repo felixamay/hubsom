@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/shop_video_upload_progress.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/shop_video.dart';
 import '../../widgets/shop_video_poster.dart';
@@ -98,6 +99,50 @@ class _SellerVideosPageState extends ConsumerState<SellerVideosPage> {
     return 'Shop clip';
   }
 
+  /// Upload state for one clip. Publish saves locally and uploads in the
+  /// background, so this is what tells a seller the clip is still going up.
+  Widget? _uploadStatus(ShopVideo video, double? progress) {
+    if (progress != null) {
+      final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress == 0 ? null : progress,
+              minHeight: 4,
+              backgroundColor: HubsomColors.mint,
+              color: HubsomColors.forest,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Uploading to cloud · $percent%',
+            style: const TextStyle(
+              color: HubsomColors.forest,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      );
+    }
+    if (video.hasPublishedMedia) return null;
+    return const Padding(
+      padding: EdgeInsets.only(top: 6),
+      child: Text(
+        'Saved on this device · waiting to upload',
+        style: TextStyle(
+          color: Colors.orange,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -170,96 +215,112 @@ class _SellerVideosPageState extends ConsumerState<SellerVideosPage> {
                           final video = _videos[i];
                           final busy = _busyId == video.id;
                           final caption = video.caption.trim();
-                          return Material(
-                            color: HubsomColors.mist,
-                            borderRadius: BorderRadius.circular(14),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () => context.push('/videos/${video.id}'),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: SizedBox(
-                                        width: 72,
-                                        height: 96,
-                                        child: ShopVideoPoster(video: video),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            caption.isEmpty
-                                                ? 'Shop video'
-                                                : caption,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                            ),
+                          return ValueListenableBuilder<Map<String, double>>(
+                            valueListenable: ShopVideoUploadProgress.active,
+                            builder: (context, uploads, _) {
+                              final status = _uploadStatus(
+                                video,
+                                uploads[video.id],
+                              );
+                              return Material(
+                                color: HubsomColors.mist,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () =>
+                                      context.push('/videos/${video.id}'),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: SizedBox(
+                                            width: 72,
+                                            height: 96,
+                                            child:
+                                                ShopVideoPoster(video: video),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _postedLabel(video),
-                                            style: TextStyle(
-                                              color: HubsomColors.ink
-                                                  .withValues(alpha: 0.72),
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          if (video.productIds.isNotEmpty) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${video.productIds.length} linked product${video.productIds.length == 1 ? '' : 's'}',
-                                              style: const TextStyle(
-                                                color: HubsomColors.forest,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    if (busy)
-                                      const SizedBox(
-                                        width: 28,
-                                        height: 28,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
                                         ),
-                                      )
-                                    else
-                                      PopupMenuButton<String>(
-                                        onSelected: (value) async {
-                                          if (value == 'watch') {
-                                            context.push('/videos/${video.id}');
-                                          } else if (value == 'delete') {
-                                            await _confirmDelete(video);
-                                          }
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                            value: 'watch',
-                                            child: Text('Watch'),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                caption.isEmpty
+                                                    ? 'Shop video'
+                                                    : caption,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _postedLabel(video),
+                                                style: TextStyle(
+                                                  color: HubsomColors.ink
+                                                      .withValues(alpha: 0.72),
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              if (video
+                                                  .productIds.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '${video.productIds.length} linked product${video.productIds.length == 1 ? '' : 's'}',
+                                                  style: const TextStyle(
+                                                    color: HubsomColors.forest,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (status != null) status,
+                                            ],
                                           ),
-                                          PopupMenuItem(
-                                            value: 'delete',
-                                            child: Text('Delete video'),
+                                        ),
+                                        if (busy)
+                                          const SizedBox(
+                                            width: 28,
+                                            height: 28,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        else
+                                          PopupMenuButton<String>(
+                                            onSelected: (value) async {
+                                              if (value == 'watch') {
+                                                context.push(
+                                                  '/videos/${video.id}',
+                                                );
+                                              } else if (value == 'delete') {
+                                                await _confirmDelete(video);
+                                              }
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                value: 'watch',
+                                                child: Text('Watch'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Text('Delete video'),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                  ],
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           );
                         },
                       ),
