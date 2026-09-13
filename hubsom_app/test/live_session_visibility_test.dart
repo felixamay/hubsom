@@ -1,13 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
+import 'package:hubsom_app/core/services/live_viewer_identity.dart';
 import 'package:hubsom_app/core/services/live_webrtc_signal_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/models/stream.dart';
+import 'package:hubsom_app/models/user.dart';
 
 LiveStream _stream({
   required String status,
   String? endedAt,
   int viewerCount = 0,
+  List<StreamHost> hosts = const [],
 }) =>
     LiveStream(
       id: 's1',
@@ -22,7 +25,15 @@ LiveStream _stream({
       startedAt: '2026-09-13T10:00:00Z',
       endedAt: endedAt,
       productIds: const ['p1'],
-      hosts: const [],
+      hosts: hosts,
+    );
+
+HubsomUser _user({required String id, String? sellerId}) => HubsomUser(
+      id: id,
+      email: '$id@example.com',
+      name: 'Tester',
+      role: sellerId == null ? 'buyer' : 'seller',
+      sellerId: sellerId,
     );
 
 LiveWebrtcSignal _signal() => LiveWebrtcSignal(
@@ -145,6 +156,51 @@ void main() {
     });
   });
 
+  group('the host is not part of their own audience', () {
+    final stream = _stream(status: 'live');
+
+    test('the seller running the show is recognised as the host', () {
+      expect(
+        LiveViewerIdentity.isHost(stream, _user(id: 'u1', sellerId: 'seller-1')),
+        isTrue,
+      );
+    });
+
+    test('a listed co-host is recognised as a host', () {
+      final withHost = _stream(
+        status: 'live',
+        hosts: const [
+          StreamHost(id: 'u-co', name: 'Kofi', role: 'host', avatar: ''),
+        ],
+      );
+      expect(
+        LiveViewerIdentity.isHost(withHost, _user(id: 'u-co')),
+        isTrue,
+      );
+    });
+
+    test('a shopper watching the show is not a host', () {
+      expect(
+        LiveViewerIdentity.isHost(stream, _user(id: 'u-shopper')),
+        isFalse,
+      );
+    });
+
+    test('a signed-out visitor is not a host', () {
+      expect(LiveViewerIdentity.isHost(stream, null), isFalse);
+    });
+
+    test('an unrelated seller is not the host of this show', () {
+      expect(
+        LiveViewerIdentity.isHost(
+          stream,
+          _user(id: 'u-other', sellerId: 'seller-2'),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('stream status merge', () {
     test('a stale non-live copy is promoted when the cloud says live', () {
       final local = _stream(status: 'scheduled');
@@ -175,6 +231,27 @@ void main() {
 
       expect(merged.isLive, isFalse);
       expect(merged.endedAt, '2026-09-13T11:00:00Z');
+    });
+
+    test('a corrected audience number can travel downwards', () {
+      // Clamping to the larger of the two counts made the number monotonic, so
+      // an inflated count could never be walked back.
+      final local = _stream(status: 'live', viewerCount: 5);
+      final remote = _stream(status: 'live', viewerCount: 4);
+
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+
+      expect(merged.viewerCount, 4);
+    });
+
+    test('peak viewers stays a high-water mark', () {
+      final local = _stream(status: 'live', viewerCount: 5);
+      final remote = _stream(status: 'live', viewerCount: 2);
+
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+
+      expect(merged.viewerCount, 2);
+      expect(merged.peakViewers, 5);
     });
   });
 }
