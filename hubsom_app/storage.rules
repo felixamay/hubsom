@@ -6,11 +6,13 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     // Shop clips: `shopVideos/{videoId}` plus the still `{videoId}_thumb.jpg`.
+    // `request.resource == null` is a delete, which owners do from My videos.
     match /shopVideos/{object} {
       allow read: if true;
       allow write: if request.resource == null
         || (
           request.resource.size < 120 * 1024 * 1024
+          && request.resource.contentType != null
           && (
             request.resource.contentType.matches('video/.*')
             || request.resource.contentType.matches('image/.*')
@@ -24,8 +26,14 @@ service firebase.storage {
       allow write: if request.resource == null
         || (
           request.resource.size < 120 * 1024 * 1024
+          && request.resource.contentType != null
           && request.resource.contentType.matches('video/.*')
         );
+    }
+
+    // Nothing else is writable, and listing the bucket stays closed.
+    match /{allOther=**} {
+      allow read, write: if false;
     }
   }
 }

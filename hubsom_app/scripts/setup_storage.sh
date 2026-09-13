@@ -65,23 +65,31 @@ EOF
 fi
 echo "Bucket responds ($code) — Storage is enabled."
 
-# 2. Storage rules.
-TOKEN="${FIREBASE_TOKEN:-}"
-if [ -z "$TOKEN" ] && [ -f "$ROOT/.firebase-token" ]; then
-  TOKEN="$(tr -d '[:space:]' < "$ROOT/.firebase-token")"
-fi
-if [ -z "$TOKEN" ]; then
-  echo "Set FIREBASE_TOKEN or put a CI token in hubsom_app/.firebase-token"
-  echo "Create one with: firebase login:ci"
-  exit 1
-fi
-
-export PATH="${HOME}/.npm-global/bin:${PATH}"
-if ! command -v firebase >/dev/null 2>&1; then
-  npm install -g firebase-tools --prefix "${HOME}/.npm-global"
-fi
-firebase deploy --only storage --project "$PROJECT" --non-interactive --token "$TOKEN"
+# 2. Storage rules. A console-created bucket starts with rules that demand
+# Firebase Auth; Hubsom has none, so uploads 403 until these are published.
+source "$ROOT/scripts/firebase_auth.sh"
+FIREBASE_PROJECT="$PROJECT"
+firebase_auth_resolve
+firebase_auth_install_cli
+firebase_deploy --only storage
 echo "Published storage.rules"
+
+# Confirm an anonymous write is actually allowed now — this is the exact call
+# the app makes, and the thing default rules block.
+probe="$(curl -s -X POST --max-time 20 \
+  "https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o?name=shopVideos%2F.rules-probe" \
+  -H 'Content-Type: image/jpeg' --data-binary 'probe' || true)"
+if printf '%s' "$probe" | grep -q '"error"'; then
+  echo
+  echo "WARNING: an anonymous upload is still refused:"
+  printf '%s\n' "$probe" | head -5
+  echo "Check that storage.rules published to bucket $BUCKET."
+else
+  echo "Verified: the app can upload to $BUCKET"
+  curl -s -X DELETE --max-time 15 \
+    "https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/shopVideos%2F.rules-probe" \
+    >/dev/null || true
+fi
 
 # 3. CORS. Optional: download URLs already send Access-Control-Allow-Origin,
 # but direct storage.googleapis.com range requests need this.
