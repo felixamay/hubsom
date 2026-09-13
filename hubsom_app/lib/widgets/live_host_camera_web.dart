@@ -38,6 +38,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   String? _error;
   bool _ready = false;
   Timer? _publishPoll;
+  StreamSubscription<List<LiveWebrtcSignal>>? _watch;
   bool _ticking = false;
   final Map<String, _HostPeer> _peers = {};
 
@@ -123,6 +124,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   void _restartPublisher() {
     _publishPoll?.cancel();
     _publishPoll = null;
+    unawaited(_watch?.cancel());
+    _watch = null;
     final streamId = widget.streamId;
     final media = _media;
     if (streamId == null ||
@@ -131,19 +134,36 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         !widget.enabled) {
       return;
     }
-    _publishPoll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_hostTick(streamId, media));
-    });
+    // React the moment a viewer announces itself instead of up to a second
+    // later — a poll interval on every negotiation hop is what made viewers
+    // wait so long for the seller to appear.
+    if (LiveWebrtcSignalStore.canWatch) {
+      _watch = LiveWebrtcSignalStore.watchForStream(streamId).listen(
+        (signals) => unawaited(_hostTick(streamId, media, signals: signals)),
+      );
+      // Slow safety net for pruning viewers that simply went quiet.
+      _publishPoll = Timer.periodic(const Duration(seconds: 5), (_) {
+        unawaited(_hostTick(streamId, media));
+      });
+    } else {
+      _publishPoll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_hostTick(streamId, media));
+      });
+    }
     unawaited(_hostTick(streamId, media));
   }
 
-  Future<void> _hostTick(String streamId, web.MediaStream media) async {
+  Future<void> _hostTick(
+    String streamId,
+    web.MediaStream media, {
+    List<LiveWebrtcSignal>? signals,
+  }) async {
     if (!mounted || _ticking) return;
-    // A tick can outlive its 1s interval on a slow link; overlapping runs would
+    // A tick can outlive its interval on a slow link; overlapping runs would
     // build two peer connections for the same viewer.
     _ticking = true;
     try {
-      final signals = await LiveWebrtcSignalStore.listForStream(streamId);
+      signals ??= await LiveWebrtcSignalStore.listForStream(streamId);
       final activeIds = <String>{};
       final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -172,29 +192,18 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           peer = null;
         }
         if (peer == null) {
-          if ((signal.answerSdp ?? '').isNotEmpty &&
-              signal.state == 'answered') {
-            // Stale session from a previous host tab — ask viewer to rejoin.
-            await LiveWebrtcSignalStore.resetForRenegotiation(
-              streamId: streamId,
-              viewerId: signal.viewerId,
-            );
-            await LiveWebrtcSignalStore.upsertHostSide(
-              LiveWebrtcSignal(
-                id: signal.id,
-                streamId: streamId,
-                viewerId: signal.viewerId,
-                state: 'waiting',
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-            continue;
-          }
+          // Covers a viewer still marked 'answered' against a previous host
+          // tab too: offering again immediately is a round trip cheaper than
+          // bouncing it back to 'waiting' first.
           peer = await _createPeer(streamId, signal.viewerId, media);
           _peers[signal.viewerId] = peer;
-          // The offer was only just written; the answer arrives next tick.
+          // The answer arrives on the next pushed snapshot.
           continue;
         }
+
+        // Only trust an answer written against the offer this peer published,
+        // otherwise a previous negotiation's answer can be applied to it.
+        if (signal.offerSdp != peer.offerSdp) continue;
 
         if (!peer.answerApplied && (signal.answerSdp ?? '').isNotEmpty) {
           await peer.pc
@@ -220,15 +229,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           );
         }
 
-        if (peer.localIce.length > peer.icePublished) {
-          final pending = peer.localIce.sublist(peer.icePublished);
-          peer.icePublished = peer.localIce.length;
-          await LiveWebrtcSignalStore.appendIce(
-            streamId: streamId,
-            viewerId: signal.viewerId,
-            host: pending,
-          );
-        }
+        await _flushIce(streamId, signal.viewerId, peer);
       }
 
       final gone = _peers.keys
@@ -263,6 +264,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       peer.localIce.add(encoded);
+      // Trickle straight away so the viewer can start checking paths while the
+      // rest of the candidates are still being gathered.
+      peer.iceFlush?.cancel();
+      peer.iceFlush = Timer(const Duration(milliseconds: 60), () {
+        unawaited(_flushIce(streamId, viewerId, peer));
+      });
     }).toJS;
 
     final offer = await pc.createOffer().toDart;
@@ -279,29 +286,46 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         )
         .toDart;
 
-    // Clear the previous negotiation before advertising a new offer, otherwise
-    // the viewer's old answer and candidates would be matched against it.
-    await LiveWebrtcSignalStore.resetForRenegotiation(
+    // One write: advertise the offer and clear the previous negotiation's
+    // answer and candidates, which would otherwise be matched against it.
+    peer.offerSdp = offer.sdp;
+    await LiveWebrtcSignalStore.publishOffer(
       streamId: streamId,
       viewerId: viewerId,
+      offerSdp: offer.sdp,
+      offerType: offer.type,
     );
-    await LiveWebrtcSignalStore.upsertHostSide(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(streamId, viewerId),
+    // Held back until now because the offer write resets both ICE lists.
+    peer.offerPublished = true;
+    unawaited(_flushIce(streamId, viewerId, peer));
+    return peer;
+  }
+
+  Future<void> _flushIce(
+    String streamId,
+    String viewerId,
+    _HostPeer peer,
+  ) async {
+    if (!peer.offerPublished || peer.localIce.length <= peer.icePublished) {
+      return;
+    }
+    final pending = peer.localIce.sublist(peer.icePublished);
+    peer.icePublished = peer.localIce.length;
+    try {
+      await LiveWebrtcSignalStore.appendIce(
         streamId: streamId,
         viewerId: viewerId,
-        state: 'offered',
-        offerSdp: offer.sdp,
-        offerType: offer.type,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
-    return peer;
+        host: pending,
+      );
+    } catch (_) {
+      peer.icePublished -= pending.length;
+    }
   }
 
   Future<void> _dropPeer(String viewerId) async {
     final peer = _peers.remove(viewerId);
     if (peer == null) return;
+    peer.iceFlush?.cancel();
     try {
       peer.pc.close();
     } catch (_) {}
@@ -325,6 +349,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   void _stop() {
     _publishPoll?.cancel();
     _publishPoll = null;
+    unawaited(_watch?.cancel());
+    _watch = null;
     for (final id in _peers.keys.toList(growable: false)) {
       unawaited(_dropPeer(id));
     }
@@ -410,6 +436,9 @@ class _HostPeer {
   final web.RTCPeerConnection pc;
   final List<String> localIce = [];
   bool answerApplied = false;
+  bool offerPublished = false;
+  String? offerSdp;
+  Timer? iceFlush;
   int viewerIceApplied = 0;
   int icePublished = 0;
 }

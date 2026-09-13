@@ -40,10 +40,15 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   late final String _viewType;
   web.RTCPeerConnection? _pc;
   web.MediaStream? _remote;
+  StreamSubscription<LiveWebrtcSignal?>? _watch;
   Timer? _poll;
+  Timer? _upkeep;
   Timer? _attachRetry;
+  Timer? _iceFlush;
   bool _ready = false;
   bool _needsUnmute = false;
+  bool _handling = false;
+  bool _answerPublished = false;
   String? _status;
   int _hostIceApplied = 0;
   int _icePublished = 0;
@@ -70,14 +75,29 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     });
     _status = 'Connecting to seller…';
     unawaited(_bootstrap());
-    _poll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_tick());
+
+    // Listeners deliver the host's offer as soon as it is written. Polling is
+    // only a fallback for when Firestore cannot push, and can be slow because
+    // it is no longer on the critical path.
+    if (LiveWebrtcSignalStore.canWatch) {
+      _watch = LiveWebrtcSignalStore.watchOne(
+        widget.streamId,
+        widget.viewerId,
+      ).listen((signal) => unawaited(_handle(signal)));
+    } else {
+      _poll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_pollOnce());
+      });
+    }
+
+    _upkeep = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_upkeepTick());
     });
   }
 
   Future<void> _bootstrap() async {
     await _announce();
-    await _tick();
+    if (!LiveWebrtcSignalStore.canWatch) await _pollOnce();
   }
 
   /// Tell the host a viewer is here and wants an offer.
@@ -85,32 +105,29 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _attemptStartedAt = DateTime.now();
     _lastHeartbeat = DateTime.now();
     try {
-      await LiveWebrtcSignalStore.resetForRenegotiation(
+      await LiveWebrtcSignalStore.announceViewer(
         streamId: widget.streamId,
         viewerId: widget.viewerId,
       );
-      await LiveWebrtcSignalStore.upsertViewerSide(
-        LiveWebrtcSignal(
-          id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-          streamId: widget.streamId,
-          viewerId: widget.viewerId,
-          state: 'waiting',
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
     } catch (_) {
-      // Next poll retries.
+      // Upkeep retries.
     }
   }
 
-  Future<void> _tick() async {
-    if (!mounted) return;
+  Future<void> _pollOnce() async {
     try {
-      final signal = await LiveWebrtcSignalStore.get(
-        widget.streamId,
-        widget.viewerId,
+      await _handle(
+        await LiveWebrtcSignalStore.get(widget.streamId, widget.viewerId),
       );
+    } catch (_) {
+      // Keep going; live room still works without video.
+    }
+  }
 
+  Future<void> _handle(LiveWebrtcSignal? signal) async {
+    if (!mounted || _handling) return;
+    _handling = true;
+    try {
       if (signal == null) {
         await _announce();
         return;
@@ -126,32 +143,31 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       }
 
       final pc = _pc;
-      if (pc != null) {
-        if (signal.hostIce.length > _hostIceApplied) {
-          _hostIceApplied = await applyRemoteIce(
-            pc,
-            signal.hostIce,
-            appliedCount: _hostIceApplied,
-          );
-        }
-
-        // A dead connection never recovers on its own; renegotiate instead of
-        // leaving the viewer on a spinner forever.
-        if (isDeadPeerState(pc.connectionState) ||
-            isDeadPeerState(pc.iceConnectionState)) {
-          await _resetPeer(rejoin: true);
-          return;
-        }
-      }
-
-      if (_localIce.length > _icePublished) {
-        final pending = _localIce.sublist(_icePublished);
-        _icePublished = _localIce.length;
-        await LiveWebrtcSignalStore.appendIce(
-          streamId: widget.streamId,
-          viewerId: widget.viewerId,
-          viewer: pending,
+      if (pc != null && signal.hostIce.length > _hostIceApplied) {
+        _hostIceApplied = await applyRemoteIce(
+          pc,
+          signal.hostIce,
+          appliedCount: _hostIceApplied,
         );
+      }
+    } catch (_) {
+      // Upkeep recovers.
+    } finally {
+      _handling = false;
+    }
+  }
+
+  /// Heartbeat, stall detection and dead-connection recovery. None of this is
+  /// on the path to first frame, so it runs on a slow timer.
+  Future<void> _upkeepTick() async {
+    if (!mounted) return;
+    try {
+      final pc = _pc;
+      if (pc != null &&
+          (isDeadPeerState(pc.connectionState) ||
+              isDeadPeerState(pc.iceConnectionState))) {
+        await _resetPeer(rejoin: true);
+        return;
       }
 
       if (DateTime.now().difference(_lastHeartbeat) > _heartbeatEvery) {
@@ -167,7 +183,35 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         await _resetPeer(rejoin: true);
       }
     } catch (_) {
-      // Keep polling; live room still works without video.
+      // Try again next tick.
+    }
+  }
+
+  /// Send candidates as they are gathered rather than on a tick boundary.
+  ///
+  /// A short debounce batches the burst that arrives right after the answer
+  /// into one write without holding the first candidate back.
+  void _scheduleIceFlush() {
+    if (!_answerPublished) return;
+    _iceFlush?.cancel();
+    _iceFlush = Timer(const Duration(milliseconds: 60), () {
+      unawaited(_flushIce());
+    });
+  }
+
+  Future<void> _flushIce() async {
+    if (!_answerPublished || _localIce.length <= _icePublished) return;
+    final pending = _localIce.sublist(_icePublished);
+    _icePublished = _localIce.length;
+    try {
+      await LiveWebrtcSignalStore.appendIce(
+        streamId: widget.streamId,
+        viewerId: widget.viewerId,
+        viewer: pending,
+      );
+    } catch (_) {
+      // Re-send on the next gathered candidate.
+      _icePublished -= pending.length;
     }
   }
 
@@ -179,6 +223,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _icePublished = 0;
     _localIce.clear();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
     _attemptStartedAt = DateTime.now();
 
     pc.ontrack = ((web.Event event) {
@@ -202,6 +247,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       _localIce.add(encoded);
+      _scheduleIceFlush();
     }).toJS;
 
     await pc
@@ -237,6 +283,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+    // Candidates were held back until now: the host's offer write resets both
+    // ICE lists, so anything sent earlier would have been wiped.
+    _answerPublished = true;
+    unawaited(_flushIce());
     if (mounted && !_ready) {
       setState(() => _status = 'Almost there…');
     }
@@ -300,12 +350,15 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   Future<void> _resetPeer({required bool rejoin}) async {
     await _disposePc();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
     _hostIceApplied = 0;
     _icePublished = 0;
     _localIce.clear();
     _remote = null;
     _attachRetry?.cancel();
     _attachRetry = null;
+    _iceFlush?.cancel();
+    _iceFlush = null;
     if (mounted) {
       setState(() {
         _ready = false;
@@ -326,8 +379,11 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
 
   @override
   void dispose() {
+    unawaited(_watch?.cancel());
     _poll?.cancel();
+    _upkeep?.cancel();
     _attachRetry?.cancel();
+    _iceFlush?.cancel();
     unawaited(_disposePc());
     unawaited(
       LiveWebrtcSignalStore.close(widget.streamId, widget.viewerId),
