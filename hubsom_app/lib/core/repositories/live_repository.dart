@@ -1,17 +1,21 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../models/live_gift.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/gift_store.dart';
 import '../services/live_chat_store.dart';
 import '../services/live_viewer_identity.dart';
+import '../services/local_blob_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_notification_store.dart';
 import '../services/local_store.dart';
+import '../services/shop_video_cloud.dart';
 import 'auth_repository.dart';
 
 class LiveRepository {
@@ -33,8 +37,40 @@ class LiveRepository {
 
   Future<void> _syncStream(LiveStream stream) async {
     try {
-      await CloudStore.upsertDocs(CloudStore.streams, [stream.toJson()]);
+      final json = stream.toJson();
+      final portableCover = await _portableCover(stream.id, stream.cover);
+      if (portableCover.isNotEmpty) json['cover'] = portableCover;
+      await CloudStore.upsertDocs(CloudStore.streams, [json]);
     } catch (_) {}
+  }
+
+  /// Returns a cover URL that every device can load.
+  ///
+  /// A `hubsom-blob://` ref exists only in this browser's IndexedDB; we resolve
+  /// it to a data URL and either inline it (small images) or push it to Storage
+  /// (large images). HTTP(S) URLs are returned unchanged.
+  Future<String> _portableCover(String streamId, String raw) async {
+    if (raw.isEmpty) return raw;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final dataUrl =
+        LocalBlobStore.isRef(raw) ? LocalBlobStore.resolve(raw) : raw;
+    if (dataUrl == null || dataUrl.isEmpty) return '';
+    if (!dataUrl.startsWith('data:image')) return '';
+    // Small enough to embed inline inside the Firestore doc.
+    if (dataUrl.length <= shopVideoInlineThumbMaxChars) return dataUrl;
+    // Too large to inline — push to Storage and store the https URL instead.
+    try {
+      final comma = dataUrl.indexOf(',');
+      if (comma < 0) return '';
+      final bytes = base64Decode(dataUrl.substring(comma + 1));
+      final url = await CloudMedia.uploadLiveCover(
+        streamId: streamId,
+        bytes: Uint8List.fromList(bytes),
+      );
+      return url ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<List<LiveStream>> listStreams({String? status}) async {
