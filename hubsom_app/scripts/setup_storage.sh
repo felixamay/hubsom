@@ -91,21 +91,52 @@ else
     >/dev/null || true
 fi
 
-# 3. CORS. Optional: download URLs already send Access-Control-Allow-Origin,
-# but direct storage.googleapis.com range requests need this.
-if command -v gcloud >/dev/null 2>&1; then
-  if gcloud storage buckets update "gs://${BUCKET}" --cors-file=cors.json 2>/dev/null; then
-    echo "Applied cors.json"
+# 3. CORS. The download endpoint answers OPTIONS preflights on its own, but a
+# real GET carries no Access-Control-Allow-Origin until the bucket has a CORS
+# config. Prefer gcloud; fall back to the JSON API with the CLI's own token so
+# this works on a machine with no Google Cloud SDK.
+if command -v gcloud >/dev/null 2>&1 &&
+  gcloud storage buckets update "gs://${BUCKET}" --cors-file=cors.json 2>/dev/null; then
+  echo "Applied cors.json (gcloud)"
+elif [ "$FIREBASE_AUTH_MODE" = "token" ]; then
+  # firebase-tools' public OAuth client, used to mint a short-lived token.
+  access_token="$(curl -s --max-time 30 -X POST https://oauth2.googleapis.com/token \
+    -d 'client_id=563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com' \
+    -d 'client_secret=j9iVZfS8kkCEFUPaAeJV0sAi' \
+    -d "refresh_token=${FIREBASE_TOKEN_VALUE}" \
+    -d 'grant_type=refresh_token' |
+    python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')"
+  if [ -n "$access_token" ] && curl -s --max-time 30 -o /dev/null -X PATCH \
+    -H "Authorization: Bearer ${access_token}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"cors\": $(cat cors.json)}" \
+    "https://storage.googleapis.com/storage/v1/b/${BUCKET}"; then
+    echo "Applied cors.json (Storage JSON API)"
   else
-    echo "Skipped CORS: gcloud has no credentials for $BUCKET."
-    echo "  Run: gcloud auth login && gcloud config set project $PROJECT"
-    echo "  Then: gcloud storage buckets update gs://${BUCKET} --cors-file=cors.json"
+    echo "Skipped CORS: could not reach the Storage JSON API."
   fi
 else
-  echo "Skipped CORS: gcloud not installed (optional)."
-  echo "  Install the Google Cloud CLI, then:"
+  echo "Skipped CORS: install gcloud, then"
   echo "  gcloud storage buckets update gs://${BUCKET} --cors-file=cors.json"
 fi
+
+# Verify a browser-style cross-origin read is actually allowed.
+cors_probe_object='shopVideos%2F.cors-probe'
+curl -s --max-time 20 -o /dev/null -X POST \
+  "https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o?name=${cors_probe_object}" \
+  -H 'Content-Type: video/mp4' --data-binary 'probe' || true
+if curl -s --max-time 20 -o /dev/null -D - \
+  -H 'Origin: https://hubsom.com' \
+  "https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${cors_probe_object}?alt=media" |
+  grep -qi 'access-control-allow-origin'; then
+  echo "Verified: https://hubsom.com can read clips cross-origin"
+else
+  echo "NOTE: no Access-Control-Allow-Origin on a real GET. <video> playback"
+  echo "  still works (media elements are no-cors), but add the origin to"
+  echo "  cors.json if you ever fetch clips with XHR."
+fi
+curl -s --max-time 15 -o /dev/null -X DELETE \
+  "https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${cors_probe_object}" || true
 
 cat <<EOF
 
