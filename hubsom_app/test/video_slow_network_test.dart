@@ -163,6 +163,39 @@ void main() {
     expect(parsed.hasPublishedMedia, isFalse);
   });
 
+  test('cloud hydrate does not resurrect a deleted shop video', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'vid-gone',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/old.mp4',
+        },
+      ],
+      incoming: [
+        {
+          'id': 'vid-gone',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/old.mp4',
+        },
+        {
+          'id': 'vid-keep',
+          'authorId': 'u1',
+          'authorName': 'Ama',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/keep.mp4',
+        },
+      ],
+      excludedIds: {'vid-gone'},
+    );
+    expect(merged, hasLength(1));
+    expect(merged.first['id'], 'vid-keep');
+  });
+
   test('inline data thumbnails travel to other phones in the cloud doc', () {
     final data = 'data:image/jpeg;base64,${'A' * 64}';
     final clip = _clip(thumbnailUrl: data);

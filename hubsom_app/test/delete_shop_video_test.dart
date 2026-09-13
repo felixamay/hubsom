@@ -12,6 +12,8 @@ import 'package:hubsom_app/core/services/local_blob_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/core/services/product_demo_video_store.dart';
+import 'package:hubsom_app/core/services/shop_video_merge.dart';
+import 'package:hubsom_app/core/services/shop_video_tombstone.dart';
 import 'package:hubsom_app/models/user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -110,5 +112,46 @@ void main() {
       throwsA(isA<StateError>()),
     );
     expect(LocalCommerceStore.getShopVideo(video.id), isNotNull);
+  });
+
+  test('background publish cannot resurrect a video deleted on this device',
+      () async {
+    final seed = await _seedSeller();
+    final catalog = CatalogRepository(ApiClient());
+    final video = await catalog.createShopVideo(
+      bytes: Uint8List.fromList(List<int>.generate(64, (i) => i)),
+      mimeType: 'video/mp4',
+      productIds: [seed.productId],
+      caption: 'Wrong clip',
+    );
+    final draft = LocalCommerceStore.getShopVideo(video.id)!;
+    final post = LocalCommerceStore.listTimelinePosts()
+        .firstWhere((p) => p.videoId == video.id);
+
+    await catalog.deleteShopVideo(video.id);
+    expect(ShopVideoTombstones.contains(video.id), isTrue);
+
+    // Stale publish task still holds the draft captured before delete.
+    await LocalCommerceStore.syncShopVideoToCloud(draft);
+    await LocalCommerceStore.syncTimelinePost(
+      post.copyWith(videoUrl: 'https://cdn.hubsom.test/wrong-clip.mp4'),
+    );
+
+    expect(LocalCommerceStore.getShopVideo(video.id), isNull);
+    expect(
+      LocalCommerceStore.listTimelinePosts().any((p) => p.videoId == video.id),
+      isFalse,
+    );
+
+    final resurrected = mergeShopVideoDocs(
+      local: const [],
+      incoming: [draft.toJson()],
+      excludedIds: ShopVideoTombstones.ids(),
+    );
+    expect(resurrected, isEmpty);
+    expect(
+      (await catalog.listShopVideos()).any((v) => v.id == video.id),
+      isFalse,
+    );
   });
 }

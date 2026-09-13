@@ -16,6 +16,7 @@ import 'local_huber_store.dart';
 import 'local_store.dart';
 import 'shop_video_cloud.dart';
 import 'shop_video_merge.dart';
+import 'shop_video_tombstone.dart';
 import 'storage_media.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
@@ -1407,12 +1408,13 @@ class LocalCommerceStore {
   /// Push a timeline post to Firestore (used after a video finishes publishing
   /// so other phones get the playable URL and a portable thumbnail).
   static Future<void> syncTimelinePost(TimelinePost post) async {
+    final videoId = post.videoId?.trim() ?? '';
+    if (videoId.isNotEmpty && ShopVideoTombstones.contains(videoId)) return;
     final rows = _readList(_timelineKey);
     final idx = rows.indexWhere((e) => e is Map && '${e['id']}' == post.id);
-    if (idx >= 0) {
-      rows[idx] = post.toJson();
-      await _writeList(_timelineKey, rows);
-    }
+    if (idx < 0) return;
+    rows[idx] = post.toJson();
+    await _writeList(_timelineKey, rows);
     try {
       await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
     } catch (_) {}
@@ -1487,8 +1489,12 @@ class LocalCommerceStore {
             if (p is Map) '${p['id']}': Map<String, dynamic>.from(p),
         };
         for (final p in posts) {
+          if (ShopVideoTombstones.isDeletedVideoPost(p)) continue;
           byId['${p['id']}'] = p;
         }
+        byId.removeWhere(
+          (_, row) => ShopVideoTombstones.isDeletedVideoPost(row),
+        );
         await _writeList(_timelineKey, byId.values.toList());
       }
     } catch (_) {}
@@ -1529,7 +1535,11 @@ class LocalCommerceStore {
         ];
         await _writeList(
           _shopVideosKey,
-          mergeShopVideoDocs(local: local, incoming: videos),
+          mergeShopVideoDocs(
+            local: local,
+            incoming: videos,
+            excludedIds: ShopVideoTombstones.ids(),
+          ),
         );
       }
     } catch (_) {}
@@ -1658,6 +1668,9 @@ class LocalCommerceStore {
 
   /// Firestore copy of a shop video, with a thumbnail every phone can load.
   static Future<void> syncShopVideoToCloud(ShopVideo video) async {
+    if (ShopVideoTombstones.contains(video.id) || getShopVideo(video.id) == null) {
+      return;
+    }
     try {
       await CloudStore.upsertDocs(
         CloudStore.shopVideos,
@@ -1668,6 +1681,7 @@ class LocalCommerceStore {
 
   static Future<void> deleteShopVideo(String videoId) async {
     if (videoId.isEmpty) return;
+    await ShopVideoTombstones.remember(videoId);
 
     final rows = _readList(_shopVideosKey);
     rows.removeWhere((e) => e is Map && '${e['id']}' == videoId);
