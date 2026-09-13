@@ -44,19 +44,6 @@ void main() {
   setUp(AppConfig.load);
 
   group('signaling writes stay on their own side', () {
-    test('a host write cannot clobber the viewer answer or candidates', () {
-      final host = _signal().toHostJson();
-
-      // Merge-writing any of these would wipe what the viewer published.
-      expect(host.containsKey('answerSdp'), isFalse);
-      expect(host.containsKey('answerType'), isFalse);
-      expect(host.containsKey('viewerIce'), isFalse);
-      expect(host.containsKey('hostIce'), isFalse);
-
-      expect(host['offerSdp'], 'v=0 offer');
-      expect(host['state'], 'offered');
-    });
-
     test('a viewer write cannot clobber the host offer or candidates', () {
       final viewer = _signal().toViewerJson();
 
@@ -96,6 +83,54 @@ void main() {
       expect(fresh['answerSdp'], '');
       expect(fresh['answerType'], '');
       expect(LiveWebrtcSignal.fromJson(fresh).answerSdp?.isEmpty, isTrue);
+    });
+  });
+
+  group('handshake costs one write per hop', () {
+    test('announcing also clears the previous negotiation', () {
+      // A separate reset write would delay the host's offer by a round trip.
+      final doc = LiveWebrtcSignalStore.announceDoc(
+        streamId: 's1',
+        viewerId: 'v1',
+      );
+
+      expect(doc['id'], 's1__v1');
+      expect(doc['state'], 'waiting');
+      expect(doc['answerSdp'], '');
+      expect(doc['hostIce'], isEmpty);
+      expect(doc['viewerIce'], isEmpty);
+      expect(doc['viewerSeenAt'], isA<int>());
+    });
+
+    test('offering also clears the stale answer and candidates', () {
+      final doc = LiveWebrtcSignalStore.offerDoc(
+        streamId: 's1',
+        viewerId: 'v1',
+        offerSdp: 'v=0 fresh',
+        offerType: 'offer',
+      );
+
+      expect(doc['state'], 'offered');
+      expect(doc['offerSdp'], 'v=0 fresh');
+      expect(doc['answerSdp'], '');
+      expect(doc['answerType'], '');
+      expect(doc['hostIce'], isEmpty);
+      expect(doc['viewerIce'], isEmpty);
+    });
+
+    test('an offer doc round-trips into a signal the viewer can answer', () {
+      final signal = LiveWebrtcSignal.fromJson(
+        LiveWebrtcSignalStore.offerDoc(
+          streamId: 's1',
+          viewerId: 'v1',
+          offerSdp: 'v=0 fresh',
+          offerType: 'offer',
+        ),
+      );
+
+      expect(signal.state, 'offered');
+      expect(signal.offerSdp, 'v=0 fresh');
+      expect((signal.answerSdp ?? '').isEmpty, isTrue);
     });
   });
 
