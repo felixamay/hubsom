@@ -7,13 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'package:uuid/uuid.dart';
-
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
+import '../../core/services/live_viewer_identity.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
-import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/live_gift.dart';
@@ -102,16 +100,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     return 'Host';
   }
 
-  String get _viewerPeerId {
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user != null && user.id.isNotEmpty) return user.id;
-    const key = 'liveViewerPeerId';
-    final existing = LocalStore.getString(key);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final id = 'v_${const Uuid().v4()}';
-    unawaited(LocalStore.setString(key, id));
-    return id;
-  }
+  String get _viewerPeerId => LiveViewerIdentity.current(
+        userId: ref.read(authStateProvider).valueOrNull?.id,
+      );
 
   @override
   void initState() {

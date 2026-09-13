@@ -12,6 +12,7 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
+import 'live_viewer_identity.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
 import 'shop_video_cloud.dart';
@@ -400,15 +401,17 @@ class LocalCommerceStore {
     final locallyEnded = (local.endedAt ?? '').trim().isNotEmpty;
     final preferRemoteLive = remote.isLive && !local.isLive && !locallyEnded;
     final takeRemoteStatus = preferRemoteEnded || preferRemoteLive;
-    final viewers = remote.viewerCount > local.viewerCount
-        ? remote.viewerCount
-        : local.viewerCount;
+    // Take the cloud's count rather than the larger of the two: clamping
+    // upwards made the audience number monotonic, so a viewer leaving could
+    // never bring it back down. Peak stays a high-water mark below.
+    final viewers = remote.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
     return local.copyWith(
       status: takeRemoteStatus ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
       viewerCount: viewers,
-      peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
+      peakViewers: [viewers, local.peakViewers, remote.peakViewers]
+          .reduce((a, b) => a > b ? a : b),
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
       productIds: products,
       auction: auction,
@@ -596,8 +599,9 @@ class LocalCommerceStore {
       status: 'live',
       channelName: 'hubsom-$id',
       cover: persistedCover,
-      viewerCount: 1,
-      peakViewers: 1,
+      // The host is not in their own audience, so a new show starts at zero.
+      viewerCount: 0,
+      peakViewers: 0,
       startedAt: now,
       productIds: owned,
       productQuantities: quantities,
@@ -884,9 +888,20 @@ class LocalCommerceStore {
     return next;
   }
 
-  static Future<LiveStream?> joinViewer(String id) async {
+  /// Count [viewerId] into the audience, at most once per show.
+  ///
+  /// Re-entering the room — a seller stepping out to Home and back, say — must
+  /// not add another view, and the host is not part of their own audience.
+  static Future<LiveStream?> joinViewer(
+    String id, {
+    required String viewerId,
+    required bool isHost,
+  }) async {
     final s = getStream(id);
     if (s == null || !s.isLive) return s;
+    if (isHost || viewerId.isEmpty) return s;
+    if (LiveViewerIdentity.alreadyCounted(id, viewerId)) return s;
+    await LiveViewerIdentity.markCounted(id, viewerId);
     return updateStream(id, viewerCount: s.viewerCount + 1);
   }
 

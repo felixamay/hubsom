@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/gift_store.dart';
+import '../services/live_viewer_identity.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_notification_store.dart';
 import '../services/local_store.dart';
@@ -125,7 +126,17 @@ class LiveRepository {
     }
 
     if (joinAsViewer && local != null && local.isLive) {
-      local = await LocalCommerceStore.joinViewer(id) ?? local;
+      final user = _user;
+      final before = local.viewerCount;
+      local = await LocalCommerceStore.joinViewer(
+            id,
+            viewerId: LiveViewerIdentity.current(userId: user?.id),
+            isHost: LiveViewerIdentity.isHost(local, user),
+          ) ??
+          local;
+      // Only push when this join actually changed the audience, so re-entering
+      // a room costs nothing.
+      if (local.viewerCount != before) await _syncStream(local);
     }
     return local;
   }
