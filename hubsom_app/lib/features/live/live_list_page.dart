@@ -26,8 +26,9 @@ class _LiveListPageState extends ConsumerState<LiveListPage> {
   @override
   void initState() {
     super.initState();
-    // A seller can go live at any moment; nobody thinks to pull-to-refresh a
-    // page titled "Watch live", so poll for new shows while it is open.
+    // A seller can go live at any moment and nobody thinks to pull-to-refresh a
+    // page titled "Watch live". The pulse below pushes new shows in about a
+    // second; this timer only covers the case where Firestore cannot push.
     _refresh = Timer.periodic(const Duration(seconds: 12), (_) {
       if (mounted) ref.invalidate(streamsProvider);
     });
@@ -42,6 +43,7 @@ class _LiveListPageState extends ConsumerState<LiveListPage> {
   @override
   Widget build(BuildContext context) {
     final liveOnly = widget.liveOnly;
+    ref.watch(liveStreamsPulseProvider);
     final streamsAsync = ref.watch(streamsProvider);
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(

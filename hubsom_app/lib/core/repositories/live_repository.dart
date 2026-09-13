@@ -85,13 +85,11 @@ class LiveRepository {
   }
 
   Future<LiveStream?> _cloudStream(String id) async {
+    // Read the one doc. Listing the whole collection to find it made opening a
+    // live show slower the more shows had ever been created.
     try {
-      final rows = await CloudStore.listDocs(CloudStore.streams);
-      for (final row in rows) {
-        if ('${row['id']}' == id) {
-          return LiveStream.fromJson(row);
-        }
-      }
+      final row = await CloudStore.getDoc(CloudStore.streams, id);
+      if (row != null && row.isNotEmpty) return LiveStream.fromJson(row);
     } catch (_) {}
     return null;
   }
