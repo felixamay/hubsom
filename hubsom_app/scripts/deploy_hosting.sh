@@ -21,7 +21,10 @@ fi
 
 if [ ! -d "$ROOT/build/web" ]; then
   echo "build/web is missing. Build first:"
-  echo "  flutter build web --release --base-href / --dart-define=HUBSOM_API_BASE_URL=https://hubsom.com"
+  echo "  flutter build web --release --base-href / \\"
+  echo "    --dart-define=HUBSOM_API_BASE_URL=https://hubsom.com \\"
+  echo "    --dart-define=FIREBASE_ENABLED=true"
+  echo "  (add --dart-define=HUBSOM_STORAGE_BUCKET=<bucket> for a custom bucket)"
   exit 1
 fi
 

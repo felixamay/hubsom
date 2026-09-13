@@ -32,7 +32,11 @@ class CloudMedia {
   }
 
   static FirebaseStorage get _storage {
-    final s = FirebaseStorage.instance;
+    // A hand-made bucket needs the SDK pointed at it; the project default is
+    // picked up automatically.
+    final s = CloudStorageStatus.isCustomBucket
+        ? FirebaseStorage.instanceFor(bucket: 'gs://${CloudStorageStatus.bucket}')
+        : FirebaseStorage.instance;
     // Retries are per-operation; the stall watchdog owns the real deadline.
     s.setMaxUploadRetryTime(const Duration(seconds: 30));
     s.setMaxOperationRetryTime(const Duration(seconds: 20));

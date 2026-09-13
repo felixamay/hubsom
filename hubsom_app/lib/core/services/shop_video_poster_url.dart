@@ -1,12 +1,11 @@
 import '../../models/shop_video.dart';
-import '../config/firebase_options.dart';
 import 'cloud_media.dart';
+import 'cloud_storage_status.dart';
 import 'local_blob_store.dart';
 
 /// Resolve a still image URL for shop-video cards (Home, Timeline, feed).
 abstract final class ShopVideoPosterUrl {
-  static String get _storageBucket =>
-      DefaultFirebaseOptions.web.storageBucket ?? '';
+  static String get _storageBucket => CloudStorageStatus.bucket;
 
   /// Public Storage URL for the standard `{videoId}_thumb.jpg` still.
   static String? storageThumbUrl(String videoId) {

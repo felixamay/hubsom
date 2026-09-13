@@ -36,6 +36,8 @@ void main() {
   group('storage availability', () {
     test('the configured bucket is the Google Cloud one, not a placeholder', () {
       expect(CloudStorageStatus.bucket, 'hubsom-web.firebasestorage.app');
+      // No override in this build, so the SDK default instance is correct.
+      expect(CloudStorageStatus.isCustomBucket, isFalse);
     });
 
     test('storage is unusable until Firebase itself is up', () async {

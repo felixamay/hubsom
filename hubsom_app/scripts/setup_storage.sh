@@ -18,11 +18,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 PROJECT="hubsom-web"
-BUCKET="$(grep -o "storageBucket: '[^']*'" lib/core/config/firebase_options.dart |
-  head -1 | cut -d"'" -f2)"
+# HUBSOM_STORAGE_BUCKET overrides the project default, matching the
+# --dart-define the app is built with.
+BUCKET="${HUBSOM_STORAGE_BUCKET:-}"
+BUCKET="${BUCKET#gs://}"
+if [ -z "$BUCKET" ]; then
+  BUCKET="$(grep -o "storageBucket: '[^']*'" lib/core/config/firebase_options.dart |
+    head -1 | cut -d"'" -f2)"
+fi
 
 if [ -z "$BUCKET" ]; then
-  echo "Could not read storageBucket from lib/core/config/firebase_options.dart"
+  echo "Could not resolve a bucket. Set HUBSOM_STORAGE_BUCKET or fix"
+  echo "storageBucket in lib/core/config/firebase_options.dart"
   exit 1
 fi
 echo "Project: $PROJECT"
@@ -42,6 +49,13 @@ Turn it on first:
      (europe-west1 or eur3 is closest to Ghana).
   3. Storage requires the Blaze plan. The free tier that comes with it
      (5 GB stored, 1 GB/day downloaded) covers early traffic.
+
+Using a bucket you made yourself instead? Link it to Firebase Storage first
+("Add bucket" on the same page) — the app writes through the Firebase Storage
+SDK, so storage.rules must apply to it. Then rebuild and rerun with:
+  HUBSOM_STORAGE_BUCKET=your-bucket ./scripts/setup_storage.sh
+and build the web app with the matching
+  --dart-define=HUBSOM_STORAGE_BUCKET=your-bucket
 
 Then run this script again. Until then the app keeps videos working through
 its Firestore-chunk fallback, so nothing is broken — clips are just slower

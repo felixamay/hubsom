@@ -7,6 +7,11 @@ class AppConfig {
   static late String openRouteServiceKey;
   static late bool firebaseEnabled;
 
+  /// Google Cloud Storage bucket for shop videos. Empty means "use the one in
+  /// firebase_options" — set it to point at a bucket you created yourself,
+  /// e.g. --dart-define=HUBSOM_STORAGE_BUCKET=hubsom-videos
+  static late String storageBucket;
+
   static void load() {
     apiBaseUrl = const String.fromEnvironment(
       'HUBSOM_API_BASE_URL',
@@ -22,5 +27,7 @@ class AppConfig {
         const String.fromEnvironment('OPENROUTESERVICE_KEY', defaultValue: '');
     firebaseEnabled =
         const bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: true);
+    storageBucket =
+        const String.fromEnvironment('HUBSOM_STORAGE_BUCKET', defaultValue: '');
   }
 }

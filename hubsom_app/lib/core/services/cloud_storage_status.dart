@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config/app_config.dart';
 import '../config/firebase_options.dart';
 import 'local_store.dart';
 
@@ -30,7 +31,29 @@ abstract final class CloudStorageStatus {
   static bool? _cached;
   static Future<bool>? _inFlight;
 
-  static String get bucket => DefaultFirebaseOptions.web.storageBucket ?? '';
+  /// The bucket the app reads and writes. A `HUBSOM_STORAGE_BUCKET` define
+  /// wins, so a bucket created by hand can be used without touching
+  /// firebase_options.
+  static String get bucket {
+    String configured;
+    try {
+      configured = AppConfig.storageBucket.trim();
+    } catch (_) {
+      // AppConfig.load() has not run yet.
+      configured = '';
+    }
+    if (configured.isNotEmpty) {
+      return configured.replaceFirst(RegExp(r'^gs://'), '');
+    }
+    return DefaultFirebaseOptions.web.storageBucket ?? '';
+  }
+
+  /// True when [bucket] is not the project's default Firebase bucket, so the
+  /// Storage SDK has to be pointed at it explicitly.
+  static bool get isCustomBucket {
+    final fallback = DefaultFirebaseOptions.web.storageBucket ?? '';
+    return bucket.isNotEmpty && bucket != fallback;
+  }
 
   /// Last known answer without touching the network. False until the first
   /// probe resolves, so callers that cannot await still behave safely.
