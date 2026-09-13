@@ -84,18 +84,6 @@ class LiveWebrtcSignal {
         'viewerSeenAt': viewerSeenAt,
       };
 
-  /// Only the fields the host owns. Keeps a host write from overwriting the
-  /// viewer's answer or candidates.
-  Map<String, dynamic> toHostJson() => {
-        'id': id,
-        'streamId': streamId,
-        'viewerId': viewerId,
-        'state': state,
-        'offerSdp': offerSdp ?? '',
-        'offerType': offerType ?? '',
-        'updatedAt': updatedAt,
-      };
-
   /// Only the fields the viewer owns.
   Map<String, dynamic> toViewerJson() => {
         'id': id,
@@ -141,13 +129,125 @@ class LiveWebrtcSignalStore {
 
   static const collection = 'liveSignals';
 
+  /// True when Firestore can push signaling changes to us.
+  ///
+  /// Polling costs a full round trip per negotiation hop, which adds seconds
+  /// before a viewer sees anything; listeners deliver the same change over an
+  /// already-open channel.
+  static bool get canWatch => _db != null;
+
+  /// Push the one negotiation this viewer cares about.
+  static Stream<LiveWebrtcSignal?> watchOne(String streamId, String viewerId) {
+    final sdk = _db;
+    if (sdk == null || streamId.isEmpty) return const Stream.empty();
+    final id = LiveWebrtcSignal.docId(streamId, viewerId);
+    return sdk
+        .collection(collection)
+        .doc(id)
+        .snapshots()
+        .map((snap) {
+          final data = snap.data();
+          if (data == null) return null;
+          final row = Map<String, dynamic>.from(data);
+          row.putIfAbsent('id', () => snap.id);
+          return LiveWebrtcSignal.fromJson(row);
+        })
+        .handleError((_) {});
+  }
+
+  /// Push every viewer waiting on, or connected to, this stream.
+  static Stream<List<LiveWebrtcSignal>> watchForStream(String streamId) {
+    final sdk = _db;
+    if (sdk == null || streamId.isEmpty) return const Stream.empty();
+    return sdk
+        .collection(collection)
+        .where('streamId', isEqualTo: streamId)
+        .snapshots()
+        .map((snap) {
+          return snap.docs
+              .map((d) {
+                final row = Map<String, dynamic>.from(d.data());
+                row.putIfAbsent('id', () => d.id);
+                return LiveWebrtcSignal.fromJson(row);
+              })
+              .where((s) => s.id.isNotEmpty)
+              .toList();
+        })
+        .handleError((_) {});
+  }
+
   static Future<void> upsert(LiveWebrtcSignal signal) async {
     await CloudStore.upsertDocs(collection, [signal.toJson()]);
   }
 
-  /// Host publishes its offer/state without touching viewer-owned fields.
-  static Future<void> upsertHostSide(LiveWebrtcSignal signal) async {
-    await CloudStore.upsertDocs(collection, [signal.toHostJson()]);
+  /// The doc a viewer writes to say "I am here, offer me the stream".
+  ///
+  /// Announcing and clearing the previous negotiation in one write matters:
+  /// two sequential writes delayed the host's offer by an extra round trip,
+  /// which the viewer experiences as a slow-starting stream.
+  static Map<String, dynamic> announceDoc({
+    required String streamId,
+    required String viewerId,
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return {
+      'id': LiveWebrtcSignal.docId(streamId, viewerId),
+      'streamId': streamId,
+      'viewerId': viewerId,
+      'state': 'waiting',
+      'answerSdp': '',
+      'answerType': '',
+      'hostIce': <String>[],
+      'viewerIce': <String>[],
+      'updatedAt': now,
+      'viewerSeenAt': now,
+    };
+  }
+
+  /// The doc a host writes to advertise a fresh offer.
+  static Map<String, dynamic> offerDoc({
+    required String streamId,
+    required String viewerId,
+    required String offerSdp,
+    required String offerType,
+  }) =>
+      {
+        'id': LiveWebrtcSignal.docId(streamId, viewerId),
+        'streamId': streamId,
+        'viewerId': viewerId,
+        'state': 'offered',
+        'offerSdp': offerSdp,
+        'offerType': offerType,
+        'answerSdp': '',
+        'answerType': '',
+        'hostIce': <String>[],
+        'viewerIce': <String>[],
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      };
+
+  static Future<void> announceViewer({
+    required String streamId,
+    required String viewerId,
+  }) async {
+    await CloudStore.upsertDocs(collection, [
+      announceDoc(streamId: streamId, viewerId: viewerId),
+    ]);
+  }
+
+  static Future<void> publishOffer({
+    required String streamId,
+    required String viewerId,
+    required String offerSdp,
+    required String offerType,
+  }) async {
+    await CloudStore.upsertDocs(collection, [
+      offerDoc(
+        streamId: streamId,
+        viewerId: viewerId,
+        offerSdp: offerSdp,
+        offerType: offerType,
+      ),
+    ]);
   }
 
   /// Viewer publishes its answer/state without touching host-owned fields.
@@ -157,8 +257,8 @@ class LiveWebrtcSignalStore {
 
   /// Append ICE candidates to one side's array.
   ///
-  /// Host and viewer both write this single doc roughly once a second, so a
-  /// read-modify-write of the whole document loses whichever side wrote last.
+  /// Host and viewer both write this single doc as candidates are gathered, so
+  /// a read-modify-write of the whole document loses whichever side wrote last.
   /// `arrayUnion` merges server-side, so no candidate is dropped.
   static Future<void> appendIce({
     required String streamId,
@@ -213,27 +313,6 @@ class LiveWebrtcSignalStore {
         'streamId': streamId,
         'viewerId': viewerId,
         'viewerSeenAt': DateTime.now().millisecondsSinceEpoch,
-      },
-    ]);
-  }
-
-  /// Wipe both candidate lists and the answer so a fresh offer is not matched
-  /// against a previous negotiation's leftovers.
-  static Future<void> resetForRenegotiation({
-    required String streamId,
-    required String viewerId,
-  }) async {
-    final id = LiveWebrtcSignal.docId(streamId, viewerId);
-    await CloudStore.upsertDocs(collection, [
-      {
-        'id': id,
-        'streamId': streamId,
-        'viewerId': viewerId,
-        'hostIce': <String>[],
-        'viewerIce': <String>[],
-        'answerSdp': '',
-        'answerType': '',
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
       },
     ]);
   }
