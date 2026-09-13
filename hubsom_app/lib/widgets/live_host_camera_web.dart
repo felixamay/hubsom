@@ -29,11 +29,16 @@ class LiveHostCamera extends StatefulWidget {
 }
 
 class _LiveHostCameraState extends State<LiveHostCamera> {
+  /// Drop a viewer that stopped checking in — a closed tab does not always get
+  /// to run its cleanup, and dead peers keep eating the host's uplink.
+  static const _viewerStaleAfter = Duration(seconds: 45);
+
   late final String _viewType;
   web.MediaStream? _media;
   String? _error;
   bool _ready = false;
   Timer? _publishPoll;
+  bool _ticking = false;
   final Map<String, _HostPeer> _peers = {};
 
   @override
@@ -133,13 +138,22 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   }
 
   Future<void> _hostTick(String streamId, web.MediaStream media) async {
-    if (!mounted) return;
+    if (!mounted || _ticking) return;
+    // A tick can outlive its 1s interval on a slow link; overlapping runs would
+    // build two peer connections for the same viewer.
+    _ticking = true;
     try {
       final signals = await LiveWebrtcSignalStore.listForStream(streamId);
       final activeIds = <String>{};
+      final now = DateTime.now().millisecondsSinceEpoch;
 
       for (final signal in signals) {
         if (signal.state == 'closed') {
+          await _dropPeer(signal.viewerId);
+          continue;
+        }
+        if (signal.viewerSeenAt > 0 &&
+            now - signal.viewerSeenAt > _viewerStaleAfter.inMilliseconds) {
           await _dropPeer(signal.viewerId);
           continue;
         }
@@ -151,11 +165,21 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           await _dropPeer(signal.viewerId);
           peer = null;
         }
+        if (peer != null &&
+            (isDeadPeerState(peer.pc.connectionState) ||
+                isDeadPeerState(peer.pc.iceConnectionState))) {
+          await _dropPeer(signal.viewerId);
+          peer = null;
+        }
         if (peer == null) {
           if ((signal.answerSdp ?? '').isNotEmpty &&
               signal.state == 'answered') {
             // Stale session from a previous host tab — ask viewer to rejoin.
-            await LiveWebrtcSignalStore.upsert(
+            await LiveWebrtcSignalStore.resetForRenegotiation(
+              streamId: streamId,
+              viewerId: signal.viewerId,
+            );
+            await LiveWebrtcSignalStore.upsertHostSide(
               LiveWebrtcSignal(
                 id: signal.id,
                 streamId: streamId,
@@ -168,13 +192,17 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           }
           peer = await _createPeer(streamId, signal.viewerId, media);
           _peers[signal.viewerId] = peer;
+          // The offer was only just written; the answer arrives next tick.
+          continue;
         }
 
         if (!peer.answerApplied && (signal.answerSdp ?? '').isNotEmpty) {
           await peer.pc
               .setRemoteDescription(
                 web.RTCSessionDescriptionInit(
-                  type: signal.answerType ?? 'answer',
+                  type: signal.answerType?.isNotEmpty == true
+                      ? signal.answerType!
+                      : 'answer',
                   sdp: signal.answerSdp ?? '',
                 ),
               )
@@ -182,40 +210,37 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           peer.answerApplied = true;
         }
 
-        if (signal.viewerIce.length > peer.viewerIceApplied) {
-          await applyRemoteIce(
+        // Candidates can only be added once the answer is in place.
+        if (peer.answerApplied &&
+            signal.viewerIce.length > peer.viewerIceApplied) {
+          peer.viewerIceApplied = await applyRemoteIce(
             peer.pc,
             signal.viewerIce,
             appliedCount: peer.viewerIceApplied,
           );
-          peer.viewerIceApplied = signal.viewerIce.length;
         }
 
-        if (peer.iceDirty && peer.localIce.isNotEmpty) {
-          peer.iceDirty = false;
-          final latest = await LiveWebrtcSignalStore.get(
-            streamId,
-            signal.viewerId,
+        if (peer.localIce.length > peer.icePublished) {
+          final pending = peer.localIce.sublist(peer.icePublished);
+          peer.icePublished = peer.localIce.length;
+          await LiveWebrtcSignalStore.appendIce(
+            streamId: streamId,
+            viewerId: signal.viewerId,
+            host: pending,
           );
-          if (latest != null && latest.state != 'closed') {
-            await LiveWebrtcSignalStore.upsert(
-              latest.copyWith(
-                hostIce: List<String>.from(peer.localIce),
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-          }
         }
       }
 
-      final stale = _peers.keys
+      final gone = _peers.keys
           .where((id) => !activeIds.contains(id))
           .toList(growable: false);
-      for (final id in stale) {
+      for (final id in gone) {
         await _dropPeer(id);
       }
     } catch (_) {
       // Host preview still works if signaling fails.
+    } finally {
+      _ticking = false;
     }
   }
 
@@ -238,7 +263,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       peer.localIce.add(encoded);
-      peer.iceDirty = true;
     }).toJS;
 
     final offer = await pc.createOffer().toDart;
@@ -255,7 +279,13 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         )
         .toDart;
 
-    await LiveWebrtcSignalStore.upsert(
+    // Clear the previous negotiation before advertising a new offer, otherwise
+    // the viewer's old answer and candidates would be matched against it.
+    await LiveWebrtcSignalStore.resetForRenegotiation(
+      streamId: streamId,
+      viewerId: viewerId,
+    );
+    await LiveWebrtcSignalStore.upsertHostSide(
       LiveWebrtcSignal(
         id: LiveWebrtcSignal.docId(streamId, viewerId),
         streamId: streamId,
@@ -263,7 +293,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         state: 'offered',
         offerSdp: offer.sdp,
         offerType: offer.type,
-        hostIce: List<String>.from(peer.localIce),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -380,9 +409,9 @@ class _HostPeer {
 
   final web.RTCPeerConnection pc;
   final List<String> localIce = [];
-  bool iceDirty = false;
   bool answerApplied = false;
   int viewerIceApplied = 0;
+  int icePublished = 0;
 }
 
 class _PresenceFallback extends StatelessWidget {
