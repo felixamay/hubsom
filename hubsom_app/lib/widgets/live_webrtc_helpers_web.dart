@@ -39,6 +39,38 @@ web.RTCConfiguration liveRtcConfig() {
   );
 }
 
+/// Camera and mic capture for the host.
+///
+/// Asking for bare `audio: true` leaves echo handling to whatever the browser
+/// defaults to, which is how a seller ends up broadcasting a loud echo of their
+/// own speakers. These processing flags are requested explicitly instead.
+web.MediaStreamConstraints liveHostMediaConstraints() {
+  return web.MediaStreamConstraints(
+    video: web.MediaTrackConstraints(
+      width: web.ConstrainULongRange(ideal: 1280),
+      height: web.ConstrainULongRange(ideal: 720),
+      frameRate: web.ConstrainDoubleRange(ideal: 30),
+      facingMode: 'user'.toJS,
+    ) as JSAny,
+    audio: web.MediaTrackConstraints(
+      echoCancellation: true.toJS,
+      noiseSuppression: true.toJS,
+      autoGainControl: true.toJS,
+    ) as JSAny,
+  );
+}
+
+/// Make an element that must never play sound genuinely silent.
+///
+/// A host preview that plays the captured mic back through the speakers feeds
+/// straight into the mic again, which is the loudest kind of echo. `muted`
+/// alone has been unset by re-attach paths before, so volume is pinned too.
+void silenceElement(web.HTMLVideoElement video) {
+  video.muted = true;
+  video.volume = 0;
+  video.setAttribute('muted', 'true');
+}
+
 String encodeIceCandidate(web.RTCIceCandidate candidate) {
   return jsonEncode({
     'candidate': candidate.candidate,

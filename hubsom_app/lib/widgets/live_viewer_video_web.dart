@@ -40,13 +40,16 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   late final String _viewType;
   web.RTCPeerConnection? _pc;
   web.MediaStream? _remote;
+
+  /// Fallback stream for browsers whose track events carry no stream.
+  web.MediaStream? _assembled;
   StreamSubscription<LiveWebrtcSignal?>? _watch;
   Timer? _poll;
   Timer? _upkeep;
   Timer? _attachRetry;
   Timer? _iceFlush;
   bool _ready = false;
-  bool _needsUnmute = false;
+  bool _muted = false;
   bool _handling = false;
   bool _answerPublished = false;
   String? _status;
@@ -224,20 +227,21 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _localIce.clear();
     _acceptedOfferSdp = null;
     _answerPublished = false;
+    _assembled = null;
     _attemptStartedAt = DateTime.now();
 
     pc.ontrack = ((web.Event event) {
       final te = event as web.RTCTrackEvent;
       final streams = te.streams.toDart;
-      final web.MediaStream remote;
       if (streams.isNotEmpty) {
-        remote = streams.first;
-      } else {
-        final stream = web.MediaStream();
-        stream.addTrack(te.track);
-        remote = stream;
+        _showRemote(streams.first);
+        return;
       }
-      _showRemote(remote);
+      // Some browsers report no stream on the event. Collect the tracks into
+      // one stream rather than letting the video track replace the audio one.
+      final assembled = _assembled ??= web.MediaStream();
+      assembled.addTrack(te.track);
+      _showRemote(assembled);
     }).toJS;
 
     pc.onicecandidate = ((web.Event event) {
@@ -310,6 +314,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final attached = attachStreamToView(
       viewType: _viewType,
       stream: stream,
+      muted: _muted,
     );
     if (attached) {
       _attachRetry?.cancel();
@@ -328,13 +333,24 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final el = web.document.getElementById(_viewType);
     if (el == null || !el.isA<web.HTMLVideoElement>()) return;
     final video = el as web.HTMLVideoElement;
-    // Autoplay policies mute the element when sound was not allowed; surface a
-    // tap target instead of silently playing with no audio.
+    // Autoplay policies mute the element when sound was not allowed; reflect
+    // that in the control instead of silently playing with no audio.
     Future<void>.delayed(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      final muted = video.muted;
-      if (muted != _needsUnmute) setState(() => _needsUnmute = muted);
+      if (video.muted != _muted) setState(() => _muted = video.muted);
     });
+  }
+
+  void _toggleSound() {
+    final next = !_muted;
+    setState(() => _muted = next);
+    final stream = _remote;
+    if (stream == null) return;
+    attachStreamToView(
+      viewType: _viewType,
+      stream: stream,
+      muted: next,
+    );
   }
 
   Future<void> _disposePc() async {
@@ -355,6 +371,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _icePublished = 0;
     _localIce.clear();
     _remote = null;
+    _assembled = null;
     _attachRetry?.cancel();
     _attachRetry = null;
     _iceFlush?.cancel();
@@ -362,19 +379,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     if (mounted) {
       setState(() {
         _ready = false;
-        _needsUnmute = false;
         _status = 'Reconnecting…';
       });
     }
     if (rejoin) await _announce();
-  }
-
-  void _unmute() {
-    final stream = _remote;
-    if (stream != null) {
-      attachStreamToView(viewType: _viewType, stream: stream, muted: false);
-    }
-    if (mounted) setState(() => _needsUnmute = false);
   }
 
   @override
@@ -427,18 +435,23 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
               ),
             ),
           ),
-        if (_ready && _needsUnmute)
+        // Always offered once video is up: browsers often start muted, and a
+        // viewer sitting near the seller needs to be able to kill the audio.
+        if (_ready)
           Positioned(
             right: 16,
             bottom: 24,
             child: TextButton.icon(
-              onPressed: _unmute,
+              onPressed: _toggleSound,
               style: TextButton.styleFrom(
                 backgroundColor: Colors.black54,
                 foregroundColor: Colors.white,
               ),
-              icon: const Icon(Icons.volume_up, size: 18),
-              label: const Text('Tap for sound'),
+              icon: Icon(
+                _muted ? Icons.volume_off : Icons.volume_up,
+                size: 18,
+              ),
+              label: Text(_muted ? 'Tap for sound' : 'Mute'),
             ),
           ),
       ],

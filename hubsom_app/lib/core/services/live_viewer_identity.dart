@@ -38,6 +38,23 @@ class LiveViewerIdentity {
     return generated;
   }
 
+  /// The signed-in user straight from local storage.
+  ///
+  /// Needed because the auth provider reports null while it is still loading,
+  /// and during that window a seller would be treated as a viewer of their own
+  /// show — subscribing to their own audio, which is heard as a loud echo.
+  static HubsomUser? localUser() {
+    try {
+      final raw = LocalStore.userJson;
+      if (raw == null || raw.isEmpty) return null;
+      return HubsomUser.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// True when this person is running the show rather than watching it.
   static bool isHost(LiveStream stream, HubsomUser? user) {
     if (user == null) return false;

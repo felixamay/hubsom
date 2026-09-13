@@ -83,10 +83,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
 
   bool get _isHost {
     if (widget.hostMode) return true;
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || stream == null) return false;
-    return user.sellerId == stream!.sellerId ||
-        stream!.hosts.any((h) => h.id == user.id);
+    final s = stream;
+    if (s == null) return false;
+    // Falls back to local storage because the auth provider is null while it
+    // loads, and a seller misread as a viewer subscribes to their own audio.
+    final user = ref.read(authStateProvider).valueOrNull ??
+        LiveViewerIdentity.localUser();
+    return LiveViewerIdentity.isHost(s, user);
   }
 
   int _offeredQty(Product product) {

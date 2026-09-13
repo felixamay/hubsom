@@ -50,12 +50,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final video = web.HTMLVideoElement()
         ..autoplay = true
-        ..muted = true
         ..setAttribute('playsinline', 'true')
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
         ..style.backgroundColor = '#0b1f17';
+      silenceElement(video);
       video.id = _viewType;
       return video;
     });
@@ -86,15 +86,9 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
 
   Future<void> _start() async {
     try {
-      final stream =
-          await web.window.navigator.mediaDevices
-              .getUserMedia(
-                web.MediaStreamConstraints(
-                  video: true.toJS,
-                  audio: true.toJS,
-                ),
-              )
-              .toDart;
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(liveHostMediaConstraints())
+          .toDart;
       _media = stream;
       if (!widget.micOn) {
         for (final t in stream.getAudioTracks().toDart) {
@@ -335,6 +329,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
     final el = web.document.getElementById(_viewType);
     if (el != null && el.isA<web.HTMLVideoElement>()) {
       final video = el as web.HTMLVideoElement;
+      // Re-asserted on every attach: the preview must never be audible.
+      silenceElement(video);
       video.srcObject = stream;
       video.play().toDart;
     }
