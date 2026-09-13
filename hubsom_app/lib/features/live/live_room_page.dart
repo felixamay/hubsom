@@ -10,8 +10,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
+import '../../core/services/live_chat_store.dart';
 import '../../core/services/live_viewer_identity.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/live_gift.dart';
@@ -76,6 +78,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _seededGiftChat = false;
   Timer? _poll;
   Timer? _tick;
+  StreamSubscription<List<ChatMessage>>? _chatWatch;
   late final AnimationController _pulse;
 
   bool get _isHost {
@@ -112,6 +115,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _load(join: true);
+    _watchChat();
     _startPoll();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -145,6 +149,20 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         }
         setState(() {});
       }
+    });
+  }
+
+  /// Chat arrives pushed rather than on the refresh timer, so a message shows up
+  /// for everyone in the room as it is sent.
+  void _watchChat() {
+    final repo = ref.read(liveRepositoryProvider);
+    if (!repo.canWatchChat) return;
+    _chatWatch = repo.watchChat(widget.streamId).listen((cloud) {
+      if (!mounted || cloud.isEmpty) return;
+      final merged = LiveChatStore.merge(chat, cloud);
+      setState(() => chat = merged);
+      unawaited(LocalCommerceStore.cacheChat(widget.streamId, merged));
+      _playNewGiftChats(merged);
     });
   }
 
@@ -1092,6 +1110,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   void dispose() {
     _poll?.cancel();
     _tick?.cancel();
+    unawaited(_chatWatch?.cancel());
     _pulse.dispose();
     _chatCtrl.dispose();
     for (final f in _floating) {

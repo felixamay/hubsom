@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/gift_store.dart';
+import '../services/live_chat_store.dart';
 import '../services/live_viewer_identity.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_notification_store.dart';
@@ -296,8 +297,27 @@ class LiveRepository {
     } catch (_) {
       // fall through
     }
-    return LocalCommerceStore.listChat(streamId);
+
+    // Chat used to be read from this device only, so a viewer never saw anyone
+    // else's messages. Merge in what the room has actually said.
+    final local = LocalCommerceStore.listChat(streamId);
+    try {
+      final cloud = await LiveChatStore.listForStream(streamId);
+      if (cloud.isEmpty) return local;
+      final merged = LiveChatStore.merge(local, cloud);
+      await LocalCommerceStore.cacheChat(streamId, merged);
+      return merged;
+    } catch (_) {
+      return local;
+    }
   }
+
+  /// Pushes the room's chat as it is written, so messages land without waiting
+  /// for the next refresh.
+  Stream<List<ChatMessage>> watchChat(String streamId) =>
+      LiveChatStore.watchForStream(streamId);
+
+  bool get canWatchChat => LiveChatStore.canWatch;
 
   Future<ChatMessage> sendChat(String streamId, String text) async {
     try {
@@ -315,6 +335,8 @@ class LiveRepository {
     }
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+    // Publishing to the room happens inside sendChat, so bid and auction
+    // notices reach everyone too.
     return LocalCommerceStore.sendChat(
       streamId: streamId,
       user: user,

@@ -34,6 +34,10 @@ service cloud.firestore {
     match /liveSignals/{id} {
       allow read, write: if true;
     }
+    // Live show chat, shared by everyone watching.
+    match /liveChat/{id} {
+      allow read, write: if true;
+    }
     match /productComments/{id} {
       allow read, write: if true;
     }

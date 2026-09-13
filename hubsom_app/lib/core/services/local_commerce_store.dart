@@ -12,6 +12,7 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
+import 'live_chat_store.dart';
 import 'live_viewer_identity.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
@@ -1194,6 +1195,21 @@ class LocalCommerceStore {
     return list.reversed.toList();
   }
 
+  /// Store what the room has said so it survives a reload and is there before
+  /// the cloud answers. Takes newest-first, as [listChat] returns.
+  static Future<void> cacheChat(
+    String streamId,
+    List<ChatMessage> newestFirst,
+  ) async {
+    if (streamId.isEmpty) return;
+    final map = _chatMap();
+    final trimmed = newestFirst.length > LiveChatStore.maxMessages
+        ? newestFirst.sublist(0, LiveChatStore.maxMessages)
+        : newestFirst;
+    map[streamId] = trimmed.reversed.toList();
+    await _saveChat(map);
+  }
+
   static Future<ChatMessage> sendChat({
     required String streamId,
     required HubsomUser user,
@@ -1211,8 +1227,18 @@ class LocalCommerceStore {
     );
     final map = _chatMap();
     final list = <ChatMessage>[...(map[streamId] ?? const <ChatMessage>[]), msg];
-    map[streamId] = list;
+    map[streamId] = list.length > LiveChatStore.maxMessages
+        ? list.sublist(list.length - LiveChatStore.maxMessages)
+        : list;
     await _saveChat(map);
+    // Every kind of live message funnels through here — viewer chat, bid
+    // notices, auction results — so publishing here is what makes the room
+    // shared instead of each device talking to itself.
+    try {
+      await LiveChatStore.send(msg);
+    } catch (_) {
+      // The sender still sees their own message.
+    }
     return msg;
   }
 
