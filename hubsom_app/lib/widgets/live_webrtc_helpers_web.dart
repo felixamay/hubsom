@@ -3,13 +3,39 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
-/// Shared STUN servers for Hubsom live WebRTC (no Agora App ID required).
+import '../core/config/app_config.dart';
+
+/// ICE configuration for Hubsom live WebRTC (no Agora App ID required).
+///
+/// STUN only discovers a public address; it cannot get packets through
+/// carrier-grade NAT, which is what most Ghanaian mobile data sits behind. A
+/// TURN relay is therefore required for a viewer to see the seller at all on
+/// those networks, so it is always included.
 web.RTCConfiguration liveRtcConfig() {
+  final servers = <web.RTCIceServer>[
+    web.RTCIceServer(urls: 'stun:stun.l.google.com:19302'.toJS),
+    web.RTCIceServer(urls: 'stun:stun1.l.google.com:19302'.toJS),
+  ];
+
+  final turnUrls = AppConfig.turnUrls
+      .split(',')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+  if (turnUrls.isNotEmpty) {
+    servers.add(
+      web.RTCIceServer(
+        urls: turnUrls.map((e) => e.toJS).toList().toJS,
+        username: AppConfig.turnUsername,
+        credential: AppConfig.turnCredential,
+      ),
+    );
+  }
+
   return web.RTCConfiguration(
-    iceServers: [
-      web.RTCIceServer(urls: 'stun:stun.l.google.com:19302'.toJS),
-      web.RTCIceServer(urls: 'stun:stun1.l.google.com:19302'.toJS),
-    ].toJS,
+    iceServers: servers.toJS,
+    // Pool a candidate ahead of the offer so the first connect is quicker.
+    iceCandidatePoolSize: 4,
   );
 }
 
@@ -36,13 +62,19 @@ web.RTCIceCandidateInit decodeIceCandidate(String raw) {
   );
 }
 
-Future<void> applyRemoteIce(
+/// Apply every remote candidate we have not already fed to [pc].
+///
+/// Returns how many entries of [encoded] are now applied, so a caller never
+/// re-adds one and never skips one it failed to add earlier.
+Future<int> applyRemoteIce(
   web.RTCPeerConnection pc,
   List<String> encoded, {
   required int appliedCount,
 }) async {
+  var applied = appliedCount;
   for (var i = appliedCount; i < encoded.length; i++) {
     final raw = encoded[i];
+    applied = i + 1;
     if (raw.isEmpty) continue;
     try {
       await pc.addIceCandidate(decodeIceCandidate(raw)).toDart;
@@ -50,4 +82,36 @@ Future<void> applyRemoteIce(
       // Ignore stale / duplicate candidates.
     }
   }
+  return applied;
+}
+
+/// True when the peer connection has given up and needs a fresh negotiation.
+bool isDeadPeerState(String? state) =>
+    state == 'failed' || state == 'closed' || state == 'disconnected';
+
+/// Attach [stream] to the <video> element created for [viewType].
+///
+/// The element only exists once Flutter has mounted the platform view, so
+/// callers retry until it appears rather than dropping the stream on the floor.
+bool attachStreamToView({
+  required String viewType,
+  required web.MediaStream stream,
+  bool muted = false,
+}) {
+  final el = web.document.getElementById(viewType);
+  if (el == null || !el.isA<web.HTMLVideoElement>()) return false;
+  final video = el as web.HTMLVideoElement;
+  if (video.srcObject != stream) {
+    video.srcObject = stream;
+  }
+  video.muted = muted;
+  video.play().toDart.then(
+    (_) {},
+    onError: (_) {
+      // Autoplay with sound was refused; fall back to muted playback.
+      video.muted = true;
+      video.play().toDart.then((_) {}, onError: (_) {});
+    },
+  );
+  return true;
 }
