@@ -56,7 +56,13 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17';
+        ..style.backgroundColor = '#0b1f17'
+        // Force GPU compositing so Safari renders the element inside the
+        // CanvasKit shadow root (same fix as the viewer widget).
+        ..style.transform = 'translateZ(0)'
+        ..style.setProperty('-webkit-transform', 'translateZ(0)')
+        ..style.setProperty('will-change', 'transform')
+        ..style.display = 'block';
       silenceElement(video);
       video.id = _viewType;
       _videoEl = video; // capture direct ref — CanvasKit shadow root hides it

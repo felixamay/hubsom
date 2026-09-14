@@ -34,8 +34,9 @@ web.RTCConfiguration liveRtcConfig() {
 
   return web.RTCConfiguration(
     iceServers: servers.toJS,
-    // Pool a candidate ahead of the offer so the first connect is quicker.
-    iceCandidatePoolSize: 4,
+    // iceCandidatePoolSize intentionally omitted: Safari has a known bug
+    // where pre-gathered candidates from the pool can be mis-matched against
+    // a different negotiation's offer, causing ICE to stall.
   );
 }
 

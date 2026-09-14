@@ -53,6 +53,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   bool _muted = false;
   bool _handling = false;
   bool _answerPublished = false;
+  bool _playBlocked = false; // set when autoplay is refused (Safari policy)
   String? _status;
   int _hostIceApplied = 0;
   int _icePublished = 0;
@@ -77,7 +78,15 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17';
+        ..style.backgroundColor = '#0b1f17'
+        // Force a separate GPU compositing layer. Without this Safari refuses
+        // to paint <video> elements that live inside a shadow root (Flutter
+        // CanvasKit embeds platform views there), so the video connection is
+        // established but nothing is ever visible on screen.
+        ..style.transform = 'translateZ(0)'
+        ..style.setProperty('-webkit-transform', 'translateZ(0)')
+        ..style.setProperty('will-change', 'transform')
+        ..style.display = 'block';
       video.id = _viewType;
       _videoEl = video; // capture direct reference — getElementById won't
       //   reach this element inside CanvasKit's shadow root
@@ -328,7 +337,26 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       });
       return;
     }
-    attachStreamToElement(video: video, stream: stream, muted: _muted);
+    // Ensure muted + playsinline so Safari never blocks the initial play.
+    video.muted = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    if (video.srcObject != stream) {
+      video.srcObject = stream;
+    }
+    video.play().toDart.then(
+      (_) {
+        // Play succeeded — reflect the actual muted state.
+        if (mounted && _playBlocked) setState(() => _playBlocked = false);
+        _syncMuteAffordance(video);
+      },
+      onError: (_) {
+        // Safari (and sometimes Chrome on mobile) may block autoplay even for
+        // muted videos. Show a tap-to-play affordance so the user can unblock
+        // it with a real gesture.
+        if (mounted && !_playBlocked) setState(() => _playBlocked = true);
+      },
+    );
     _attachRetry?.cancel();
     _attachRetry = null;
     _syncMuteAffordance(video);
@@ -349,6 +377,31 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final stream = _remote;
     if (video == null || stream == null) return;
     attachStreamToElement(video: video, stream: stream, muted: next);
+  }
+
+  /// Called when the user taps the play-blocked overlay on Safari.
+  void _userPlay() {
+    final video = _videoEl;
+    final stream = _remote;
+    if (video == null || stream == null) return;
+    video.muted = false;
+    video.play().toDart.then(
+      (_) {
+        if (mounted) {
+          setState(() {
+            _playBlocked = false;
+            _muted = false;
+          });
+        }
+      },
+      onError: (_) {
+        // Still blocked — try muted as last resort.
+        video.muted = true;
+        video.play().toDart.then((_) {
+          if (mounted) setState(() => _playBlocked = false);
+        }, onError: (_) {});
+      },
+    );
   }
 
   Future<void> _disposePc() async {
@@ -439,7 +492,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
           ),
         // Always offered once video is up: browsers often start muted, and a
         // viewer sitting near the seller needs to be able to kill the audio.
-        if (_ready)
+        if (_ready && !_playBlocked)
           Positioned(
             right: 16,
             bottom: 24,
@@ -454,6 +507,47 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
                 size: 18,
               ),
               label: Text(_muted ? 'Tap for sound' : 'Mute'),
+            ),
+          ),
+        // Safari (and iOS Chrome) often block autoplay. Show a full-screen tap
+        // target so the user can unblock with a real gesture — the browser
+        // will then allow play() to succeed.
+        if (_playBlocked)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _userPlay,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.55),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.play_circle_outline,
+                      color: Colors.white,
+                      size: 72,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tap to watch',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.hostName,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],
