@@ -212,15 +212,13 @@ void main() {
       expect(merged.viewerCount, 3);
     });
 
-    test('a show ended on this device is not resurrected by a stale cloud doc',
-        () {
+    test('the cloud live status is the one every browser shows', () {
       final local = _stream(status: 'ended', endedAt: '2026-09-13T11:00:00Z');
       final remote = _stream(status: 'live');
 
       final merged = LocalCommerceStore.mergeStreams(local, remote);
 
-      expect(merged.isLive, isFalse);
-      expect(merged.status, 'ended');
+      expect(merged.isLive, isTrue);
     });
 
     test('the cloud ending a live show still wins', () {
@@ -242,6 +240,15 @@ void main() {
       final merged = LocalCommerceStore.mergeStreams(local, remote);
 
       expect(merged.viewerCount, 4);
+    });
+
+    test('the live bag on every browser is the cloud product list', () {
+      final local = _stream(status: 'live').copyWith(productIds: const ['old']);
+      final remote = _stream(status: 'live').copyWith(productIds: const ['new']);
+
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+
+      expect(merged.productIds, ['new']);
     });
 
     test('peak viewers stays a high-water mark', () {

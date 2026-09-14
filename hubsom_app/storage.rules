@@ -31,6 +31,17 @@ service firebase.storage {
         );
     }
 
+    // Live-show cover thumbnails (uploaded when a seller goes live).
+    match /liveCovers/{object} {
+      allow read: if true;
+      allow write: if request.resource == null
+        || (
+          request.resource.size < 8 * 1024 * 1024
+          && request.resource.contentType != null
+          && request.resource.contentType.matches('image/.*')
+        );
+    }
+
     // Nothing else is writable, and listing the bucket stays closed.
     match /{allOther=**} {
       allow read, write: if false;

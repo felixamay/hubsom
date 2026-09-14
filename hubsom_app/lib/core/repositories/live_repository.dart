@@ -101,21 +101,17 @@ class LiveRepository {
         } catch (_) {}
       }
       if (remote.isEmpty) return local;
-      final byId = <String, LiveStream>{
-        for (final s in local) s.id: s,
-      };
-      for (final s in remote) {
-        final existing = byId[s.id];
-        byId[s.id] =
-            existing == null ? s : LocalCommerceStore.mergeStreams(existing, s);
-      }
-      final merged = byId.values.toList()
+      final remoteIds = remote.map((s) => s.id).toSet();
+      // Keep a live show this device just created until Firestore catches up.
+      final pending = local.where((s) => s.isLive && !remoteIds.contains(s.id));
+      final merged = [...remote, ...pending]
         ..sort((a, b) {
           final aLive = a.isLive ? 0 : 1;
           final bLive = b.isLive ? 0 : 1;
           if (aLive != bLive) return aLive - bLive;
           return (b.startedAt ?? '').compareTo(a.startedAt ?? '');
         });
+      await LocalCommerceStore.replaceStreams(merged);
       return merged;
     } catch (_) {
       return local;
@@ -334,8 +330,6 @@ class LiveRepository {
       // fall through
     }
 
-    // Chat used to be read from this device only, so a viewer never saw anyone
-    // else's messages. Merge in what the room has actually said.
     final local = LocalCommerceStore.listChat(streamId);
     try {
       final cloud = await LiveChatStore.listForStream(streamId);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +21,7 @@ import '../repositories/order_repository.dart';
 import '../repositories/seller_repository.dart';
 import '../services/agora_service.dart';
 import '../services/api_client.dart';
+import '../services/cloud_cart_store.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
@@ -257,7 +259,14 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
 }
 
 final cartProvider = StateNotifierProvider<CartController, List<CartItem>>((ref) {
-  return CartController();
+  final controller = CartController();
+  ref.listen<AsyncValue<HubsomUser?>>(authStateProvider, (prev, next) {
+    final user = next.valueOrNull;
+    if (user != null && prev?.valueOrNull?.id != user.id) {
+      unawaited(controller.hydrateFromCloud(user.id));
+    }
+  }, fireImmediately: true);
+  return controller;
 });
 
 /// Total quantity across all cart lines (header badge).
@@ -290,7 +299,39 @@ class CartController extends StateNotifier<List<CartItem>> {
     return byId.values.toList();
   }
 
-  Future<void> _persist() => LocalStore.saveCart(state);
+  Future<void> _persist() async {
+    await LocalStore.saveCart(state);
+    final userId = _signedInUserId();
+    if (userId != null) unawaited(CloudCartStore.save(userId, state));
+  }
+
+  static String? _signedInUserId() {
+    final raw = LocalStore.userJson;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final map = jsonDecode(raw);
+      if (map is Map) {
+        final id = '${map['id'] ?? ''}';
+        return id.isEmpty ? null : id;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Pull the signed-in user's cart from Firestore so Safari and Chrome match.
+  Future<void> hydrateFromCloud(String userId) async {
+    final cloud = await CloudCartStore.load(userId);
+    if (cloud == null) {
+      if (state.isNotEmpty) unawaited(CloudCartStore.save(userId, state));
+      return;
+    }
+    if (cloud.isEmpty && state.isNotEmpty) {
+      unawaited(CloudCartStore.save(userId, state));
+      return;
+    }
+    state = _mergeByProduct(cloud);
+    await LocalStore.saveCart(state);
+  }
 
   /// Add any platform product (live, shop, flash, category) into the shared cart.
   Future<CartItem> addProduct(

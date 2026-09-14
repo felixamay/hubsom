@@ -21,7 +21,12 @@ import 'shop_video_cloud.dart';
 import 'shop_video_merge.dart';
 import 'storage_media.dart';
 
-/// Device-local products / sellers / live shows when Firebase Hosting has no API.
+/// On-device cache of Hubsom commerce data.
+///
+/// Shared catalogs (products, sellers, live shows, videos, follows) live in
+/// Firestore. This store is a thin cache so the UI can render offline and so
+/// a write can land before the cloud round-trip finishes. Reads from
+/// repositories prefer the cloud and then replace these lists.
 class LocalCommerceStore {
   LocalCommerceStore._();
 
@@ -180,6 +185,22 @@ class LocalCommerceStore {
     if (touched) {
       await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
     }
+    try {
+      await CloudStore.upsertDocs(CloudStore.sellerFollowers, [
+        {
+          'id': sellerId,
+          'sellerId': sellerId,
+          'followers': rows,
+          'count': rows.length,
+        },
+      ]);
+      final seller = getSeller(sellerId);
+      if (seller != null) {
+        await CloudStore.upsertDocs(CloudStore.sellers, [
+          seller.copyWith(followers: rows.length).toJson(),
+        ]);
+      }
+    } catch (_) {}
     return rows.length;
   }
 
@@ -234,6 +255,30 @@ class LocalCommerceStore {
       if (p.id == idOrSlug || p.slug == idOrSlug) return p;
     }
     return null;
+  }
+
+  /// Replace the cached catalog with the Firestore list.
+  static Future<void> replaceProducts(List<Product> products) async {
+    await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
+  }
+
+  static Future<void> replaceSellers(List<Seller> sellers) async {
+    await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
+  }
+
+  static Future<void> replaceStreams(List<LiveStream> streams) async {
+    await _saveStreams(streams);
+  }
+
+  static Future<void> upsertProduct(Product product) async {
+    final products = _allProducts();
+    final idx = products.indexWhere((p) => p.id == product.id);
+    if (idx >= 0) {
+      products[idx] = product;
+    } else {
+      products.insert(0, product);
+    }
+    await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
   }
 
   static Future<Product> createProduct({
@@ -395,32 +440,19 @@ class LocalCommerceStore {
   }
 
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
-    final auction = preferFresherAuction(local.auction, remote.auction);
-    final preferRemoteEnded = !remote.isLive && local.isLive;
-    // A viewer who cached this show before it started holds a non-live copy.
-    // Without this the cached status wins forever and the seller never shows as
-    // live on that device. Only safe while the show was never ended here.
-    final locallyEnded = (local.endedAt ?? '').trim().isNotEmpty;
-    final preferRemoteLive = remote.isLive && !local.isLive && !locallyEnded;
-    final takeRemoteStatus = preferRemoteEnded || preferRemoteLive;
-    // Take the cloud's count rather than the larger of the two: clamping
-    // upwards made the audience number monotonic, so a viewer leaving could
-    // never bring it back down. Peak stays a high-water mark below.
+    // Firestore is the shared source of truth. Local cache may be seconds
+    // ahead for the host who just tapped, but every other browser must see
+    // the cloud document — not a stale copy from its own IndexedDB.
+    final auction = preferFresherAuction(remote.auction, local.auction);
     final viewers = remote.viewerCount;
-    final products = <String>{...local.productIds, ...remote.productIds}.toList();
-    // Prefer the remote cover when the local copy is either empty or a
-    // device-only blob ref that no other phone can resolve. The remote cover
-    // travels as a data: URL or https URL so it works everywhere.
     final cover = _bestCover(local.cover, remote.cover);
-    return local.copyWith(
-      status: takeRemoteStatus ? remote.status : local.status,
-      endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
+    return remote.copyWith(
       cover: cover,
       viewerCount: viewers,
       peakViewers: [viewers, local.peakViewers, remote.peakViewers]
           .reduce((a, b) => a > b ? a : b),
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
-      productIds: products,
+      productIds: remote.productIds.isNotEmpty ? remote.productIds : local.productIds,
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );

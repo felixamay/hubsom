@@ -27,29 +27,40 @@ String? _pickMediaUrl(Object? previous, Object? incoming) {
   return remote;
 }
 
-/// Merge cloud shop-video docs into the on-device list without dropping a
-/// thumbnail or playback URL the phone already has.
+/// True when this row is an in-progress upload that only this device has.
+bool _isInProgressLocal(Map<String, dynamic> row) {
+  final url = cleanMediaUrl(row['videoUrl']);
+  return url.isEmpty || isDeviceOnlyMedia(url);
+}
+
+/// Merge cloud shop-video docs as the source of truth.
+///
+/// Cloud rows win for the catalog every browser sees. A local-only row is
+/// kept only while this device is still uploading (no portable video URL yet).
+/// Media fields pick the URL other devices can load (https / data:) over a
+/// `hubsom-blob://` ref that exists only in this browser's IndexedDB.
 List<Map<String, dynamic>> mergeShopVideoDocs({
   required List<Map<String, dynamic>> local,
   required List<Map<String, dynamic>> incoming,
 }) {
-  final byId = <String, Map<String, dynamic>>{
-    for (final row in local)
-      if ('${row['id'] ?? ''}'.isNotEmpty)
-        '${row['id']}': _sanitize(Map<String, dynamic>.from(row)),
-  };
+  final byId = <String, Map<String, dynamic>>{};
   for (final row in incoming) {
     final id = '${row['id'] ?? ''}';
     if (id.isEmpty) continue;
-    final next = _sanitize(Map<String, dynamic>.from(row));
-    final prev = byId[id];
-    if (prev == null) {
-      byId[id] = next;
+    byId[id] = _sanitize(Map<String, dynamic>.from(row));
+  }
+  for (final row in local) {
+    final id = '${row['id'] ?? ''}';
+    if (id.isEmpty) continue;
+    final prev = _sanitize(Map<String, dynamic>.from(row));
+    final cloud = byId[id];
+    if (cloud == null) {
+      if (_isInProgressLocal(prev)) byId[id] = prev;
       continue;
     }
-    final merged = <String, dynamic>{...prev, ...next};
+    final merged = <String, dynamic>{...prev, ...cloud};
     for (final key in const ['videoUrl', 'thumbnailUrl', 'posterUrl', 'thumbUrl']) {
-      final picked = _pickMediaUrl(prev[key], next[key]);
+      final picked = _pickMediaUrl(prev[key], cloud[key]);
       if (picked == null) {
         merged.remove(key);
       } else {
