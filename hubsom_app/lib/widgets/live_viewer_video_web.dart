@@ -7,15 +7,8 @@ import 'package:web/web.dart' as web;
 
 import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import '../core/utils/browser_detect_web.dart';
 import 'live_webrtc_helpers_web.dart';
-
-/// True when the current browser is Safari (not Chrome or Chromium-based).
-bool get _isSafari {
-  final ua = web.window.navigator.userAgent;
-  return ua.contains('Safari') &&
-      !ua.contains('Chrome') &&
-      !ua.contains('Chromium');
-}
 
 /// Viewer stage: pulls the host camera/mic over WebRTC (Firestore signaling).
 class LiveViewerVideo extends StatefulWidget {
@@ -104,7 +97,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     super.initState();
     _viewType = 'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
 
-    if (_isSafari) {
+    if (isSafariBrowser()) {
       // Safari: video lives in document.body. HtmlElementView gets a
       // transparent <div> placeholder so Flutter's layout is unaffected.
       ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
@@ -482,7 +475,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
-            if (!_isSafari) _attach();
+            if (!isSafariBrowser()) _attach();
           },
         ),
         if (!_ready)

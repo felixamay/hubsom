@@ -7,6 +7,7 @@ import 'package:web/web.dart' as web;
 
 import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import '../core/utils/browser_detect_web.dart';
 import 'live_webrtc_helpers_web.dart';
 
 /// Host camera preview + WebRTC publish so viewers can see the seller.
@@ -47,13 +48,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   // Safari body-level video for the host's own preview (same shadow DOM issue).
   web.HTMLVideoElement? _safariBodyEl;
 
-  static bool get _isSafari {
-    final ua = web.window.navigator.userAgent;
-    return ua.contains('Safari') &&
-        !ua.contains('Chrome') &&
-        !ua.contains('Chromium');
-  }
-
   void _initSafariBodyPreview() {
     final v = web.HTMLVideoElement()
       ..autoplay = true
@@ -79,7 +73,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
     _viewType =
         'hubsom-live-cam-${DateTime.now().microsecondsSinceEpoch}';
 
-    if (_isSafari) {
+    if (isSafariBrowser()) {
       // Safari: register a transparent placeholder so Flutter layout works.
       // The actual preview video is in document.body (bypasses shadow DOM).
       ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
@@ -456,7 +450,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
-            if (!_isSafari) {
+            if (!isSafariBrowser()) {
               final stream = _media;
               if (stream != null) _attach(stream);
             }

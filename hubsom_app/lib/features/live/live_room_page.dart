@@ -27,6 +27,7 @@ import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_reaction_burst.dart';
 import '../../widgets/live_reaction_tray.dart';
 import '../../widgets/live_sale_product_card.dart';
+import '../../core/utils/browser_detect.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
@@ -1053,7 +1054,14 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // Transparent ONLY on Safari: we render video elements directly in
+      // document.body to bypass the CanvasKit shadow DOM. The transparent
+      // scaffold lets those body-level elements show through.
+      // On Chrome/Firefox the normal HtmlElementView hole mechanism works,
+      // so a black background is correct and prevents the canvas leaking into
+      // other pages in go_router's navigation stack.
+      backgroundColor:
+          isSafariBrowser() ? Colors.transparent : Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
