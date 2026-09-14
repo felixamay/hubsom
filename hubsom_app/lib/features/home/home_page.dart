@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,8 +19,11 @@ import '../../widgets/shop_video_poster.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
 
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
+
+  @override
+  ConsumerState<HomePage> createState() => _HomePageState();
 
   static TextStyle _sectionTitle(BuildContext context) {
     final base = Theme.of(context).textTheme.titleMedium;
@@ -39,9 +44,30 @@ class HomePage extends ConsumerWidget {
       height: 1.35,
     );
   }
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  // Re-query live streams on a short cycle so a seller going live while the
+  // home page is already open always appears within ~10 s on browsers where
+  // the Firestore WebSocket listener silently fails (e.g. Safari).
+  Timer? _liveRefresh;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _liveRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) ref.invalidate(streamsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveRefresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
     // Keeps "Live now" current without the user reloading the page.
     ref.watch(liveStreamsPulseProvider);
@@ -110,7 +136,7 @@ class HomePage extends ConsumerWidget {
                 children: [
                   Text(
                     'Live commerce for Ghana — shop now, catch auctions, and buy while shows are live.',
-                    style: _subheading(context),
+                    style: HomePage._subheading(context),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
@@ -140,7 +166,7 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Live now',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/live'),
             ),
@@ -195,7 +221,7 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Categories',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/categories'),
             ),
@@ -248,7 +274,7 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Ads',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
               ),
             ),
             SliverToBoxAdapter(child: PromoBanner(promotions: promos)),
@@ -258,7 +284,7 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Flash sales',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/flash-sales'),
             ),
@@ -296,7 +322,7 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Live auctions',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
                 actionLabel: 'See all',
                 onAction: () => context.push('/auctions'),
               ),
@@ -308,7 +334,7 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Shop videos',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/videos'),
             ),
@@ -357,7 +383,7 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Stores',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
                 actionLabel: 'See all',
                 onAction: () => context.push('/stores'),
               ),
@@ -419,7 +445,7 @@ class HomePage extends ConsumerWidget {
           ContainedBuyNow(
             products: products,
             crossAxisCount: cross,
-            titleStyle: _sectionTitle(context),
+            titleStyle: HomePage._sectionTitle(context),
           ),
         ],
       ),

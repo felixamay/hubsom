@@ -12,25 +12,18 @@ bool isSafariBrowser() {
       !ua.contains('Chromium');
 }
 
-/// Mounts [el] in `document.body` *underneath* the Flutter view.
+/// Insert [el] into `document.body` as its very first child so it sits
+/// underneath the Flutter view in natural DOM stacking order.
 ///
-/// Flutter's UI (chat, buttons, tap-to-play overlay) must stay on top and
-/// interactive; the element shows through wherever the Flutter canvas is
-/// transparent. `<flutter-view>` has no stacking order of its own, so a
-/// positioned element appended after it would otherwise cover the whole app.
+/// Flutter's `<flutter-view>` is appended to `<body>` after the bootstrap JS
+/// runs, so it is already after any child we prepend here. Elements appended
+/// later in the DOM stack on top of earlier ones when their z-indices are
+/// equal. By making [el] the first child we guarantee it renders beneath
+/// Flutter without touching any CSS on the Flutter view itself.
 void mountBehindFlutter(web.HTMLElement el) {
   final body = web.document.body;
   if (body == null) return;
-  el.style.setProperty('z-index', '0');
+  // Remove any stale explicit z-index so the natural DOM order wins.
+  el.style.removeProperty('z-index');
   body.insertBefore(el, body.firstChild);
-
-  final view = (web.document.querySelector('flutter-view') ??
-      web.document.querySelector('flt-glass-pane')) as web.HTMLElement?;
-  if (view == null) return;
-  final position = web.window.getComputedStyle(view).position;
-  if (position.isEmpty || position == 'static') {
-    view.style.setProperty('position', 'relative');
-  }
-  view.style.setProperty('z-index', '1');
-  view.style.setProperty('background', 'transparent');
 }
