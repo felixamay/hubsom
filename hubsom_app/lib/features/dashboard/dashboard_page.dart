@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 
@@ -43,106 +42,56 @@ class DashboardPage extends ConsumerWidget {
               icon: Icons.shopping_bag_outlined,
               onTap: () => context.push('/cart'),
             ),
-            _stat(
-              context,
-              label: 'Saved',
-              value: '${user?.savedProductIds.length ?? 0}',
-              icon: Icons.favorite_border,
-              onTap: () {
-                if (!ensureSignedIn(
-                  context,
-                  ref,
-                  message: 'Sign in to see saved products',
-                )) {
-                  return;
-                }
-                context.push('/account/saved');
-              },
-            ),
-            _stat(
-              context,
-              label: 'Following',
-              value: '$followingCount',
-              icon: Icons.person_add_alt_1_outlined,
-              onTap: () {
-                if (!ensureSignedIn(
-                  context,
-                  ref,
-                  message: 'Sign in to see accounts you follow',
-                )) {
-                  return;
-                }
-                context.push('/account/following');
-              },
-            ),
-            _stat(
-              context,
-              label: 'Followers',
-              value: '$followerCount',
-              icon: Icons.groups_outlined,
-              onTap: () {
-                if (!ensureSignedIn(
-                  context,
-                  ref,
-                  message: 'Sign in to see your followers',
-                )) {
-                  return;
-                }
-                context.push('/account/followers');
-              },
-            ),
-            _stat(
-              context,
-              label: 'Wallet',
-              value: 'GHS ${(user?.walletBalanceGhs ?? 0).toStringAsFixed(0)}',
-              icon: Icons.account_balance_wallet_outlined,
-              onTap: () {
-                if (!ensureSignedIn(
-                  context,
-                  ref,
-                  message: 'Sign in to open your wallet',
-                )) {
-                  return;
-                }
-                context.push('/wallet');
-              },
-            ),
-            _stat(
-              context,
-              label: 'Gift points',
-              value: '${user?.giftPoints ?? 0}',
-              icon: Icons.card_giftcard_outlined,
-              onTap: () {
-                if (!ensureSignedIn(
-                  context,
-                  ref,
-                  message: 'Sign in to buy gift points',
-                )) {
-                  return;
-                }
-                context.push('/gifts');
-              },
-            ),
+            if (user != null) ...[
+              _stat(
+                context,
+                label: 'Saved',
+                value: '${user.savedProductIds.length}',
+                icon: Icons.favorite_border,
+                onTap: () => context.push('/account/saved'),
+              ),
+              _stat(
+                context,
+                label: 'Following',
+                value: '$followingCount',
+                icon: Icons.person_add_alt_1_outlined,
+                onTap: () => context.push('/account/following'),
+              ),
+              _stat(
+                context,
+                label: 'Followers',
+                value: '$followerCount',
+                icon: Icons.groups_outlined,
+                onTap: () => context.push('/account/followers'),
+              ),
+              _stat(
+                context,
+                label: 'Wallet',
+                value: 'GHS ${user.walletBalanceGhs.toStringAsFixed(0)}',
+                icon: Icons.account_balance_wallet_outlined,
+                onTap: () => context.push('/wallet'),
+              ),
+              _stat(
+                context,
+                label: 'Gift points',
+                value: '${user.giftPoints}',
+                icon: Icons.card_giftcard_outlined,
+                onTap: () => context.push('/gifts'),
+              ),
+            ],
           ],
         ),
-        const SizedBox(height: 20),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.card_giftcard, color: HubsomColors.gold),
-          title: const Text('Buy gift points'),
-          subtitle: const Text('Send roses, crowns, and more during live'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            if (!ensureSignedIn(
-              context,
-              ref,
-              message: 'Sign in to buy gift points',
-            )) {
-              return;
-            }
-            context.push('/gifts');
-          },
-        ),
+        if (user != null) ...[
+          const SizedBox(height: 20),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.card_giftcard, color: HubsomColors.gold),
+            title: const Text('Buy gift points'),
+            subtitle: const Text('Send roses, crowns, and more during live'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/gifts'),
+          ),
+        ],
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.videocam, color: HubsomColors.live),
@@ -177,7 +126,7 @@ class DashboardPage extends ConsumerWidget {
             contentPadding: EdgeInsets.zero,
             leading:
                 const Icon(Icons.two_wheeler, color: HubsomColors.huberNavy),
-            title: const Text('Huber driver hub'),
+            title: const Text('Hail Rider hub'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.go('/huber'),
           ),

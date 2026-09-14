@@ -42,12 +42,16 @@ class MainShell extends ConsumerWidget {
     ),
   ];
 
-  /// Formal SiteHeader links first, then Account destinations.
-  static const _formalItems = <(String value, IconData icon, String label)>[
+  /// Browse-only links guests may see. Sell is signed-in only.
+  static const guestBrowseItems = <(String value, IconData icon, String label)>[
     ('live', Icons.videocam_outlined, 'Live'),
     ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('auctions', Icons.gavel, 'Auctions'),
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
+  ];
+
+  static const signedInBrowseItems = <(String value, IconData icon, String label)>[
+    ...guestBrowseItems,
     ('sell', Icons.add_business_outlined, 'Sell'),
   ];
 
@@ -64,6 +68,38 @@ class MainShell extends ConsumerWidget {
     ('notifications', Icons.notifications_outlined, 'Notifications'),
     ('settings', Icons.settings_outlined, 'Settings'),
   ];
+
+  static int _visibleFooterIndex({
+    required int shellIndex,
+    required bool signedIn,
+  }) {
+    if (signedIn) return shellIndex;
+    return switch (shellIndex) {
+      0 => 0,
+      1 => 1,
+      3 => 2,
+      _ => 0,
+    };
+  }
+
+  void _onFooterTap(
+    BuildContext context,
+    WidgetRef ref,
+    int visibleIndex, {
+    required bool signedIn,
+  }) {
+    if (signedIn) {
+      _onTap(context, ref, visibleIndex);
+      return;
+    }
+    final shellIndex = switch (visibleIndex) {
+      0 => 0,
+      1 => 1,
+      2 => 3,
+      _ => 0,
+    };
+    _onTap(context, ref, shellIndex);
+  }
 
   void _onTap(BuildContext context, WidgetRef ref, int index) {
     navigationShell.goBranch(
@@ -112,6 +148,19 @@ class MainShell extends ConsumerWidget {
     context.go(path);
   }
 
+  static List<(String value, IconData icon, String label)> browseItems({
+    required bool signedIn,
+  }) =>
+      signedIn ? signedInBrowseItems : guestBrowseItems;
+
+  static List<(String value, IconData icon, String label)> menuDestinations({
+    required bool signedIn,
+  }) =>
+      [
+        ...browseItems(signedIn: signedIn),
+        if (signedIn) ...accountMenuItems,
+      ];
+
   List<PopupMenuEntry<String>> _buildMenu({required bool signedIn}) {
     return [
       const PopupMenuItem<String>(
@@ -125,7 +174,7 @@ class MainShell extends ConsumerWidget {
           ),
         ),
       ),
-      for (final item in _formalItems)
+      for (final item in browseItems(signedIn: signedIn))
         PopupMenuItem<String>(
           value: item.$1,
           child: Row(
@@ -136,31 +185,31 @@ class MainShell extends ConsumerWidget {
             ],
           ),
         ),
-      const PopupMenuDivider(),
-      const PopupMenuItem<String>(
-        enabled: false,
-        child: Text(
-          'Account',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: HubsomColors.forest,
-            fontSize: 12,
+      if (signedIn) ...[
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          enabled: false,
+          child: Text(
+            'Account',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: HubsomColors.forest,
+              fontSize: 12,
+            ),
           ),
         ),
-      ),
-      for (final item in accountMenuItems)
-        PopupMenuItem<String>(
-          value: item.$1,
-          child: Row(
-            children: [
-              Icon(item.$2, size: 22, color: HubsomColors.forest),
-              const SizedBox(width: 12),
-              Text(item.$3),
-            ],
+        for (final item in accountMenuItems)
+          PopupMenuItem<String>(
+            value: item.$1,
+            child: Row(
+              children: [
+                Icon(item.$2, size: 22, color: HubsomColors.forest),
+                const SizedBox(width: 12),
+                Text(item.$3),
+              ],
+            ),
           ),
-        ),
-      const PopupMenuDivider(),
-      if (signedIn)
+        const PopupMenuDivider(),
         const PopupMenuItem<String>(
           value: 'logout',
           child: Row(
@@ -170,8 +219,9 @@ class MainShell extends ConsumerWidget {
               Text('Log out'),
             ],
           ),
-        )
-      else
+        ),
+      ] else ...[
+        const PopupMenuDivider(),
         const PopupMenuItem<String>(
           value: 'signin',
           child: Row(
@@ -182,6 +232,7 @@ class MainShell extends ConsumerWidget {
             ],
           ),
         ),
+      ],
     ];
   }
 
@@ -192,14 +243,40 @@ class MainShell extends ConsumerWidget {
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
     final menu = _buildMenu(signedIn: signedIn);
+    final footerTabs = signedIn
+        ? _tabs
+        : const [
+            (path: '/', label: 'Home', icon: Icons.home_outlined, selected: Icons.home),
+            (
+              path: '/categories',
+              label: 'Categories',
+              icon: Icons.grid_view_outlined,
+              selected: Icons.grid_view
+            ),
+            (
+              path: '/timeline',
+              label: 'Timeline',
+              icon: Icons.dynamic_feed_outlined,
+              selected: Icons.dynamic_feed
+            ),
+          ];
+    final selectedFooter = _visibleFooterIndex(
+      shellIndex: navigationShell.currentIndex,
+      signedIn: signedIn,
+    );
 
     if (wide) {
       return Scaffold(
         body: Row(
           children: [
             NavigationRail(
-              selectedIndex: navigationShell.currentIndex,
-              onDestinationSelected: (i) => _onTap(context, ref, i),
+              selectedIndex: selectedFooter,
+              onDestinationSelected: (i) => _onFooterTap(
+                context,
+                ref,
+                i,
+                signedIn: signedIn,
+              ),
               labelType: NavigationRailLabelType.all,
               backgroundColor: Colors.white,
               leading: const Padding(
@@ -207,7 +284,7 @@ class MainShell extends ConsumerWidget {
                 child: HubsomLogo(height: 36, showWordmark: true),
               ),
               destinations: [
-                for (final t in _tabs)
+                for (final t in footerTabs)
                   NavigationRailDestination(
                     icon: Icon(t.icon),
                     selectedIcon: Icon(t.selected),
@@ -222,6 +299,7 @@ class MainShell extends ConsumerWidget {
                   _TopBar(
                     cartCount: cartCount,
                     unreadMessages: unreadMessages,
+                    showMessages: signedIn,
                     menuEntries: menu,
                     onMenuSelected: (v) => _onMenuSelected(context, ref, v),
                   ),
@@ -248,15 +326,16 @@ class MainShell extends ConsumerWidget {
             onPressed: () => context.go('/live'),
             icon: const Icon(Icons.videocam_outlined),
           ),
-          IconButton(
-            tooltip: 'Messages',
-            onPressed: () => context.go('/messages'),
-            icon: Badge(
-              isLabelVisible: unreadMessages > 0,
-              label: Text('$unreadMessages'),
-              child: const Icon(Icons.chat_bubble_outline),
+          if (signedIn)
+            IconButton(
+              tooltip: 'Messages',
+              onPressed: () => context.go('/messages'),
+              icon: Badge(
+                isLabelVisible: unreadMessages > 0,
+                label: Text('$unreadMessages'),
+                child: const Icon(Icons.chat_bubble_outline),
+              ),
             ),
-          ),
           IconButton(
             tooltip: 'Cart',
             onPressed: () => context.go('/cart'),
@@ -277,10 +356,11 @@ class MainShell extends ConsumerWidget {
       ),
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (i) => _onTap(context, ref, i),
+        selectedIndex: selectedFooter,
+        onDestinationSelected: (i) =>
+            _onFooterTap(context, ref, i, signedIn: signedIn),
         destinations: [
-          for (final t in _tabs)
+          for (final t in footerTabs)
             NavigationDestination(
               icon: Icon(t.icon),
               selectedIcon: Icon(t.selected, color: HubsomColors.forest),
@@ -296,12 +376,14 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.cartCount,
     required this.unreadMessages,
+    required this.showMessages,
     required this.menuEntries,
     required this.onMenuSelected,
   });
 
   final int cartCount;
   final int unreadMessages;
+  final bool showMessages;
   final List<PopupMenuEntry<String>> menuEntries;
   final ValueChanged<String> onMenuSelected;
 
@@ -332,15 +414,16 @@ class _TopBar extends StatelessWidget {
                 icon: const Icon(Icons.videocam_outlined),
                 tooltip: 'Live',
               ),
-              IconButton(
-                tooltip: 'Messages',
-                onPressed: () => context.go('/messages'),
-                icon: Badge(
-                  isLabelVisible: unreadMessages > 0,
-                  label: Text('$unreadMessages'),
-                  child: const Icon(Icons.chat_bubble_outline),
+              if (showMessages)
+                IconButton(
+                  tooltip: 'Messages',
+                  onPressed: () => context.go('/messages'),
+                  icon: Badge(
+                    isLabelVisible: unreadMessages > 0,
+                    label: Text('$unreadMessages'),
+                    child: const Icon(Icons.chat_bubble_outline),
+                  ),
                 ),
-              ),
               IconButton(
                 onPressed: () => context.go('/cart'),
                 icon: Badge(

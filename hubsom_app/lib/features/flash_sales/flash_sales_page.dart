@@ -14,6 +14,7 @@ class FlashSalesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
+    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final cross = ResponsiveScaffold.isWide(context)
         ? 4
         : ResponsiveScaffold.isTablet(context)
@@ -52,11 +53,13 @@ class FlashSalesPage extends ConsumerWidget {
                       'Sellers can enable a flash sale when creating or editing a product.',
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => context.push('/seller/products/new'),
-                      child: const Text('List a flash sale'),
-                    ),
+                    if (signedIn) ...[
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => context.push('/seller/products/new'),
+                        child: const Text('List a flash sale'),
+                      ),
+                    ],
                   ],
                 ),
               ),

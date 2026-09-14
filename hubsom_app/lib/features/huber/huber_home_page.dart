@@ -105,7 +105,7 @@ class _HuberHomePageState extends ConsumerState<HuberHomePage> {
           const SizedBox(height: 4),
           Text(
             profile == null
-                ? 'Sign in as a Huber driver to receive Hubsom offers.'
+                ? 'Sign in as a Hail Rider to receive Hubsom offers.'
                 : online
                     ? 'Online · Hubsom dispatch live'
                     : 'Offline',

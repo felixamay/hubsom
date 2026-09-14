@@ -161,7 +161,7 @@ class AccountPage extends ConsumerWidget {
                 _link(
                   context,
                   Icons.two_wheeler_outlined,
-                  'Hail driver hub',
+                  'Hail Rider hub',
                   '/huber',
                 ),
               if (!user.isHuber && user.role != 'admin')
@@ -171,7 +171,7 @@ class AccountPage extends ConsumerWidget {
                     Icons.two_wheeler_outlined,
                     color: HubsomColors.forest,
                   ),
-                  title: const Text('Become a Huber driver'),
+                  title: const Text('Become a Hail Rider'),
                   subtitle: const Text('Use this same Hubsom account'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
