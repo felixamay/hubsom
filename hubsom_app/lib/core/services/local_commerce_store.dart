@@ -12,6 +12,9 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
+import 'live_chat_store.dart';
+import 'live_viewer_identity.dart';
+import 'local_blob_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
 import 'shop_video_cloud.dart';
@@ -394,20 +397,54 @@ class LocalCommerceStore {
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
     final auction = preferFresherAuction(local.auction, remote.auction);
     final preferRemoteEnded = !remote.isLive && local.isLive;
-    final viewers = remote.viewerCount > local.viewerCount
-        ? remote.viewerCount
-        : local.viewerCount;
+    // A viewer who cached this show before it started holds a non-live copy.
+    // Without this the cached status wins forever and the seller never shows as
+    // live on that device. Only safe while the show was never ended here.
+    final locallyEnded = (local.endedAt ?? '').trim().isNotEmpty;
+    final preferRemoteLive = remote.isLive && !local.isLive && !locallyEnded;
+    final takeRemoteStatus = preferRemoteEnded || preferRemoteLive;
+    // Take the cloud's count rather than the larger of the two: clamping
+    // upwards made the audience number monotonic, so a viewer leaving could
+    // never bring it back down. Peak stays a high-water mark below.
+    final viewers = remote.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
+    // Prefer the remote cover when the local copy is either empty or a
+    // device-only blob ref that no other phone can resolve. The remote cover
+    // travels as a data: URL or https URL so it works everywhere.
+    final cover = _bestCover(local.cover, remote.cover);
     return local.copyWith(
-      status: preferRemoteEnded ? remote.status : local.status,
+      status: takeRemoteStatus ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
+      cover: cover,
       viewerCount: viewers,
-      peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
+      peakViewers: [viewers, local.peakViewers, remote.peakViewers]
+          .reduce((a, b) => a > b ? a : b),
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
       productIds: products,
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
+  }
+
+  /// Pick the most portable cover URL between [a] and [b].
+  ///
+  /// Preference order: https > data:image > the other, falling back to
+  /// whatever is non-empty. Device-only blob refs are treated as empty because
+  /// they cannot be resolved on any other device.
+  static String _bestCover(String a, String b) {
+    bool isPortable(String v) =>
+        v.isNotEmpty &&
+        !LocalBlobStore.isRef(v) &&
+        (v.startsWith('http://') ||
+            v.startsWith('https://') ||
+            v.startsWith('data:image'));
+    bool isHttp(String v) =>
+        v.startsWith('http://') || v.startsWith('https://');
+    if (isPortable(b) && (!isPortable(a) || (!isHttp(a) && isHttp(b)))) {
+      return b;
+    }
+    if (isPortable(a)) return a;
+    return b.isNotEmpty ? b : a;
   }
 
   static LiveStream? findStreamByAuction(String auctionId) {
@@ -426,7 +463,10 @@ class LocalCommerceStore {
         sellerId: s.sellerId,
         status: s.status,
         channelName: s.channelName,
-        cover: s.isLive ? StorageMedia.persistable(s.cover) : '',
+        // Keep any portable cover (https or data:image) so other devices can
+        // display the thumbnail. Only blob refs are device-only and must be
+        // dropped. Ended streams don't need a cover cached locally.
+        cover: s.isLive ? _portableCoverForCache(s.cover) : '',
         viewerCount: s.viewerCount,
         peakViewers: s.peakViewers,
         startedAt: s.startedAt,
@@ -590,8 +630,9 @@ class LocalCommerceStore {
       status: 'live',
       channelName: 'hubsom-$id',
       cover: persistedCover,
-      viewerCount: 1,
-      peakViewers: 1,
+      // The host is not in their own audience, so a new show starts at zero.
+      viewerCount: 0,
+      peakViewers: 0,
       startedAt: now,
       productIds: owned,
       productQuantities: quantities,
@@ -878,9 +919,20 @@ class LocalCommerceStore {
     return next;
   }
 
-  static Future<LiveStream?> joinViewer(String id) async {
+  /// Count [viewerId] into the audience, at most once per show.
+  ///
+  /// Re-entering the room — a seller stepping out to Home and back, say — must
+  /// not add another view, and the host is not part of their own audience.
+  static Future<LiveStream?> joinViewer(
+    String id, {
+    required String viewerId,
+    required bool isHost,
+  }) async {
     final s = getStream(id);
     if (s == null || !s.isLive) return s;
+    if (isHost || viewerId.isEmpty) return s;
+    if (LiveViewerIdentity.alreadyCounted(id, viewerId)) return s;
+    await LiveViewerIdentity.markCounted(id, viewerId);
     return updateStream(id, viewerCount: s.viewerCount + 1);
   }
 
@@ -1173,6 +1225,21 @@ class LocalCommerceStore {
     return list.reversed.toList();
   }
 
+  /// Store what the room has said so it survives a reload and is there before
+  /// the cloud answers. Takes newest-first, as [listChat] returns.
+  static Future<void> cacheChat(
+    String streamId,
+    List<ChatMessage> newestFirst,
+  ) async {
+    if (streamId.isEmpty) return;
+    final map = _chatMap();
+    final trimmed = newestFirst.length > LiveChatStore.maxMessages
+        ? newestFirst.sublist(0, LiveChatStore.maxMessages)
+        : newestFirst;
+    map[streamId] = trimmed.reversed.toList();
+    await _saveChat(map);
+  }
+
   static Future<ChatMessage> sendChat({
     required String streamId,
     required HubsomUser user,
@@ -1190,8 +1257,18 @@ class LocalCommerceStore {
     );
     final map = _chatMap();
     final list = <ChatMessage>[...(map[streamId] ?? const <ChatMessage>[]), msg];
-    map[streamId] = list;
+    map[streamId] = list.length > LiveChatStore.maxMessages
+        ? list.sublist(list.length - LiveChatStore.maxMessages)
+        : list;
     await _saveChat(map);
+    // Every kind of live message funnels through here — viewer chat, bid
+    // notices, auction results — so publishing here is what makes the room
+    // shared instead of each device talking to itself.
+    try {
+      await LiveChatStore.send(msg);
+    } catch (_) {
+      // The sender still sees their own message.
+    }
     return msg;
   }
 
@@ -1781,6 +1858,16 @@ class LocalCommerceStore {
   }
 
   // --- helpers ---
+
+  /// A cover URL that survives being cached on this device AND loaded by
+  /// other devices. https and data:image pass through; device-only blob
+  /// refs are dropped (the portable version travels in Firestore).
+  static String _portableCoverForCache(String raw) {
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('data:image')) return raw;
+    return '';
+  }
 
   /// Persist a seller-picked live thumbnail as a blob ref or short URL.
   static Future<String> _persistLiveCover(String? raw) async {

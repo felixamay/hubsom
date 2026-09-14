@@ -21,6 +21,7 @@ class CloudMedia {
 
   static String videoPath(String videoId) => 'shopVideos/$videoId';
   static String thumbPath(String videoId) => 'shopVideos/${videoId}_thumb.jpg';
+  static String liveCoverPath(String streamId) => 'liveCovers/$streamId.jpg';
 
   /// Cheap synchronous hint for widgets that cannot await a probe.
   static bool get storageKnownAvailable =>
@@ -96,6 +97,31 @@ class CloudMedia {
       return await ref.getDownloadURL();
     } catch (e) {
       if (kDebugMode) debugPrint('CloudMedia.uploadShopVideoThumb failed: $e');
+      return null;
+    }
+  }
+
+  /// Upload a live-stream cover thumbnail to Storage and return its download URL.
+  static Future<String?> uploadLiveCover({
+    required String streamId,
+    required Uint8List bytes,
+  }) async {
+    if (bytes.isEmpty || streamId.isEmpty) return null;
+    if (!await available()) return null;
+    try {
+      final ref = _storage.ref().child(liveCoverPath(streamId));
+      await ref
+          .putData(
+            bytes,
+            SettableMetadata(
+              contentType: 'image/jpeg',
+              cacheControl: 'public,max-age=86400',
+            ),
+          )
+          .timeout(const Duration(seconds: 45));
+      return await ref.getDownloadURL();
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudMedia.uploadLiveCover failed: $e');
       return null;
     }
   }

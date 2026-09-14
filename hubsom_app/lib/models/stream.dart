@@ -343,6 +343,7 @@ class LiveStream extends Equatable {
 
   LiveStream copyWith({
     String? status,
+    String? cover,
     int? viewerCount,
     int? peakViewers,
     String? endedAt,
@@ -361,7 +362,7 @@ class LiveStream extends Equatable {
         sellerId: sellerId,
         status: status ?? this.status,
         channelName: channelName,
-        cover: cover,
+        cover: cover ?? this.cover,
         viewerCount: viewerCount ?? this.viewerCount,
         peakViewers: peakViewers ?? this.peakViewers,
         startedAt: startedAt,

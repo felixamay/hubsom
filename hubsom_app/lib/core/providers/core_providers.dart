@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/cart.dart';
@@ -412,6 +414,24 @@ final productsProvider = FutureProvider.autoDispose
 
 final streamsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   return ref.watch(liveRepositoryProvider).listStreams();
+});
+
+/// Refreshes [streamsProvider] the moment the streams collection changes, so a
+/// seller going live shows up for users without waiting out a poll interval.
+///
+/// Watch this anywhere a live show is listed; it is a no-op when Firestore
+/// cannot push, and those screens keep their own slower refresh as a fallback.
+final liveStreamsPulseProvider = StreamProvider.autoDispose<void>((ref) {
+  final controller = StreamController<void>();
+  final sub = CloudStore.watchCollection(CloudStore.streams).listen((_) {
+    ref.invalidate(streamsProvider);
+    if (!controller.isClosed) controller.add(null);
+  });
+  ref.onDispose(() {
+    sub.cancel();
+    controller.close();
+  });
+  return controller.stream;
 });
 
 final promotionsProvider =

@@ -23,6 +23,39 @@ class LocationService {
     return _fromDevice();
   }
 
+  /// Like [current], but only returns a position if the user has **already**
+  /// granted location permission. Never shows a permission prompt.
+  ///
+  /// Returns `null` when permission is denied, denied-forever, or location
+  /// services are off. Use this for background / auto-refresh paths.
+  Future<GeoLocation?> silentCurrent() async {
+    if (fetcher != null) return fetcher!();
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      return GeoLocation(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        accuracyM: pos.accuracy,
+        source: 'gps',
+        capturedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<GeoLocation> _fromDevice() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {

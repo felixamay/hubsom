@@ -15,6 +15,7 @@ import 'core/services/local_commerce_store.dart';
 import 'core/services/local_store.dart';
 import 'core/services/product_demo_video_store.dart';
 import 'core/services/storage_media.dart';
+import 'core/services/user_address_store.dart';
 import 'core/theme/hubsom_theme.dart';
 import 'features/shell/app_router.dart';
 
@@ -54,10 +55,32 @@ class _HubsomAppState extends ConsumerState<HubsomApp> {
   @override
   void initState() {
     super.initState();
-    // Warm notifications after first frame (mobile).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(notificationServiceProvider).init();
+      // Silently refresh the user's GPS delivery address on every app open.
+      // Only fires if location permission was already granted — no prompt shown.
+      _refreshGpsAddress();
     });
+  }
+
+  /// If the user previously allowed location access, capture a fresh GPS fix
+  /// and update their stored delivery address so riders always get the
+  /// customer's real-time location, not a stale one.
+  Future<void> _refreshGpsAddress() async {
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      final pin = await locationService.silentCurrent();
+      if (pin == null) return;
+      final user = ref.read(authStateProvider).valueOrNull;
+      if (user == null) return;
+      final next = await UserAddressStore.saveAllowedGps(
+        user: user,
+        pin: pin,
+      );
+      ref.read(authStateProvider.notifier).applyLocalUser(next);
+    } catch (_) {
+      // Best-effort: if anything fails, the saved address remains unchanged.
+    }
   }
 
   @override

@@ -7,13 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'package:uuid/uuid.dart';
-
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
+import '../../core/services/live_chat_store.dart';
+import '../../core/services/live_viewer_identity.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
-import '../../core/services/local_store.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/live_gift.dart';
@@ -78,14 +78,18 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _seededGiftChat = false;
   Timer? _poll;
   Timer? _tick;
+  StreamSubscription<List<ChatMessage>>? _chatWatch;
   late final AnimationController _pulse;
 
   bool get _isHost {
     if (widget.hostMode) return true;
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || stream == null) return false;
-    return user.sellerId == stream!.sellerId ||
-        stream!.hosts.any((h) => h.id == user.id);
+    final s = stream;
+    if (s == null) return false;
+    // Falls back to local storage because the auth provider is null while it
+    // loads, and a seller misread as a viewer subscribes to their own audio.
+    final user = ref.read(authStateProvider).valueOrNull ??
+        LiveViewerIdentity.localUser();
+    return LiveViewerIdentity.isHost(s, user);
   }
 
   int _offeredQty(Product product) {
@@ -102,16 +106,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     return 'Host';
   }
 
-  String get _viewerPeerId {
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user != null && user.id.isNotEmpty) return user.id;
-    const key = 'liveViewerPeerId';
-    final existing = LocalStore.getString(key);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final id = 'v_${const Uuid().v4()}';
-    unawaited(LocalStore.setString(key, id));
-    return id;
-  }
+  String get _viewerPeerId => LiveViewerIdentity.current(
+        userId: ref.read(authStateProvider).valueOrNull?.id,
+      );
 
   @override
   void initState() {
@@ -121,6 +118,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _load(join: true);
+    _watchChat();
     _startPoll();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -154,6 +152,20 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         }
         setState(() {});
       }
+    });
+  }
+
+  /// Chat arrives pushed rather than on the refresh timer, so a message shows up
+  /// for everyone in the room as it is sent.
+  void _watchChat() {
+    final repo = ref.read(liveRepositoryProvider);
+    if (!repo.canWatchChat) return;
+    _chatWatch = repo.watchChat(widget.streamId).listen((cloud) {
+      if (!mounted || cloud.isEmpty) return;
+      final merged = LiveChatStore.merge(chat, cloud);
+      setState(() => chat = merged);
+      unawaited(LocalCommerceStore.cacheChat(widget.streamId, merged));
+      _playNewGiftChats(merged);
     });
   }
 
@@ -1101,6 +1113,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   void dispose() {
     _poll?.cancel();
     _tick?.cancel();
+    unawaited(_chatWatch?.cancel());
     _pulse.dispose();
     _chatCtrl.dispose();
     for (final f in _floating) {
