@@ -185,6 +185,11 @@ class LiveWebrtcSignalStore {
   /// Announcing and clearing the previous negotiation in one write matters:
   /// two sequential writes delayed the host's offer by an extra round trip,
   /// which the viewer experiences as a slow-starting stream.
+  ///
+  /// NOTE: We do NOT include `hostIce` or `offerSdp` here — those are
+  /// host-owned fields. The host clears them when it publishes a fresh offer
+  /// via [offerDoc]. Writing an empty array here would race with the host's
+  /// ICE candidate appends and wipe freshly-gathered candidates.
   static Map<String, dynamic> announceDoc({
     required String streamId,
     required String viewerId,
@@ -197,7 +202,6 @@ class LiveWebrtcSignalStore {
       'state': 'waiting',
       'answerSdp': '',
       'answerType': '',
-      'hostIce': <String>[],
       'viewerIce': <String>[],
       'updatedAt': now,
       'viewerSeenAt': now,

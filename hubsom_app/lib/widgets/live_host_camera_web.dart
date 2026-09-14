@@ -41,6 +41,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   StreamSubscription<List<LiveWebrtcSignal>>? _watch;
   bool _ticking = false;
   final Map<String, _HostPeer> _peers = {};
+  bool _pendingTick = false;
 
   @override
   void initState() {
@@ -152,9 +153,13 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
     web.MediaStream media, {
     List<LiveWebrtcSignal>? signals,
   }) async {
-    if (!mounted || _ticking) return;
-    // A tick can outlive its interval on a slow link; overlapping runs would
-    // build two peer connections for the same viewer.
+    if (!mounted) return;
+    if (_ticking) {
+      // A snapshot arrived while a tick was running. Re-run once it finishes
+      // so the latest state is never silently dropped.
+      _pendingTick = true;
+      return;
+    }
     _ticking = true;
     try {
       signals ??= await LiveWebrtcSignalStore.listForStream(streamId);
@@ -236,6 +241,10 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
       // Host preview still works if signaling fails.
     } finally {
       _ticking = false;
+      if (_pendingTick && mounted) {
+        _pendingTick = false;
+        unawaited(_hostTick(streamId, media));
+      }
     }
   }
 

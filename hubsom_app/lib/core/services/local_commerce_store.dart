@@ -14,6 +14,7 @@ import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'live_chat_store.dart';
 import 'live_viewer_identity.dart';
+import 'local_blob_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
 import 'shop_video_cloud.dart';
@@ -407,9 +408,14 @@ class LocalCommerceStore {
     // never bring it back down. Peak stays a high-water mark below.
     final viewers = remote.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
+    // Prefer the remote cover when the local copy is either empty or a
+    // device-only blob ref that no other phone can resolve. The remote cover
+    // travels as a data: URL or https URL so it works everywhere.
+    final cover = _bestCover(local.cover, remote.cover);
     return local.copyWith(
       status: takeRemoteStatus ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
+      cover: cover,
       viewerCount: viewers,
       peakViewers: [viewers, local.peakViewers, remote.peakViewers]
           .reduce((a, b) => a > b ? a : b),
@@ -418,6 +424,27 @@ class LocalCommerceStore {
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
+  }
+
+  /// Pick the most portable cover URL between [a] and [b].
+  ///
+  /// Preference order: https > data:image > the other, falling back to
+  /// whatever is non-empty. Device-only blob refs are treated as empty because
+  /// they cannot be resolved on any other device.
+  static String _bestCover(String a, String b) {
+    bool isPortable(String v) =>
+        v.isNotEmpty &&
+        !LocalBlobStore.isRef(v) &&
+        (v.startsWith('http://') ||
+            v.startsWith('https://') ||
+            v.startsWith('data:image'));
+    bool isHttp(String v) =>
+        v.startsWith('http://') || v.startsWith('https://');
+    if (isPortable(b) && (!isPortable(a) || (!isHttp(a) && isHttp(b)))) {
+      return b;
+    }
+    if (isPortable(a)) return a;
+    return b.isNotEmpty ? b : a;
   }
 
   static LiveStream? findStreamByAuction(String auctionId) {
@@ -436,7 +463,10 @@ class LocalCommerceStore {
         sellerId: s.sellerId,
         status: s.status,
         channelName: s.channelName,
-        cover: s.isLive ? StorageMedia.persistable(s.cover) : '',
+        // Keep any portable cover (https or data:image) so other devices can
+        // display the thumbnail. Only blob refs are device-only and must be
+        // dropped. Ended streams don't need a cover cached locally.
+        cover: s.isLive ? _portableCoverForCache(s.cover) : '',
         viewerCount: s.viewerCount,
         peakViewers: s.peakViewers,
         startedAt: s.startedAt,
@@ -1828,6 +1858,16 @@ class LocalCommerceStore {
   }
 
   // --- helpers ---
+
+  /// A cover URL that survives being cached on this device AND loaded by
+  /// other devices. https and data:image pass through; device-only blob
+  /// refs are dropped (the portable version travels in Firestore).
+  static String _portableCoverForCache(String raw) {
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('data:image')) return raw;
+    return '';
+  }
 
   /// Persist a seller-picked live thumbnail as a blob ref or short URL.
   static Future<String> _persistLiveCover(String? raw) async {

@@ -133,6 +133,9 @@ bool attachStreamToView({
   final el = web.document.getElementById(viewType);
   if (el == null || !el.isA<web.HTMLVideoElement>()) return false;
   final video = el as web.HTMLVideoElement;
+  // Re-assert playsinline so Safari never opens full-screen unexpectedly.
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
   if (video.srcObject != stream) {
     video.srcObject = stream;
   }

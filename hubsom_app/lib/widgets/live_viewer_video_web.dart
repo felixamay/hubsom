@@ -67,8 +67,12 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final video = web.HTMLVideoElement()
         ..autoplay = true
-        ..setAttribute('playsinline', 'true')
-        ..setAttribute('autoplay', 'true')
+        ..muted = true // Autoplay policies on Safari/Chrome require muted to
+        //   start; the viewer unmutes via the sound button.
+        ..setAttribute('playsinline', '')
+        ..setAttribute('webkit-playsinline', '')
+        ..setAttribute('autoplay', '')
+        ..setAttribute('muted', '')
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
@@ -76,6 +80,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       video.id = _viewType;
       return video;
     });
+    _muted = true; // Match the element's initial muted state.
     _status = 'Connecting to seller…';
     unawaited(_bootstrap());
 
