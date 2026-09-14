@@ -142,10 +142,9 @@ class _AccountCard extends StatelessWidget {
         title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text(
           [
-            user.email,
-            user.role,
+            if (!account.isOwner) user.email,
+            if (!account.isOwner) user.role else 'owner',
             if (user.suspended) 'suspended',
-            if (account.isOwner) 'owner',
           ].join(' · '),
         ),
         trailing: user.suspended
@@ -269,8 +268,10 @@ class _AdminAccountSheetState extends State<AdminAccountSheet> {
               owner ? 'Afia owner' : 'Edit account',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 4),
-            Text(widget.account.email, style: Theme.of(context).textTheme.bodyMedium),
+            if (!owner) ...[
+              const SizedBox(height: 4),
+              Text(widget.account.email, style: Theme.of(context).textTheme.bodyMedium),
+            ],
             const SizedBox(height: 16),
             TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name')),
             const SizedBox(height: 10),
@@ -278,23 +279,37 @@ class _AdminAccountSheetState extends State<AdminAccountSheet> {
             const SizedBox(height: 10),
             TextField(controller: _city, decoration: const InputDecoration(labelText: 'City')),
             const SizedBox(height: 10),
-            InputDecorator(
-              decoration: const InputDecoration(labelText: 'Role'),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: _role,
-                  items: const [
-                    DropdownMenuItem(value: 'buyer', child: Text('Buyer')),
-                    DropdownMenuItem(value: 'seller', child: Text('Seller')),
-                    DropdownMenuItem(value: 'both', child: Text('Buyer & seller')),
-                    DropdownMenuItem(value: 'huber', child: Text('Hail Rider')),
-                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                  ],
-                  onChanged: owner ? null : (v) => setState(() => _role = v ?? _role),
+            if (owner)
+              const InputDecorator(
+                decoration: InputDecoration(labelText: 'Role'),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Owner'),
+                ),
+              )
+            else
+              InputDecorator(
+                decoration: const InputDecoration(labelText: 'Role'),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: _role == 'admin' ? 'buyer' : _role,
+                    items: const [
+                      DropdownMenuItem(value: 'buyer', child: Text('Buyer')),
+                      DropdownMenuItem(value: 'seller', child: Text('Seller')),
+                      DropdownMenuItem(
+                        value: 'both',
+                        child: Text('Buyer & seller'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'huber',
+                        child: Text('Hail Rider'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _role = v ?? _role),
+                  ),
                 ),
               ),
-            ),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               title: const Text('Suspend account'),
