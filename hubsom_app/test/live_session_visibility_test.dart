@@ -11,6 +11,7 @@ LiveStream _stream({
   String? endedAt,
   int viewerCount = 0,
   List<StreamHost> hosts = const [],
+  Map<String, int> productQuantities = const {},
 }) =>
     LiveStream(
       id: 's1',
@@ -25,6 +26,7 @@ LiveStream _stream({
       startedAt: '2026-09-13T10:00:00Z',
       endedAt: endedAt,
       productIds: const ['p1'],
+      productQuantities: productQuantities,
       hosts: hosts,
     );
 
@@ -252,6 +254,36 @@ void main() {
 
       expect(merged.viewerCount, 2);
       expect(merged.peakViewers, 5);
+    });
+
+    test('a stale local bag cannot restock units already sold in the cloud', () {
+      final local = _stream(
+        status: 'live',
+        productQuantities: const {'p1': 10},
+      );
+      final remote = _stream(
+        status: 'live',
+        productQuantities: const {'p1': 2},
+      );
+
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+
+      expect(merged.offeredQty('p1'), 2);
+    });
+
+    test('an unsynced local sale is not overwritten by a higher cloud count', () {
+      final local = _stream(
+        status: 'live',
+        productQuantities: const {'p1': 2},
+      );
+      final remote = _stream(
+        status: 'live',
+        productQuantities: const {'p1': 3},
+      );
+
+      final merged = LocalCommerceStore.mergeStreams(local, remote);
+
+      expect(merged.offeredQty('p1'), 2);
     });
   });
 }
