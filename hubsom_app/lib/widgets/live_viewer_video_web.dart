@@ -390,10 +390,15 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     }
     video.play().toDart.then(
       (_) {
+        // Muted play succeeded → immediately unmute so the user hears the
+        // seller without having to tap anything.
+        video.muted = false;
         if (mounted && _playBlocked) setState(() => _playBlocked = false);
         _syncMuteAffordance(video);
       },
       onError: (_) {
+        // Muted autoplay blocked (very rare – some private-browsing configs).
+        // Show the tap-to-play overlay; _userPlay() will retry muted + unmute.
         if (mounted && !_playBlocked) setState(() => _playBlocked = true);
       },
     );
@@ -418,22 +423,24 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     attachStreamToElement(video: video, stream: stream, muted: next);
   }
 
-  /// Called from the native tap-to-play overlay.
+  /// Called from the tap-to-play overlay.
+  ///
+  /// Safari's autoplay policy allows muted playback unconditionally, even
+  /// without a user gesture. We therefore always start muted and unmute once
+  /// the browser has accepted the play() promise — at which point unmuting is
+  /// always permitted because the media is already running.
   void _userPlay() {
     final video = _videoEl;
-    final stream = _remote;
-    if (video == null || stream == null) return;
-    video.muted = false;
+    if (video == null) return;
+    video.muted = true; // muted play is always allowed
     video.play().toDart.then(
       (_) {
+        video.muted = false; // unmute while playing – always succeeds
         if (mounted) setState(() { _playBlocked = false; _muted = false; });
       },
       onError: (_) {
-        // Try muted as last resort.
-        video.muted = true;
-        video.play().toDart.then((_) {
-          if (mounted) setState(() => _playBlocked = false);
-        }, onError: (_) {});
+        // Should not happen (muted play is unconditional) but keep overlay
+        // visible so the user can retry.
       },
     );
   }
