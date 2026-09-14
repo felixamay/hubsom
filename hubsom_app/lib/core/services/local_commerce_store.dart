@@ -421,9 +421,38 @@ class LocalCommerceStore {
           .reduce((a, b) => a > b ? a : b),
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
       productIds: products,
+      productQuantities: _mergeLiveQuantities(
+        local.productQuantities,
+        remote.productQuantities,
+      ),
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
+  }
+
+  /// Live units already sold must not come back from a stale device cache.
+  ///
+  /// A viewer who opened Home at the start of the show still has the original
+  /// bag counts. Joining the room used to keep those local numbers, then
+  /// `_syncStream` wrote them to Firestore and restocked sold lots.
+  static Map<String, int> _mergeLiveQuantities(
+    Map<String, int> local,
+    Map<String, int> remote,
+  ) {
+    if (remote.isEmpty) return local;
+    if (local.isEmpty) return remote;
+    final ids = <String>{...local.keys, ...remote.keys};
+    final out = <String, int>{};
+    for (final id in ids) {
+      final a = local[id];
+      final b = remote[id];
+      if (a != null && b != null) {
+        out[id] = a < b ? a : b;
+      } else {
+        out[id] = a ?? b ?? 0;
+      }
+    }
+    return out;
   }
 
   /// Pick the most portable cover URL between [a] and [b].
