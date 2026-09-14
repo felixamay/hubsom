@@ -44,30 +44,70 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   final Map<String, _HostPeer> _peers = {};
   bool _pendingTick = false;
 
+  // Safari body-level video for the host's own preview (same shadow DOM issue).
+  web.HTMLVideoElement? _safariBodyEl;
+
+  static bool get _isSafari {
+    final ua = web.window.navigator.userAgent;
+    return ua.contains('Safari') &&
+        !ua.contains('Chrome') &&
+        !ua.contains('Chromium');
+  }
+
+  void _initSafariBodyPreview() {
+    final v = web.HTMLVideoElement()
+      ..autoplay = true
+      ..setAttribute('playsinline', 'true')
+      ..style.setProperty('position', 'fixed')
+      ..style.setProperty('top', '0')
+      ..style.setProperty('left', '0')
+      ..style.setProperty('width', '100%')
+      ..style.setProperty('height', '100vh')
+      ..style.setProperty('object-fit', 'cover')
+      ..style.setProperty('z-index', '1')
+      ..style.setProperty('background-color', '#0b1f17')
+      ..style.setProperty('display', 'none');
+    silenceElement(v);
+    web.document.body?.append(v);
+    _safariBodyEl = v;
+    _videoEl = v;
+  }
+
   @override
   void initState() {
     super.initState();
     _viewType =
         'hubsom-live-cam-${DateTime.now().microsecondsSinceEpoch}';
-    ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
-      final video = web.HTMLVideoElement()
-        ..autoplay = true
-        ..setAttribute('playsinline', 'true')
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17'
-        // Force GPU compositing so Safari renders the element inside the
-        // CanvasKit shadow root (same fix as the viewer widget).
-        ..style.transform = 'translateZ(0)'
-        ..style.setProperty('-webkit-transform', 'translateZ(0)')
-        ..style.setProperty('will-change', 'transform')
-        ..style.display = 'block';
-      silenceElement(video);
-      video.id = _viewType;
-      _videoEl = video; // capture direct ref — CanvasKit shadow root hides it
-      return video;
-    });
+
+    if (_isSafari) {
+      // Safari: register a transparent placeholder so Flutter layout works.
+      // The actual preview video is in document.body (bypasses shadow DOM).
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final div = web.document.createElement('div') as web.HTMLDivElement;
+        div.style.width = '100%';
+        div.style.height = '100%';
+        return div;
+      });
+      _initSafariBodyPreview();
+    } else {
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final video = web.HTMLVideoElement()
+          ..autoplay = true
+          ..setAttribute('playsinline', 'true')
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.objectFit = 'cover'
+          ..style.backgroundColor = '#0b1f17'
+          ..style.transform = 'translateZ(0)'
+          ..style.setProperty('-webkit-transform', 'translateZ(0)')
+          ..style.setProperty('will-change', 'transform')
+          ..style.display = 'block';
+        silenceElement(video);
+        video.id = _viewType;
+        _videoEl = video;
+        return video;
+      });
+    }
     if (widget.enabled) {
       _start();
     }
@@ -345,8 +385,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   void _attach(web.MediaStream stream) {
     final video = _videoEl;
     if (video == null) return;
-    // Re-asserted on every attach: the preview must never be audible.
     silenceElement(video);
+    // Make the Safari body-level element visible once camera is ready.
+    final bodyEl = _safariBodyEl;
+    if (bodyEl != null) {
+      bodyEl.style.setProperty('display', 'block');
+    }
     video.srcObject = stream;
     video.play().toDart;
   }
@@ -379,6 +423,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   @override
   void dispose() {
     _stop();
+    _safariBodyEl?.remove();
+    _safariBodyEl = null;
     super.dispose();
   }
 
@@ -410,9 +456,10 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
-            // _videoEl is already set by the factory; just attach any ready stream.
-            final stream = _media;
-            if (stream != null) _attach(stream);
+            if (!_isSafari) {
+              final stream = _media;
+              if (stream != null) _attach(stream);
+            }
           },
         ),
         Positioned(

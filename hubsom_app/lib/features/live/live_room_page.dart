@@ -1053,7 +1053,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Stack(
           children: [

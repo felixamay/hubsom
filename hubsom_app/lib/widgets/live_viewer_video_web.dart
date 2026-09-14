@@ -9,6 +9,14 @@ import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
 import 'live_webrtc_helpers_web.dart';
 
+/// True when the current browser is Safari (not Chrome or Chromium-based).
+bool get _isSafari {
+  final ua = web.window.navigator.userAgent;
+  return ua.contains('Safari') &&
+      !ua.contains('Chrome') &&
+      !ua.contains('Chromium');
+}
+
 /// Viewer stage: pulls the host camera/mic over WebRTC (Firestore signaling).
 class LiveViewerVideo extends StatefulWidget {
   const LiveViewerVideo({
@@ -29,20 +37,19 @@ class LiveViewerVideo extends StatefulWidget {
 }
 
 class _LiveViewerVideoState extends State<LiveViewerVideo> {
-  /// Give the host this long to answer before asking for a fresh offer. Covers
-  /// a host tab that reloaded and no longer knows about this viewer.
+  /// Give the host this long to answer before asking for a fresh offer.
   static const _connectTimeout = Duration(seconds: 20);
-
-  /// How often to tell the host we are still watching. Must stay well inside
-  /// the host's stale-viewer window.
   static const _heartbeatEvery = Duration(seconds: 15);
 
   late final String _viewType;
-  web.HTMLVideoElement? _videoEl; // direct ref so shadow-DOM getElementById is not needed
+
+  /// Direct reference to the <video> element.
+  /// On Safari this element lives in document.body (not the shadow DOM).
+  /// On other browsers it is returned from the HtmlElementView factory.
+  web.HTMLVideoElement? _videoEl;
+
   web.RTCPeerConnection? _pc;
   web.MediaStream? _remote;
-
-  /// Fallback stream for browsers whose track events carry no stream.
   web.MediaStream? _assembled;
   StreamSubscription<LiveWebrtcSignal?>? _watch;
   Timer? _poll;
@@ -50,10 +57,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   Timer? _attachRetry;
   Timer? _iceFlush;
   bool _ready = false;
-  bool _muted = false;
+  bool _muted = true;
   bool _handling = false;
   bool _answerPublished = false;
-  bool _playBlocked = false; // set when autoplay is refused (Safari policy)
+  bool _playBlocked = false;
   String? _status;
   int _hostIceApplied = 0;
   int _icePublished = 0;
@@ -62,43 +69,77 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   DateTime _lastHeartbeat = DateTime.now();
   final List<String> _localIce = [];
 
+  // ── Safari body-level video ──────────────────────────────────────────────
+  // Flutter CanvasKit embeds HtmlElementView inside a shadow root. Safari
+  // refuses to paint <video> elements in shadow roots regardless of CSS
+  // compositing hints. On Safari we therefore create a second <video> element
+  // directly in document.body at z-index 1 so it shows through Flutter's
+  // transparent canvas. The HtmlElementView slot becomes an invisible
+  // placeholder that keeps the Flutter layout intact.
+  web.HTMLVideoElement? _safariBodyEl;
+
+  void _initSafariBodyVideo() {
+    final v = web.HTMLVideoElement()
+      ..muted = true
+      ..setAttribute('playsinline', '')
+      ..setAttribute('webkit-playsinline', '')
+      ..setAttribute('autoplay', '')
+      ..setAttribute('muted', '')
+      ..style.setProperty('position', 'fixed')
+      ..style.setProperty('top', '0')
+      ..style.setProperty('left', '0')
+      ..style.setProperty('width', '100%')
+      ..style.setProperty('height', '100vh')
+      ..style.setProperty('object-fit', 'cover')
+      ..style.setProperty('z-index', '1')
+      ..style.setProperty('background-color', '#0b1f17')
+      ..style.setProperty('display', 'none'); // hidden until stream arrives
+    web.document.body?.append(v);
+    _safariBodyEl = v;
+    _videoEl = v; // All WebRTC attachment code goes through _videoEl
+  }
+
   @override
   void initState() {
     super.initState();
     _viewType = 'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
-    ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
-      final video = web.HTMLVideoElement()
-        ..autoplay = true
-        ..muted = true // Autoplay policies on Safari/Chrome require muted to
-        //   start; the viewer unmutes via the sound button.
-        ..setAttribute('playsinline', '')
-        ..setAttribute('webkit-playsinline', '')
-        ..setAttribute('autoplay', '')
-        ..setAttribute('muted', '')
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17'
-        // Force a separate GPU compositing layer. Without this Safari refuses
-        // to paint <video> elements that live inside a shadow root (Flutter
-        // CanvasKit embeds platform views there), so the video connection is
-        // established but nothing is ever visible on screen.
-        ..style.transform = 'translateZ(0)'
-        ..style.setProperty('-webkit-transform', 'translateZ(0)')
-        ..style.setProperty('will-change', 'transform')
-        ..style.display = 'block';
-      video.id = _viewType;
-      _videoEl = video; // capture direct reference — getElementById won't
-      //   reach this element inside CanvasKit's shadow root
-      return video;
-    });
-    _muted = true; // Match the element's initial muted state.
+
+    if (_isSafari) {
+      // Safari: video lives in document.body. HtmlElementView gets a
+      // transparent <div> placeholder so Flutter's layout is unaffected.
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final div = web.document.createElement('div') as web.HTMLDivElement;
+        div.style.width = '100%';
+        div.style.height = '100%';
+        return div;
+      });
+      _initSafariBodyVideo();
+    } else {
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final video = web.HTMLVideoElement()
+          ..autoplay = true
+          ..muted = true
+          ..setAttribute('playsinline', '')
+          ..setAttribute('webkit-playsinline', '')
+          ..setAttribute('autoplay', '')
+          ..setAttribute('muted', '')
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.objectFit = 'cover'
+          ..style.backgroundColor = '#0b1f17'
+          ..style.transform = 'translateZ(0)'
+          ..style.setProperty('-webkit-transform', 'translateZ(0)')
+          ..style.setProperty('will-change', 'transform')
+          ..style.display = 'block';
+        video.id = _viewType;
+        _videoEl = video;
+        return video;
+      });
+    }
+    _muted = true;
     _status = 'Connecting to seller…';
     unawaited(_bootstrap());
 
-    // Listeners deliver the host's offer as soon as it is written. Polling is
-    // only a fallback for when Firestore cannot push, and can be slow because
-    // it is no longer on the critical path.
     if (LiveWebrtcSignalStore.canWatch) {
       _watch = LiveWebrtcSignalStore.watchOne(
         widget.streamId,
@@ -120,7 +161,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     if (!LiveWebrtcSignalStore.canWatch) await _pollOnce();
   }
 
-  /// Tell the host a viewer is here and wants an offer.
   Future<void> _announce() async {
     _attemptStartedAt = DateTime.now();
     _lastHeartbeat = DateTime.now();
@@ -129,9 +169,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         streamId: widget.streamId,
         viewerId: widget.viewerId,
       );
-    } catch (_) {
-      // Upkeep retries.
-    }
+    } catch (_) {}
   }
 
   Future<void> _pollOnce() async {
@@ -139,9 +177,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       await _handle(
         await LiveWebrtcSignalStore.get(widget.streamId, widget.viewerId),
       );
-    } catch (_) {
-      // Keep going; live room still works without video.
-    }
+    } catch (_) {}
   }
 
   Future<void> _handle(LiveWebrtcSignal? signal) async {
@@ -171,14 +207,11 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         );
       }
     } catch (_) {
-      // Upkeep recovers.
     } finally {
       _handling = false;
     }
   }
 
-  /// Heartbeat, stall detection and dead-connection recovery. None of this is
-  /// on the path to first frame, so it runs on a slow timer.
   Future<void> _upkeepTick() async {
     if (!mounted) return;
     try {
@@ -202,15 +235,9 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
           DateTime.now().difference(_attemptStartedAt) > _connectTimeout) {
         await _resetPeer(rejoin: true);
       }
-    } catch (_) {
-      // Try again next tick.
-    }
+    } catch (_) {}
   }
 
-  /// Send candidates as they are gathered rather than on a tick boundary.
-  ///
-  /// A short debounce batches the burst that arrives right after the answer
-  /// into one write without holding the first candidate back.
   void _scheduleIceFlush() {
     if (!_answerPublished) return;
     _iceFlush?.cancel();
@@ -230,7 +257,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         viewer: pending,
       );
     } catch (_) {
-      // Re-send on the next gathered candidate.
       _icePublished -= pending.length;
     }
   }
@@ -254,8 +280,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         _showRemote(streams.first);
         return;
       }
-      // Some browsers report no stream on the event. Collect the tracks into
-      // one stream rather than letting the video track replace the audio one.
       final assembled = _assembled ??= web.MediaStream();
       assembled.addTrack(te.track);
       _showRemote(assembled);
@@ -304,8 +328,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    // Candidates were held back until now: the host's offer write resets both
-    // ICE lists, so anything sent earlier would have been wiped.
     _answerPublished = true;
     unawaited(_flushIce());
     if (mounted && !_ready) {
@@ -313,7 +335,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     }
   }
 
-  /// Remember the stream *and* keep trying to hand it to the <video> element.
   void _showRemote(web.MediaStream stream) {
     _remote = stream;
     if (mounted && !_ready) {
@@ -330,14 +351,19 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final video = _videoEl;
     if (stream == null) return;
     if (video == null) {
-      // Element not created yet — retry once the platform view fires.
       _attachRetry?.cancel();
       _attachRetry = Timer(const Duration(milliseconds: 120), () {
         if (mounted) _attach();
       });
       return;
     }
-    // Ensure muted + playsinline so Safari never blocks the initial play.
+
+    // Make the Safari body-level element visible once we have a stream.
+    final bodyEl = _safariBodyEl;
+    if (bodyEl != null) {
+      bodyEl.style.setProperty('display', 'block');
+    }
+
     video.muted = true;
     video.setAttribute('playsinline', '');
     video.setAttribute('webkit-playsinline', '');
@@ -346,14 +372,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     }
     video.play().toDart.then(
       (_) {
-        // Play succeeded — reflect the actual muted state.
         if (mounted && _playBlocked) setState(() => _playBlocked = false);
         _syncMuteAffordance(video);
       },
       onError: (_) {
-        // Safari (and sometimes Chrome on mobile) may block autoplay even for
-        // muted videos. Show a tap-to-play affordance so the user can unblock
-        // it with a real gesture.
         if (mounted && !_playBlocked) setState(() => _playBlocked = true);
       },
     );
@@ -363,7 +385,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   }
 
   void _syncMuteAffordance(web.HTMLVideoElement video) {
-    // Autoplay policies may mute the element; reflect that in the control.
     Future<void>.delayed(const Duration(milliseconds: 400), () {
       if (!mounted) return;
       if (video.muted != _muted) setState(() => _muted = video.muted);
@@ -379,7 +400,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     attachStreamToElement(video: video, stream: stream, muted: next);
   }
 
-  /// Called when the user taps the play-blocked overlay on Safari.
+  /// Called from the native tap-to-play overlay.
   void _userPlay() {
     final video = _videoEl;
     final stream = _remote;
@@ -387,15 +408,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     video.muted = false;
     video.play().toDart.then(
       (_) {
-        if (mounted) {
-          setState(() {
-            _playBlocked = false;
-            _muted = false;
-          });
-        }
+        if (mounted) setState(() { _playBlocked = false; _muted = false; });
       },
       onError: (_) {
-        // Still blocked — try muted as last resort.
+        // Try muted as last resort.
         video.muted = true;
         video.play().toDart.then((_) {
           if (mounted) setState(() => _playBlocked = false);
@@ -423,10 +439,13 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _localIce.clear();
     _remote = null;
     _assembled = null;
+    _playBlocked = false; // reset so a fresh connect can re-evaluate
     _attachRetry?.cancel();
     _attachRetry = null;
     _iceFlush?.cancel();
     _iceFlush = null;
+    // Hide the Safari body-level element while reconnecting.
+    _safariBodyEl?.style.setProperty('display', 'none');
     if (mounted) {
       setState(() {
         _ready = false;
@@ -444,6 +463,8 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     _attachRetry?.cancel();
     _iceFlush?.cancel();
     unawaited(_disposePc());
+    _safariBodyEl?.remove();
+    _safariBodyEl = null;
     unawaited(
       LiveWebrtcSignalStore.close(widget.streamId, widget.viewerId),
     );
@@ -455,14 +476,13 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Always mounted: `ontrack` can only hand the stream to an element that
-        // already exists, so the video surface cannot wait on a connection.
+        // Always mounted: `ontrack` hands the stream to this element before
+        // the connection is visible. On Safari this is a transparent <div>;
+        // the real video is in document.body at z-index 1.
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
-            // Element is now in the DOM (or shadow DOM). Retry any pending
-            // attach; _videoEl was already set in the factory.
-            _attach();
+            if (!_isSafari) _attach();
           },
         ),
         if (!_ready)
@@ -471,7 +491,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
             pulse: widget.pulse,
             subtitle: _status ?? 'Connecting to seller…',
           ),
-        if (_ready)
+        if (_ready && !_playBlocked)
           Positioned(
             left: 16,
             bottom: 24,
@@ -490,8 +510,6 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
               ),
             ),
           ),
-        // Always offered once video is up: browsers often start muted, and a
-        // viewer sitting near the seller needs to be able to kill the audio.
         if (_ready && !_playBlocked)
           Positioned(
             right: 16,
@@ -509,9 +527,9 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
               label: Text(_muted ? 'Tap for sound' : 'Mute'),
             ),
           ),
-        // Safari (and iOS Chrome) often block autoplay. Show a full-screen tap
-        // target so the user can unblock with a real gesture — the browser
-        // will then allow play() to succeed.
+        // Shown when the browser's autoplay policy blocks video.play().
+        // Tapping calls play() inside a real user-gesture context (which
+        // Safari always allows) and dismisses the overlay.
         if (_playBlocked)
           Positioned.fill(
             child: GestureDetector(
