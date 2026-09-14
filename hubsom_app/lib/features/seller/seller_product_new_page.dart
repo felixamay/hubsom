@@ -327,7 +327,12 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 );
             await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
           }
-        } catch (_) {}
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not add to live: $e')),
+          );
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

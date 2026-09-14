@@ -306,6 +306,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (pinId != null && pin?.id != pinId) {
         pin = await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
+      // Sync bag: add any products that were added to the stream externally
+      // (e.g. via the create-product flow) but are not yet in the local bag.
+      final currentBagIds = bag.map((p) => p.id).toSet();
+      final newIds = next.productIds.where((id) => !currentBagIds.contains(id));
+      List<Product> updatedBag = bag;
+      for (final id in newIds) {
+        final p = await ref.read(catalogRepositoryProvider).getProduct(id);
+        if (p != null) updatedBag = [...updatedBag, p];
+      }
       final wasOpen = stream?.auction?.isOpen == true;
       final isOpen = next.auction?.isOpen == true;
       final prevAuction = stream?.auction;
@@ -313,6 +322,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         stream = next;
         chat = messages;
         pinned = pin;
+        bag = updatedBag;
         _following = ref
             .read(catalogRepositoryProvider)
             .isFollowingSeller(next.sellerId);
@@ -719,126 +729,6 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$e')));
       }
-    }
-  }
-
-  Future<void> _pin(Product product) async {
-    final updated = await ref
-        .read(liveRepositoryProvider)
-        .pinProduct(widget.streamId, product.id);
-    setState(() {
-      stream = updated;
-      pinned = product;
-      if (!bag.any((p) => p.id == product.id)) {
-        bag = [...bag, product];
-      }
-      _shopOpen = false;
-    });
-  }
-
-  Future<int?> _pickLiveQty(Product product) async {
-    if (product.stock < 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} is out of stock')),
-      );
-      return null;
-    }
-    var qty = 1;
-    return showDialog<int>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Quantity for this live'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${product.name} · ${product.stock} in stock',
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: qty <= 1
-                            ? null
-                            : () => setLocal(() => qty -= 1),
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      Text(
-                        '$qty',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 22,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: qty >= product.stock
-                            ? null
-                            : () => setLocal(() => qty += 1),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, qty),
-                  child: const Text('Add to live'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _addProductToLive(Product product) async {
-    try {
-      final qty = await _pickLiveQty(product);
-      if (qty == null || !mounted) return;
-      final updated = await ref
-          .read(liveRepositoryProvider)
-          .addProducts(
-            widget.streamId,
-            [product.id],
-            quantities: {product.id: qty},
-          );
-      // Also pin the newly added product so viewers see it right away.
-      final pinnedStream = await ref
-          .read(liveRepositoryProvider)
-          .pinProduct(widget.streamId, product.id);
-      if (!mounted) return;
-      setState(() {
-        stream = pinnedStream.productIds.contains(product.id)
-            ? pinnedStream
-            : updated;
-        pinned = product;
-        _hideAuctionCard = false;
-        if (!bag.any((p) => p.id == product.id)) {
-          bag = [...bag, product];
-        }
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} is now for sale on this live')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
-          ),
-        ),
-      );
     }
   }
 
@@ -1592,14 +1482,10 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                 ),
                               ...bag.map((p) {
-                                final selling = pinned?.id == p.id &&
-                                    !p.isAuctionLot;
                                 final onAuction = _isCurrentAuctionLot(p);
                                 return ListTile(
                                   onTap: _isHost
-                                      ? (p.isAuctionLot
-                                          ? () => _auctionProductOnLive(p)
-                                          : () => _pin(p))
+                                      ? () => _auctionProductOnLive(p)
                                       : (p.isAuctionLot
                                           ? null
                                           : () =>
@@ -1628,13 +1514,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                   trailing: _isHost
                                       ? Text(
-                                          p.isAuctionLot
-                                              ? (onAuction
-                                                  ? 'On auction'
-                                                  : 'Tap to sell')
-                                              : (selling
-                                                  ? 'Selling'
-                                                  : 'Tap to sell'),
+                                          onAuction ? 'On auction' : 'Tap to sell',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w800,
                                             fontSize: 12,
@@ -1731,9 +1611,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                       )
                                       .map(
                                         (p) => ListTile(
-                                          onTap: p.isAuctionLot
-                                              ? () => _auctionProductOnLive(p)
-                                              : () => _addProductToLive(p),
+                                          onTap: () => _auctionProductOnLive(p),
                                           isThreeLine: true,
                                           leading: ClipRRect(
                                             borderRadius:
@@ -1923,7 +1801,7 @@ class _LiveBottomDock extends StatelessWidget {
                     label: const Text('Show deal'),
                   ),
                 ),
-              if (showCard && activeAuction && a != null)
+              if (showCard && activeAuction)
                 _SleekAuctionCard(
                   auction: a,
                   pinned: pinned,
