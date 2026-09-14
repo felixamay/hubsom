@@ -8,12 +8,44 @@
   },
   "hosting": {
     "public": "build/web",
+    "cleanUrls": true,
+    "trailingSlash": false,
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "/hubsom-admin",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/hubsom-admin/**",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/Afia",
+        "destination": "/afia",
+        "type": 301
+      },
+      {
+        "source": "/Afia/**",
+        "destination": "/afia",
+        "type": 301
+      }
+    ],
     "rewrites": [
+      {
+        "source": "/afia",
+        "destination": "/Afia.html"
+      },
+      {
+        "source": "/afia/**",
+        "destination": "/Afia.html"
+      },
       {
         "source": "**",
         "destination": "/index.html"
@@ -25,11 +57,15 @@
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
+            "value": "no-store, no-cache, must-revalidate, max-age=0"
           },
           {
             "key": "Pragma",
             "value": "no-cache"
+          },
+          {
+            "key": "Expires",
+            "value": "0"
           },
           {
             "key": "X-Content-Type-Options",
@@ -42,6 +78,68 @@
           {
             "key": "Referrer-Policy",
             "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), microphone=(self), display-capture=(self)"
+          }
+        ]
+      },
+      {
+        "source": "/main.dart.*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_bootstrap.*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/afia_gate.*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/canvaskit/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(wasm|woff2|woff|ttf|png|jpg|jpeg|webp|svg|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_service_worker.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, no-cache, must-revalidate, max-age=0"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/"
           }
         ]
       }

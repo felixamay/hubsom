@@ -81,6 +81,154 @@ abstract final class GhanaPlaces {
     return MapsService.defaultCenter;
   }
 
+  static const _cityRegion = <String, String>{
+    'accra': 'Greater Accra',
+    'osu': 'Greater Accra',
+    'labone': 'Greater Accra',
+    'cantonments': 'Greater Accra',
+    'east legon': 'Greater Accra',
+    'madina': 'Greater Accra',
+    'adenta': 'Greater Accra',
+    'tema': 'Greater Accra',
+    'ashaiman': 'Greater Accra',
+    'spintex': 'Greater Accra',
+    'kasoa': 'Central',
+    'dansoman': 'Greater Accra',
+    'achimota': 'Greater Accra',
+    'kumasi': 'Ashanti',
+    'obuasi': 'Ashanti',
+    'tamale': 'Northern',
+    'cape coast': 'Central',
+    'takoradi': 'Western',
+    'sekondi': 'Western',
+    'sunyani': 'Bono',
+    'techiman': 'Bono East',
+    'ho': 'Volta',
+    'koforidua': 'Eastern',
+    'wa': 'Upper West',
+    'bolgatanga': 'Upper East',
+    'tarkwa': 'Western',
+    'winneba': 'Central',
+    'nkawkaw': 'Eastern',
+  };
+
+  static String _titleCase(String value) => value
+      .split(' ')
+      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+
+  /// Title-cased Ghana cities sellers can pick for in-zone shipment.
+  static List<String> get cityNames =>
+      (_cities.keys.map(_titleCase).toList()..sort());
+
+  static String regionOf(String city) => _cityRegion[_norm(city)] ?? '';
+
+  static String displayCity(String city) {
+    final key = _norm(city);
+    if (_cities.containsKey(key)) return _titleCase(key);
+    return city.trim();
+  }
+
+  static bool samePlace(String a, String b) {
+    final left = _norm(a);
+    final right = _norm(b);
+    return left.isNotEmpty && left == right;
+  }
+
+  /// Cities ranked from a seller pin / home city. Nearby first, then the rest.
+  static List<({String city, String region, double km})> rankedFrom({
+    double? latitude,
+    double? longitude,
+    String? city,
+  }) {
+    LatLng? origin;
+    if (latitude != null && longitude != null) {
+      origin = LatLng(latitude, longitude);
+    } else if ((city ?? '').trim().isNotEmpty) {
+      origin = resolve(city: city);
+    }
+    final rows = <({String city, String region, double km})>[];
+    for (final entry in _cities.entries) {
+      final km = origin == null
+          ? double.infinity
+          : distanceKm(origin, entry.value);
+      rows.add((
+        city: _titleCase(entry.key),
+        region: _cityRegion[entry.key] ?? '',
+        km: km,
+      ));
+    }
+    rows.sort((a, b) {
+      final byKm = a.km.compareTo(b.km);
+      if (byKm != 0) return byKm;
+      return a.city.compareTo(b.city);
+    });
+    return rows;
+  }
+
+  /// True when [city] is one of [zoneCities], or the GPS pin is within
+  /// [radiusKm] of a selected city.
+  static bool inShipmentZone({
+    required Iterable<String> zoneCities,
+    String? city,
+    String? region,
+    double? latitude,
+    double? longitude,
+    double radiusKm = 25,
+  }) {
+    final zones = zoneCities
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (zones.isEmpty) return true;
+    final dest = (city ?? '').trim();
+    for (final zone in zones) {
+      if (samePlace(zone, dest)) return true;
+    }
+    if (latitude != null && longitude != null) {
+      final pin = LatLng(latitude, longitude);
+      final near = nearest(latitude, longitude);
+      for (final zone in zones) {
+        if (near.city.isNotEmpty && samePlace(zone, near.city)) return true;
+        final center = resolve(city: zone);
+        if (distanceKm(pin, center) <= radiusKm) return true;
+      }
+    }
+    final destRegion = (region ?? '').trim();
+    if (dest.isEmpty && destRegion.isNotEmpty) {
+      for (final zone in zones) {
+        if (samePlace(regionOf(zone), destRegion)) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Nearest known Ghana place for a GPS pin. Does not fall back to Accra
+  /// when the pin is far from every listed city.
+  static ({String city, String region, double km}) nearest(
+    double latitude,
+    double longitude,
+  ) {
+    final pin = LatLng(latitude, longitude);
+    var bestKey = '';
+    var bestKm = double.infinity;
+    for (final entry in _cities.entries) {
+      final km = distanceKm(pin, entry.value);
+      if (km < bestKm) {
+        bestKm = km;
+        bestKey = entry.key;
+      }
+    }
+    if (bestKey.isEmpty || bestKm > 60) {
+      return (city: '', region: '', km: bestKm);
+    }
+    return (
+      city: _titleCase(bestKey),
+      region: _cityRegion[bestKey] ?? '',
+      km: bestKm,
+    );
+  }
+
   static double distanceKm(LatLng from, LatLng to) {
     return const Distance().as(LengthUnit.Kilometer, from, to);
   }

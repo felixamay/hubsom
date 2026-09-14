@@ -70,6 +70,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       productQuantities: quantities == null
           ? null
@@ -101,6 +102,7 @@ void main() {
       LocalCommerceStore.createStream(
         user: seller,
         title: 'Too many',
+        cover: 'https://cdn.hubsom.test/live-thumb.jpg',
         productIds: [product.id],
         productQuantities: {product.id: 5},
       ),

@@ -8,6 +8,7 @@ class CartItem extends Equatable {
     this.streamId,
     required this.name,
     required this.priceGhs,
+    this.shipmentFeeGhs = 0,
     this.image,
     this.category,
   });
@@ -18,10 +19,13 @@ class CartItem extends Equatable {
   final String? streamId;
   final String name;
   final double priceGhs;
+  final double shipmentFeeGhs;
   final String? image;
   final String? category;
 
   double get lineTotal => priceGhs * quantity;
+  double get shipmentLineTotal => shipmentFeeGhs * quantity;
+  double get payableTotal => lineTotal + shipmentLineTotal;
 
   CartItem copyWith({
     int? quantity,
@@ -29,6 +33,7 @@ class CartItem extends Equatable {
     String? streamId,
     String? name,
     double? priceGhs,
+    double? shipmentFeeGhs,
     String? image,
     String? category,
   }) =>
@@ -39,6 +44,7 @@ class CartItem extends Equatable {
         streamId: streamId ?? this.streamId,
         name: name ?? this.name,
         priceGhs: priceGhs ?? this.priceGhs,
+        shipmentFeeGhs: shipmentFeeGhs ?? this.shipmentFeeGhs,
         image: image ?? this.image,
         category: category ?? this.category,
       );
@@ -50,6 +56,7 @@ class CartItem extends Equatable {
         streamId: json['streamId'] as String?,
         name: json['name'] as String? ?? '',
         priceGhs: (json['priceGhs'] as num?)?.toDouble() ?? 0,
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
         image: json['image'] as String?,
         category: json['category'] as String?,
       );
@@ -61,10 +68,12 @@ class CartItem extends Equatable {
         if (streamId != null) 'streamId': streamId,
         'name': name,
         'priceGhs': priceGhs,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
         if (image != null) 'image': image,
         if (category != null) 'category': category,
       };
 
   @override
-  List<Object?> get props => [productId, quantity, source, priceGhs];
+  List<Object?> get props =>
+      [productId, quantity, source, priceGhs, shipmentFeeGhs];
 }

@@ -205,7 +205,9 @@ class _HuberHomePageState extends ConsumerState<HuberHomePage> {
                 subtitle: Text(
                   [
                     if (o.pickupDistanceLabel.isNotEmpty) o.pickupDistanceLabel,
+                    if (o.dropoffLine1.isNotEmpty) o.dropoffLine1,
                     o.dropoffCity,
+                    if (o.recipientPhone.isNotEmpty) o.recipientPhone,
                     formatGhs(o.offeredFeeGhs ?? 0),
                   ].join(' · '),
                 ),

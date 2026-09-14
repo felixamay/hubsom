@@ -22,6 +22,7 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('hubsom-auth');
     Hive.init(dir.path);
     await LocalStore.init();
+    await LocalStore.clearSession();
   });
 
   test('sign-in without an account asks to create one', () async {
@@ -69,6 +70,103 @@ void main() {
       ),
       throwsA(isA<AuthException>()),
     );
+  });
+
+  test('signed-in user can change password and sign in with the new one', () async {
+    const salt = 'test-salt';
+    const current = 'password1';
+    const next = 'password2';
+    final user = HubsomUser(
+      id: 'local-3',
+      email: 'ama@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'ama@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(current, salt),
+        'userJson': user.toJson(),
+      },
+    });
+    final repo = AuthRepository(ApiClient());
+    await repo.signIn(email: 'ama@hubsom.test', password: current);
+
+    expect(
+      () => repo.changePassword(
+        currentPassword: 'wrongpass',
+        newPassword: next,
+      ),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          'Current password is incorrect',
+        ),
+      ),
+    );
+    expect(
+      () => repo.changePassword(
+        currentPassword: current,
+        newPassword: current,
+      ),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('different'),
+        ),
+      ),
+    );
+
+    await repo.changePassword(currentPassword: current, newPassword: next);
+    await repo.signOut();
+
+    expect(
+      () => repo.signIn(email: 'ama@hubsom.test', password: current),
+      throwsA(isA<AuthException>()),
+    );
+    final signedIn = await repo.signIn(
+      email: 'ama@hubsom.test',
+      password: next,
+    );
+    expect(signedIn.email, 'ama@hubsom.test');
+  });
+
+  test('one email cannot create two accounts', () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-dup',
+      email: 'ama@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'ama@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+
+    final repo = AuthRepository(ApiClient());
+    expect(
+      () => repo.signUp(
+        email: '  Ama@HUBSOM.test  ',
+        password: 'password9',
+        name: 'Ama Two',
+      ),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('already exists'),
+        ),
+      ),
+    );
+    expect(repo.currentUser(), isNull);
+    expect(LocalStore.sessionToken, isNull);
   });
 }
 

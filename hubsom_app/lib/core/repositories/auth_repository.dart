@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -6,10 +7,15 @@ import 'package:crypto/crypto.dart';
 import '../../models/huber.dart';
 import '../../models/seller.dart';
 import '../../models/user.dart';
+import '../auth/afia_access.dart';
 import '../auth/auth_routes.dart';
+import '../auth/idle_session.dart';
+import '../auth/passkey_bridge.dart';
+import '../auth/passkey_models.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/admin_controls_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
@@ -22,11 +28,19 @@ class AuthException implements Exception {
 }
 
 class AuthRepository {
-  AuthRepository(this._api);
+  AuthRepository(this._api, {PasskeyBridge? passkeys})
+      : _passkeys = passkeys ?? PasskeyBridge.instance;
 
   final ApiClient _api;
+  final PasskeyBridge _passkeys;
+
+  bool get passkeysSupported => _passkeys.isSupported;
 
   HubsomUser? currentUser() {
+    if (IdleSession.isExpired()) {
+      unawaited(IdleSession.expireIfIdle());
+      return null;
+    }
     final token = LocalStore.sessionToken;
     final raw = LocalStore.userJson;
     if (token == null || token.isEmpty || raw == null) return null;
@@ -46,6 +60,9 @@ class AuthRepository {
     String role = 'buyer',
     HuberSignUpDetails? huber,
   }) async {
+    if (!AdminControlsStore.current().signupsOpen) {
+      throw AuthException('Hubsom is not accepting new accounts right now.');
+    }
     final normalized = CloudStore.accountDocId(email);
     _validateCredentials(normalized, password, name: name);
     if (AuthRoutes.isHuberRole(role) &&
@@ -83,14 +100,14 @@ class AuthRepository {
           throw AuthException('${data['error']}');
         }
         final userMap = data['user'] as Map? ?? data;
-        final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+        var user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
         final token = data['token'] as String? ?? _issueLocalToken(user);
-        await _persist(user, token);
         await _storeLocalCredentials(
           email: normalized,
           password: password,
           user: user,
         );
+        user = await _persist(user, token);
         await _ensureHuberProfile(user, huber);
         return user;
       }
@@ -333,6 +350,142 @@ class AuthRepository {
     return updated;
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = currentUser();
+    if (user == null) {
+      throw AuthException('Sign in to change your password');
+    }
+    final email = CloudStore.accountDocId(user.email);
+    _validateCredentials(email, newPassword);
+    if (currentPassword == newPassword) {
+      throw AuthException('Choose a different new password');
+    }
+
+    final vault = LocalStore.loadCredentialVault();
+    var entry = vault[email];
+    if (entry is! Map) {
+      try {
+        final remote = await CloudStore.getAccount(email);
+        if (remote != null) entry = remote;
+      } catch (_) {}
+    }
+    if (entry is! Map) {
+      throw AuthException(
+        'Could not verify your current password. Sign in again and try.',
+      );
+    }
+
+    final salt = entry['salt'] as String? ?? '';
+    final hash = entry['hash'] as String? ?? '';
+    if (salt.isEmpty ||
+        hash.isEmpty ||
+        !_verifyPassword(currentPassword, salt, hash)) {
+      throw AuthException('Current password is incorrect');
+    }
+
+    final nextSalt = _randomSalt();
+    final nextHash = _hashPassword(newPassword, nextSalt);
+    final userJson = entry['userJson'] is Map
+        ? Map<String, dynamic>.from(entry['userJson'] as Map)
+        : user.toJson();
+    final record = {
+      ...Map<String, dynamic>.from(entry),
+      'salt': nextSalt,
+      'hash': nextHash,
+      'userJson': userJson,
+      'email': email,
+      'name': user.name,
+      'role': user.role,
+    };
+    vault[email] = record;
+    await LocalStore.saveCredentialVault(vault);
+    await _backfillCloudAccount(
+      email: email,
+      salt: nextSalt,
+      hash: nextHash,
+      user: user,
+      passkeys: _passkeysFrom(record),
+    );
+  }
+
+  List<PasskeyRecord> listPasskeys() {
+    final user = currentUser();
+    if (user == null) return const [];
+    return _passkeysForEmail(CloudStore.accountDocId(user.email));
+  }
+
+  Future<PasskeyRecord> registerPasskey() async {
+    final user = currentUser();
+    if (user == null) {
+      throw AuthException('Sign in to add a passkey');
+    }
+    final email = CloudStore.accountDocId(user.email);
+    final existing = _passkeysForEmail(email);
+    try {
+      final created = await _passkeys.register(
+        email: email,
+        userId: user.id,
+        displayName: user.name,
+        excludeCredentialIds: existing.map((p) => p.id).toList(),
+      );
+      final record = PasskeyRecord(
+        id: created.id,
+        email: email,
+        userId: user.id,
+        label: created.label,
+        createdAt: created.createdAt,
+      );
+      await _savePasskeys(email, [...existing, record], user: user);
+      return record;
+    } on PasskeyException catch (e) {
+      throw AuthException(e.message);
+    }
+  }
+
+  Future<void> removePasskey(String credentialId) async {
+    final user = currentUser();
+    if (user == null) {
+      throw AuthException('Sign in to manage passkeys');
+    }
+    final email = CloudStore.accountDocId(user.email);
+    final next =
+        _passkeysForEmail(email).where((p) => p.id != credentialId).toList();
+    await _savePasskeys(email, next, user: user);
+  }
+
+  Future<HubsomUser> signInWithPasskey({String? email}) async {
+    final hint = email == null || email.trim().isEmpty
+        ? null
+        : CloudStore.accountDocId(email);
+    if (hint != null && !hint.contains('@')) {
+      throw AuthException('Enter a valid email address');
+    }
+    final allow = hint == null
+        ? _allPasskeyIds()
+        : _passkeysForEmail(hint).map((p) => p.id).toList();
+    final PasskeyAssertion assertion;
+    try {
+      assertion = await _passkeys.authenticate(allowCredentialIds: allow);
+    } on PasskeyException catch (e) {
+      throw AuthException(e.message);
+    }
+
+    final resolved = _emailForPasskey(
+      credentialId: assertion.credentialId,
+      userHandle: assertion.userHandle,
+      hint: hint,
+    );
+    if (resolved == null) {
+      throw AuthException(
+        'No Hubsom account is linked to that passkey. Sign in with your password, then add a passkey in Settings.',
+      );
+    }
+    return _completePasskeySignIn(resolved);
+  }
+
   Future<void> signOut() async {
     try {
       await _api.post('/api/auth/signout');
@@ -359,7 +512,7 @@ class AuthRepository {
     }
     final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
     final isHuber = AuthRoutes.isHuberRole(role);
-    final user = HubsomUser(
+    var user = HubsomUser(
       id: id,
       email: email,
       name: name,
@@ -370,7 +523,7 @@ class AuthRepository {
       huberId: isHuber ? 'huber-$id' : null,
     );
     await _storeLocalCredentials(email: email, password: password, user: user);
-    await _persist(user, _issueLocalToken(user));
+    user = await _persist(user, _issueLocalToken(user));
     await _ensureHuberProfile(user, huber);
     await CloudStore.hydrateLocalCache();
     return user;
@@ -402,14 +555,16 @@ class AuthRepository {
       'salt': salt,
       'hash': hash,
       'userJson': user.toJson(),
+      if (remote['passkeys'] != null) 'passkeys': remote['passkeys'],
     };
     await LocalStore.saveCredentialVault(vault);
-    await _persist(user, _issueLocalToken(user));
+    _rejectSuspended(user, remote);
+    final session = await _persist(user, _issueLocalToken(user));
     await CloudStore.hydrateLocalCache();
-    if (user.isHuber) {
-      await LocalHuberStore.ensureProfileForUser(user);
+    if (session.isHuber) {
+      await LocalHuberStore.ensureProfileForUser(session);
     }
-    return user;
+    return session;
   }
 
   Future<void> _ensureHuberProfile(HubsomUser user, HuberSignUpDetails? huber) async {
@@ -432,13 +587,15 @@ class AuthRepository {
       throw AuthException('Invalid email or password');
     }
     final userJson = entry['userJson'];
-    final user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
-    await _persist(user, _issueLocalToken(user));
+    var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson as Map));
+    _rejectSuspended(user, entry);
+    user = await _persist(user, _issueLocalToken(user));
     await _backfillCloudAccount(
       email: email,
       salt: salt,
       hash: hash,
       user: user,
+      passkeys: _passkeysFrom(entry),
     );
     if (AuthRoutes.isHuberRole(user.role)) {
       await LocalHuberStore.ensureProfileForUser(user);
@@ -464,8 +621,17 @@ class AuthRepository {
 
     // Database first — do not create a browser-only account.
     try {
-      await CloudStore.putAccount(email, record);
-    } catch (e) {
+      await CloudStore.putAccount(email, record, createOnly: true);
+    } on StateError catch (e) {
+      if ('$e'.contains(CloudStore.alreadyExistsCode)) {
+        throw AuthException(
+          'An account with this email already exists. Please sign in.',
+        );
+      }
+      throw AuthException(
+        'Could not create your account. Check your connection and try again.',
+      );
+    } catch (_) {
       throw AuthException(
         'Could not create your account. Check your connection and try again.',
       );
@@ -481,6 +647,7 @@ class AuthRepository {
     required String salt,
     required String hash,
     required HubsomUser user,
+    List<PasskeyRecord> passkeys = const [],
   }) async {
     try {
       await CloudStore.putAccount(email, {
@@ -490,8 +657,138 @@ class AuthRepository {
         'email': email,
         'name': user.name,
         'role': user.role,
+        if (passkeys.isNotEmpty)
+          'passkeys': passkeys.map((p) => p.toJson()).toList(),
       });
     } catch (_) {}
+  }
+
+  List<PasskeyRecord> _passkeysFrom(Map entry) {
+    final raw = entry['passkeys'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => PasskeyRecord.fromJson(Map<String, dynamic>.from(e)))
+        .where((p) => p.id.isNotEmpty)
+        .toList();
+  }
+
+  List<PasskeyRecord> _passkeysForEmail(String email) {
+    final vault = LocalStore.loadCredentialVault();
+    final entry = vault[email];
+    if (entry is Map) return _passkeysFrom(entry);
+    return const [];
+  }
+
+  List<String> _allPasskeyIds() {
+    final ids = <String>{};
+    final vault = LocalStore.loadCredentialVault();
+    for (final value in vault.values) {
+      if (value is! Map) continue;
+      for (final p in _passkeysFrom(value)) {
+        ids.add(p.id);
+      }
+    }
+    return ids.toList();
+  }
+
+  String? _emailForPasskey({
+    required String credentialId,
+    String? userHandle,
+    String? hint,
+  }) {
+    if (hint != null &&
+        _passkeysForEmail(hint).any((p) => p.id == credentialId)) {
+      return hint;
+    }
+    final handle = userHandle == null
+        ? null
+        : CloudStore.accountDocId(userHandle);
+    if (handle != null && handle.contains('@')) {
+      if (_passkeysForEmail(handle).any((p) => p.id == credentialId) ||
+          LocalStore.loadCredentialVault().containsKey(handle)) {
+        return handle;
+      }
+    }
+    final vault = LocalStore.loadCredentialVault();
+    for (final e in vault.entries) {
+      if (e.value is! Map) continue;
+      if (_passkeysFrom(e.value as Map).any((p) => p.id == credentialId)) {
+        return e.key;
+      }
+    }
+    return handle != null && handle.contains('@') ? handle : null;
+  }
+
+  Future<void> _savePasskeys(
+    String email,
+    List<PasskeyRecord> passkeys, {
+    required HubsomUser user,
+  }) async {
+    final vault = LocalStore.loadCredentialVault();
+    final entry = vault[email];
+    if (entry is! Map) {
+      throw AuthException('Could not save this passkey. Sign in again and try.');
+    }
+    final record = {
+      ...Map<String, dynamic>.from(entry),
+      'passkeys': passkeys.map((p) => p.toJson()).toList(),
+    };
+    vault[email] = record;
+    await LocalStore.saveCredentialVault(vault);
+    await _backfillCloudAccount(
+      email: email,
+      salt: '${entry['salt'] ?? ''}',
+      hash: '${entry['hash'] ?? ''}',
+      user: user,
+      passkeys: passkeys,
+    );
+  }
+
+  Future<HubsomUser> _completePasskeySignIn(String email) async {
+    final vault = LocalStore.loadCredentialVault();
+    var entry = vault[email];
+    if (entry is! Map) {
+      try {
+        final remote = await CloudStore.getAccount(email);
+        if (remote != null) {
+          vault[email] = remote;
+          await LocalStore.saveCredentialVault(vault);
+          entry = remote;
+        }
+      } catch (_) {}
+    }
+    if (entry is! Map) {
+      throw AuthException(
+        'No Hubsom account is linked to that passkey. Sign in with your password, then add a passkey in Settings.',
+      );
+    }
+    final userJson = entry['userJson'];
+    if (userJson is! Map) {
+      throw AuthException('Could not sign in. Please create your account again.');
+    }
+    var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    user = await _persist(user, _issueLocalToken(user));
+    await _backfillCloudAccount(
+      email: email,
+      salt: '${entry['salt'] ?? ''}',
+      hash: '${entry['hash'] ?? ''}',
+      user: user,
+      passkeys: _passkeysFrom(entry),
+    );
+    if (AuthRoutes.isHuberRole(user.role)) {
+      await LocalHuberStore.ensureProfileForUser(user);
+    }
+    return user;
+  }
+
+  void _rejectSuspended(HubsomUser user, Map raw) {
+    final flagged = user.suspended || raw['suspended'] == true;
+    if (flagged && !AfiaAccess.isOwner(user)) {
+      throw AuthException(
+        'This Hubsom account is suspended. Contact Afia admin.',
+      );
+    }
   }
 
   void _validateCredentials(String email, String password, {String? name}) {
@@ -507,9 +804,17 @@ class AuthRepository {
     }
   }
 
-  Future<void> _persist(HubsomUser user, String token) async {
+  HubsomUser _withAfiaRole(HubsomUser user) {
+    if (!AfiaAccess.isOwner(user) || user.role == 'admin') return user;
+    return user.copyWith(role: 'admin');
+  }
+
+  Future<HubsomUser> _persist(HubsomUser user, String token) async {
+    final next = _withAfiaRole(user);
     await LocalStore.setSessionToken(token);
-    await LocalStore.setUserJson(jsonEncode(user.toJson()));
+    await LocalStore.setUserJson(jsonEncode(next.toJson()));
+    await IdleSession.touch(force: true);
+    return next;
   }
 
   String _issueLocalToken(HubsomUser user) {

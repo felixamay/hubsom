@@ -30,6 +30,7 @@ void main() {
       description: 'Ceramic',
       category: 'home',
       priceGhs: 40,
+      shipmentFeeGhs: 8,
       images: const ['img'],
       sellerId: 's1',
       stock: 5,
@@ -42,6 +43,9 @@ void main() {
     expect(cart.count, 2);
     expect(cart.state.first.source, 'buy-now');
     expect(cart.state.first.streamId, 'live-1');
+    expect(cart.state.first.shipmentFeeGhs, 8);
+    expect(cart.shipmentTotal, 16);
+    expect(cart.payableTotal, 96);
 
     // Persisted and reloaded (as header does via shared provider state).
     final reloaded = CartController();

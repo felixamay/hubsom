@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,16 +7,43 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/stream.dart';
+import '../../widgets/hubsom_image.dart';
 
 /// Live shopping directory — Watch live shows currently-on-air shows only.
-class LiveListPage extends ConsumerWidget {
+class LiveListPage extends ConsumerStatefulWidget {
   const LiveListPage({super.key, this.liveOnly = true});
 
   /// When true (default for Watch live), hide ended / scheduled shows.
   final bool liveOnly;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LiveListPage> createState() => _LiveListPageState();
+}
+
+class _LiveListPageState extends ConsumerState<LiveListPage> {
+  Timer? _refresh;
+
+  @override
+  void initState() {
+    super.initState();
+    // A seller can go live at any moment and nobody thinks to pull-to-refresh a
+    // page titled "Watch live". The pulse below pushes new shows in about a
+    // second; this timer only covers the case where Firestore cannot push.
+    _refresh = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (mounted) ref.invalidate(streamsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final liveOnly = widget.liveOnly;
+    ref.watch(liveStreamsPulseProvider);
     final streamsAsync = ref.watch(streamsProvider);
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(
@@ -161,42 +190,84 @@ class _LiveTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = stream.isLive;
-    return ListTile(
+    final cover = stream.cover.trim().isNotEmpty ? stream.cover : null;
+    return Material(
+      color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: HubsomColors.forest.withValues(alpha: 0.1)),
       ),
-      leading: CircleAvatar(
-        backgroundColor: live ? HubsomColors.live : HubsomColors.mint,
-        child: Icon(
-          live ? Icons.videocam : Icons.replay,
-          color: live ? Colors.white : HubsomColors.forest,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/live/${stream.id}'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (cover != null)
+                    HubsomImage(
+                      url: cover,
+                      fit: BoxFit.cover,
+                      placeholder: ColoredBox(
+                        color: live ? HubsomColors.live : HubsomColors.mint,
+                        child: Icon(
+                          live ? Icons.videocam : Icons.replay,
+                          color: live ? Colors.white : HubsomColors.forest,
+                        ),
+                      ),
+                    )
+                  else
+                    ColoredBox(
+                      color: live ? HubsomColors.live : HubsomColors.mint,
+                      child: Icon(
+                        live ? Icons.videocam : Icons.replay,
+                        color: live ? Colors.white : HubsomColors.forest,
+                        size: 40,
+                      ),
+                    ),
+                  Positioned(
+                    left: 10,
+                    top: 10,
+                    child: live
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            color: HubsomColors.live,
+                            child: const Text(
+                              'LIVE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              title: Text(
+                stream.title,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                live
+                    ? '${stream.viewerCount} watching'
+                    : 'ENDED · ${stream.viewerCount} viewers',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+            ),
+          ],
         ),
       ),
-      title: Text(
-        stream.title,
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-      subtitle: Text(
-        live
-            ? 'LIVE · ${stream.viewerCount} watching'
-            : 'ENDED · ${stream.viewerCount} viewers',
-      ),
-      trailing: live
-          ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              color: HubsomColors.live,
-              child: const Text(
-                'LIVE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
-              ),
-            )
-          : const Icon(Icons.chevron_right),
-      onTap: () => context.push('/live/${stream.id}'),
     );
   }
 }

@@ -25,8 +25,8 @@ abstract final class StorageMedia {
     return v.startsWith('data:') && v.contains('base64,');
   }
 
-  /// HTTP(S), blob refs, and short paths stay. Raw data-URLs are not persisted
-  /// on stream covers — they already live on the product.
+  /// HTTP(S), blob refs, and short paths stay. Raw data-URLs must be
+  /// externalized to Hive first (see [externalizeTree]).
   static String persistable(String? value) {
     final v = value?.trim() ?? '';
     if (v.isEmpty) return '';

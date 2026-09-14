@@ -6,6 +6,7 @@ import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/local_message_store.dart';
 import '../services/local_store.dart';
+import '../support/support_chat.dart';
 
 class MessageRepository {
   MessageRepository(this._api);
@@ -42,6 +43,12 @@ class MessageRepository {
     } catch (_) {}
     if (me == null) return const [];
     return LocalMessageStore.conversationsFor(me.id);
+  }
+
+  List<DirectMessage> localThread(String peerId) {
+    final me = _currentUser();
+    if (me == null) return const [];
+    return LocalMessageStore.thread(me.id, peerId);
   }
 
   Future<List<DirectMessage>> thread(String userId) async {
@@ -85,7 +92,9 @@ class MessageRepository {
       from: me,
       toUserId: userId,
       text: text,
-      toUserName: toUserName,
+      toUserName: SupportChat.isSupportPeer(userId)
+          ? SupportChat.displayName
+          : toUserName,
     );
   }
 

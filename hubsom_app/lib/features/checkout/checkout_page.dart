@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/payment_service.dart';
+import '../../core/services/user_address_store.dart';
 import '../../core/utils/money.dart';
 import '../../models/user.dart';
 import '../../widgets/gps_pin_card.dart';
@@ -19,24 +20,87 @@ class CheckoutPage extends ConsumerStatefulWidget {
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
-  final _line1 = TextEditingController();
-  final _city = TextEditingController(text: AppConstants.defaultCity);
-  final _region = TextEditingController(text: AppConstants.defaultRegion);
   final _selected = <String>{'mtn-momo'};
   bool _busy = false;
   String? _result;
   GeoLocation? _gps;
+  UserAddress? _address;
   bool _gpsBusy = false;
   String? _gpsError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSavedPin());
+  }
 
   @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
-    _line1.dispose();
-    _city.dispose();
-    _region.dispose();
     super.dispose();
+  }
+
+  Future<void> _applyPin(GeoLocation pin, {UserAddress? address}) async {
+    _gps = pin;
+    _address = address ??
+        await UserAddressStore.fromAllowedGps(
+          pin,
+          phone: _phone.text.trim(),
+        );
+    _gpsError = null;
+    await _quoteCart();
+  }
+
+  Future<void> _quoteCart() async {
+    final pin = _gps;
+    if (pin == null) return;
+    final address =
+        _address ?? await UserAddressStore.fromAllowedGps(pin);
+    await ref.read(cartProvider.notifier).applyDestination(
+      city: address.city,
+      region: address.region,
+      location: pin,
+    );
+  }
+
+  void _loadSavedPin() {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+    _name.text = user.name;
+    _phone.text = user.phone ?? '';
+    final saved = UserAddressStore.defaultAddress(user);
+    if (saved?.location != null) {
+      _applyPin(saved!.location!, address: saved).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    // Always refresh to the device's current GPS if permission was already
+    // granted. This ensures the address sent to riders reflects where the
+    // customer actually is now, not where they were last time they checked out.
+    _refreshGpsSilently(user);
+  }
+
+  /// Silently updates the delivery pin to the current GPS without showing any
+  /// busy indicator or prompting for permission. Called automatically on open.
+  Future<void> _refreshGpsSilently(HubsomUser user) async {
+    final pin = await ref.read(locationServiceProvider).silentCurrent();
+    if (pin == null || !mounted) return;
+    HubsomUser? next;
+    try {
+      next = await UserAddressStore.saveAllowedGps(
+        user: user,
+        pin: pin,
+        phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+      );
+      ref.read(authStateProvider.notifier).applyLocalUser(next);
+    } catch (_) {}
+    if (!mounted) return;
+    await _applyPin(
+      pin,
+      address: next == null ? null : UserAddressStore.defaultAddress(next),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _useGps() async {
@@ -46,8 +110,22 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     });
     try {
       final pin = await ref.read(locationServiceProvider).current();
+      final user = ref.read(authStateProvider).valueOrNull;
+      HubsomUser? next;
+      if (user != null) {
+        next = await UserAddressStore.saveAllowedGps(
+          user: user,
+          pin: pin,
+          phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        );
+        ref.read(authStateProvider.notifier).applyLocalUser(next);
+      }
       if (!mounted) return;
-      setState(() => _gps = pin);
+      await _applyPin(
+        pin,
+        address: next == null ? null : UserAddressStore.defaultAddress(next),
+      );
+      if (mounted) setState(() {});
     } catch (e) {
       if (!mounted) return;
       setState(() => _gpsError = '$e');
@@ -66,20 +144,40 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     }
     setState(() { _busy = true; _result = null; });
     try {
+      final address =
+          _address ?? await UserAddressStore.fromAllowedGps(_gps!);
+      await ref.read(cartProvider.notifier).applyDestination(
+        city: address.city,
+        region: address.region,
+        location: _gps,
+      );
+      final cartQuoted = ref.read(cartProvider);
       final res = await ref.read(paymentServiceProvider).checkout(
-        items: cart.map((e) => e.toJson()).toList(),
+        items: cartQuoted.map((e) => e.toJson()).toList(),
         shipping: {
           'recipientName': _name.text.trim(),
           'phone': _phone.text.trim(),
-          'line1': _line1.text.trim(),
-          'city': _city.text.trim(),
-          'region': _region.text.trim(),
+          'line1': address.line1,
+          'city': address.city,
+          'region': address.region,
           'location': _gps!.toJson(),
         },
         paymentMethods: _selected.toList(),
       );
       await ref.read(cartProvider.notifier).clear();
-      setState(() => _result = 'Order placed: ${res['order']?['id'] ?? res['id'] ?? 'ok'}');
+      final order = res['order'];
+      final id = order is Map
+          ? '${order['id'] ?? ''}'
+          : '${res['id'] ?? 'ok'}';
+      final zone = order is Map ? '${order['shipmentZoneLabel'] ?? ''}' : '';
+      final ship = order is Map
+          ? (order['shipmentFeeGhs'] as num?)?.toDouble() ?? 0
+          : 0.0;
+      setState(() {
+        _result = ship > 0
+            ? 'Order placed: $id. Shipment ${zone.isEmpty ? '' : '$zone · '}${formatGhs(ship)} sent to you.'
+            : 'Order placed: $id';
+      });
     } catch (e) {
       setState(() => _result = 'Checkout failed: $e');
     } finally {
@@ -91,6 +189,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
     final subtotal = cart.fold<double>(0, (s, e) => s + e.lineTotal);
+    final shipment = cart.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+    final payable = subtotal + shipment;
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
       body: ListView(
@@ -101,20 +201,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           TextField(controller: _name, decoration: const InputDecoration(labelText: 'Recipient name')),
           const SizedBox(height: 8),
           TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone'), keyboardType: TextInputType.phone),
-          const SizedBox(height: 8),
-          TextField(controller: _line1, decoration: const InputDecoration(labelText: 'Address line')),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: TextField(controller: _city, decoration: const InputDecoration(labelText: 'City'))),
-            const SizedBox(width: 8),
-            Expanded(child: TextField(controller: _region, decoration: const InputDecoration(labelText: 'Region'))),
-          ]),
           const SizedBox(height: 12),
           GpsPinCard(
-            title: 'Delivery GPS pin',
-            subtitle:
-                'Allow location so Huber riders can navigate to your door on OpenStreetMap.',
+            title: 'Your delivery address',
             pin: _gps,
+            address: _address?.displayLine,
             busy: _gpsBusy,
             error: _gpsError,
             onUseLocation: _useGps,
@@ -136,7 +227,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                 dense: true,
               )),
           const SizedBox(height: 12),
-          Text('Subtotal ${formatGhs(subtotal)} · ${AppConstants.deliveryEstimate}'),
+          Text(
+            shipment > 0
+                ? 'Subtotal ${formatGhs(subtotal)} · Ship ${formatGhs(shipment)} · Total ${formatGhs(payable)}'
+                : 'Subtotal ${formatGhs(subtotal)} · ${AppConstants.deliveryEstimate}',
+          ),
           if (_result != null) ...[
             const SizedBox(height: 12),
             Text(_result!),

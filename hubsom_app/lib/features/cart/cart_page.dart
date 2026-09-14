@@ -29,6 +29,8 @@ class CartPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cart = ref.watch(cartProvider);
     final subtotal = cart.fold<double>(0, (s, e) => s + e.lineTotal);
+    final shipment = cart.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+    final payable = subtotal + shipment;
     return Scaffold(
       appBar: AppBar(title: const Text('Cart')),
       body: cart.isEmpty
@@ -75,6 +77,7 @@ class CartPage extends ConsumerWidget {
                   ),
                   subtitle: Text(
                     '${formatGhs(item.priceGhs)} · ${_sourceLabel(item.source)}'
+                    '${item.shipmentFeeGhs > 0 ? ' · ship ${formatGhs(item.shipmentFeeGhs)}' : ''}'
                     '${item.category == null || item.category!.isEmpty ? '' : ' · ${item.category}'}',
                   ),
                   trailing: Row(
@@ -120,6 +123,30 @@ class CartPage extends ConsumerWidget {
                         ),
                       ],
                     ),
+                    if (shipment > 0) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text('Shipment'),
+                          const Spacer(),
+                          Text(formatGhs(shipment)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text(
+                            'Total',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const Spacer(),
+                          Text(
+                            formatGhs(payable),
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,

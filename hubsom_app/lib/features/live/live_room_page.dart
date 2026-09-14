@@ -7,13 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'package:uuid/uuid.dart';
-
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
+import '../../core/services/live_chat_store.dart';
+import '../../core/services/live_viewer_identity.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
-import '../../core/services/local_store.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/live_gift.dart';
@@ -26,6 +26,8 @@ import '../../widgets/live_gift_burst.dart';
 import '../../widgets/live_gift_sheet.dart';
 import '../../widgets/live_reaction_burst.dart';
 import '../../widgets/live_reaction_tray.dart';
+import '../../widgets/live_sale_product_card.dart';
+import '../../core/utils/browser_detect.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
@@ -77,14 +79,18 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _seededGiftChat = false;
   Timer? _poll;
   Timer? _tick;
+  StreamSubscription<List<ChatMessage>>? _chatWatch;
   late final AnimationController _pulse;
 
   bool get _isHost {
     if (widget.hostMode) return true;
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || stream == null) return false;
-    return user.sellerId == stream!.sellerId ||
-        stream!.hosts.any((h) => h.id == user.id);
+    final s = stream;
+    if (s == null) return false;
+    // Falls back to local storage because the auth provider is null while it
+    // loads, and a seller misread as a viewer subscribes to their own audio.
+    final user = ref.read(authStateProvider).valueOrNull ??
+        LiveViewerIdentity.localUser();
+    return LiveViewerIdentity.isHost(s, user);
   }
 
   int _offeredQty(Product product) {
@@ -101,16 +107,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     return 'Host';
   }
 
-  String get _viewerPeerId {
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user != null && user.id.isNotEmpty) return user.id;
-    const key = 'liveViewerPeerId';
-    final existing = LocalStore.getString(key);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final id = 'v_${const Uuid().v4()}';
-    unawaited(LocalStore.setString(key, id));
-    return id;
-  }
+  String get _viewerPeerId => LiveViewerIdentity.current(
+        userId: ref.read(authStateProvider).valueOrNull?.id,
+      );
 
   @override
   void initState() {
@@ -120,6 +119,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _load(join: true);
+    _watchChat();
     _startPoll();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -153,6 +153,20 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         }
         setState(() {});
       }
+    });
+  }
+
+  /// Chat arrives pushed rather than on the refresh timer, so a message shows up
+  /// for everyone in the room as it is sent.
+  void _watchChat() {
+    final repo = ref.read(liveRepositoryProvider);
+    if (!repo.canWatchChat) return;
+    _chatWatch = repo.watchChat(widget.streamId).listen((cloud) {
+      if (!mounted || cloud.isEmpty) return;
+      final merged = LiveChatStore.merge(chat, cloud);
+      setState(() => chat = merged);
+      unawaited(LocalCommerceStore.cacheChat(widget.streamId, merged));
+      _playNewGiftChats(merged);
     });
   }
 
@@ -293,6 +307,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (pinId != null && pin?.id != pinId) {
         pin = await ref.read(catalogRepositoryProvider).getProduct(pinId);
       }
+      // Sync bag: add any products that were added to the stream externally
+      // (e.g. via the create-product flow) but are not yet in the local bag.
+      final currentBagIds = bag.map((p) => p.id).toSet();
+      final newIds = next.productIds.where((id) => !currentBagIds.contains(id));
+      List<Product> updatedBag = bag;
+      for (final id in newIds) {
+        final p = await ref.read(catalogRepositoryProvider).getProduct(id);
+        if (p != null) updatedBag = [...updatedBag, p];
+      }
       final wasOpen = stream?.auction?.isOpen == true;
       final isOpen = next.auction?.isOpen == true;
       final prevAuction = stream?.auction;
@@ -300,6 +323,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
         stream = next;
         chat = messages;
         pinned = pin;
+        bag = updatedBag;
         _following = ref
             .read(catalogRepositoryProvider)
             .isFollowingSeller(next.sellerId);
@@ -709,126 +733,6 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
   }
 
-  Future<void> _pin(Product product) async {
-    final updated = await ref
-        .read(liveRepositoryProvider)
-        .pinProduct(widget.streamId, product.id);
-    setState(() {
-      stream = updated;
-      pinned = product;
-      if (!bag.any((p) => p.id == product.id)) {
-        bag = [...bag, product];
-      }
-      _shopOpen = false;
-    });
-  }
-
-  Future<int?> _pickLiveQty(Product product) async {
-    if (product.stock < 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} is out of stock')),
-      );
-      return null;
-    }
-    var qty = 1;
-    return showDialog<int>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Quantity for this live'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${product.name} · ${product.stock} in stock',
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: qty <= 1
-                            ? null
-                            : () => setLocal(() => qty -= 1),
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      Text(
-                        '$qty',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 22,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: qty >= product.stock
-                            ? null
-                            : () => setLocal(() => qty += 1),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, qty),
-                  child: const Text('Add to live'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _addProductToLive(Product product) async {
-    try {
-      final qty = await _pickLiveQty(product);
-      if (qty == null || !mounted) return;
-      final updated = await ref
-          .read(liveRepositoryProvider)
-          .addProducts(
-            widget.streamId,
-            [product.id],
-            quantities: {product.id: qty},
-          );
-      // Also pin the newly added product so viewers see it right away.
-      final pinnedStream = await ref
-          .read(liveRepositoryProvider)
-          .pinProduct(widget.streamId, product.id);
-      if (!mounted) return;
-      setState(() {
-        stream = pinnedStream.productIds.contains(product.id)
-            ? pinnedStream
-            : updated;
-        pinned = product;
-        _hideAuctionCard = false;
-        if (!bag.any((p) => p.id == product.id)) {
-          bag = [...bag, product];
-        }
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} is now for sale on this live')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
-          ),
-        ),
-      );
-    }
-  }
-
   bool _isCurrentAuctionLot(Product product) {
     final a = stream?.auction;
     if (a == null || a.productId != product.id) return false;
@@ -1100,6 +1004,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   void dispose() {
     _poll?.cancel();
     _tick?.cancel();
+    unawaited(_chatWatch?.cancel());
     _pulse.dispose();
     _chatCtrl.dispose();
     for (final f in _floating) {
@@ -1149,7 +1054,14 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      // Transparent ONLY on Safari: we render video elements directly in
+      // document.body to bypass the CanvasKit shadow DOM. The transparent
+      // scaffold lets those body-level elements show through.
+      // On Chrome/Firefox the normal HtmlElementView hole mechanism works,
+      // so a black background is correct and prevents the canvas leaking into
+      // other pages in go_router's navigation stack.
+      backgroundColor:
+          isSafariBrowser() ? Colors.transparent : Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
@@ -1299,6 +1211,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                       ),
                       const SizedBox(width: 6),
                       _GlassPill(
+                        onTap: _openShop,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1462,6 +1375,9 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                   onExtend: _extendAuction,
                   offeredQty: pinned == null ? 0 : _offeredQty(pinned!),
                   onBuyPinned: pinned == null ? null : () => _buy(pinned!),
+                  onOpenPinned: pinned == null
+                      ? null
+                      : () => context.push('/products/${pinned!.id}'),
                   onSendChat: _sendChat,
                   onOpenShop: _openShop,
                   onOpenCart: () => context.push('/cart'),
@@ -1514,7 +1430,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                           ),
                           subtitle: _isHost
                               ? const Text(
-                                  'Auction lots auto-continue until quantity is gone. Sell or auction any listed product anytime.',
+                                  'Tap a store product to sell it. Tap an auction lot to start bidding. Lots stay hidden from your store.',
                                 )
                               : null,
                           trailing: IconButton(
@@ -1525,20 +1441,40 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                         if (_isHost)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  final returnTo = Uri.encodeComponent(
-                                    '/live/${widget.streamId}?host=1',
-                                  );
-                                  context.push(
-                                    '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
-                                  );
-                                },
-                                icon: const Icon(Icons.add_box_outlined),
-                                label: const Text('Create product for this live'),
-                              ),
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () {
+                                      final returnTo = Uri.encodeComponent(
+                                        '/live/${widget.streamId}?host=1',
+                                      );
+                                      context.push(
+                                        '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=store',
+                                      );
+                                    },
+                                    icon: const Icon(Icons.add_box_outlined),
+                                    label: const Text('Create store product'),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final returnTo = Uri.encodeComponent(
+                                        '/live/${widget.streamId}?host=1',
+                                      );
+                                      context.push(
+                                        '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=auction',
+                                      );
+                                    },
+                                    icon: const Icon(Icons.gavel),
+                                    label: const Text('Create auction lot'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         Expanded(
@@ -1554,8 +1490,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                 ),
                               ...bag.map((p) {
+                                final onAuction = _isCurrentAuctionLot(p);
                                 return ListTile(
-                                  isThreeLine: _isHost,
+                                  onTap: _isHost
+                                      ? () => _auctionProductOnLive(p)
+                                      : (p.isAuctionLot
+                                          ? null
+                                          : () =>
+                                              context.push('/products/${p.id}')),
+                                  isThreeLine: true,
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: SizedBox(
@@ -1573,33 +1516,35 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                   ),
                                   title: Text(p.name),
                                   subtitle: Text(
-                                    '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} for sale',
+                                    p.isAuctionLot
+                                        ? '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} auction lot · hidden from store'
+                                        : '${formatGhs(p.effectivePrice)} · ${_offeredQty(p)} for sale',
                                   ),
                                   trailing: _isHost
-                                      ? _HostLiveActions(
-                                          sellLabel: pinned?.id == p.id
-                                              ? 'Selling'
-                                              : 'Sell',
-                                          auctionLabel:
-                                              _isCurrentAuctionLot(p)
-                                                  ? 'On auction'
-                                                  : 'Auction',
-                                          onSell: () => _pin(p),
-                                          onAuction: _auctionBusy ||
-                                                  _isCurrentAuctionLot(p)
-                                              ? null
-                                              : () => _auctionProductOnLive(p),
-                                        )
-                                      : FilledButton(
-                                          onPressed: _offeredQty(p) <= 0
-                                              ? null
-                                              : () => _buy(p),
-                                          child: Text(
-                                            _offeredQty(p) <= 0
-                                                ? 'Sold out'
-                                                : 'Buy',
+                                      ? Text(
+                                          onAuction ? 'On auction' : 'Tap to sell',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 12,
                                           ),
-                                        ),
+                                        )
+                                      : (p.isAuctionLot
+                                          ? const Text(
+                                              'Bid live',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            )
+                                          : FilledButton(
+                                              onPressed: _offeredQty(p) <= 0
+                                                  ? null
+                                                  : () => _buy(p),
+                                              child: Text(
+                                                _offeredQty(p) <= 0
+                                                    ? 'Sold out'
+                                                    : 'Buy',
+                                              ),
+                                            )),
                                 );
                               }),
                               if (_isHost) ...[
@@ -1607,7 +1552,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                 const Padding(
                                   padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
                                   child: Text(
-                                    'Your catalog — sell or auction without ending live',
+                                    'Your catalog — tap a product to start selling',
                                     style:
                                         TextStyle(fontWeight: FontWeight.w700),
                                   ),
@@ -1637,14 +1582,30 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                                 '/live/${widget.streamId}?host=1',
                                               );
                                               context.push(
-                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}',
+                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=store',
                                               );
                                             },
                                             icon: const Icon(
                                               Icons.add_box_outlined,
                                             ),
                                             label: const Text(
-                                              'Create product now',
+                                              'Create store product',
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          OutlinedButton.icon(
+                                            onPressed: () {
+                                              final returnTo =
+                                                  Uri.encodeComponent(
+                                                '/live/${widget.streamId}?host=1',
+                                              );
+                                              context.push(
+                                                '/seller/products/new?returnTo=$returnTo&addToLive=${widget.streamId}&kind=auction',
+                                              );
+                                            },
+                                            icon: const Icon(Icons.gavel),
+                                            label: const Text(
+                                              'Create auction lot',
                                             ),
                                           ),
                                         ],
@@ -1658,6 +1619,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                       )
                                       .map(
                                         (p) => ListTile(
+                                          onTap: () => _auctionProductOnLive(p),
                                           isThreeLine: true,
                                           leading: ClipRRect(
                                             borderRadius:
@@ -1677,17 +1639,18 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                           ),
                                           title: Text(p.name),
                                           subtitle: Text(
-                                            '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
+                                            p.isAuctionLot
+                                                ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot · hidden from store'
+                                                : '${formatGhs(p.effectivePrice)} · ${p.stock} for sale',
                                           ),
-                                          trailing: _HostLiveActions(
-                                            sellLabel: 'Sell',
-                                            auctionLabel: 'Auction',
-                                            onSell: () =>
-                                                _addProductToLive(p),
-                                            onAuction: _auctionBusy
-                                                ? null
-                                                : () =>
-                                                    _auctionProductOnLive(p),
+                                          trailing: Text(
+                                            p.isAuctionLot
+                                                ? 'Tap to sell'
+                                                : 'Tap to sell',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1702,51 +1665,6 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HostLiveActions extends StatelessWidget {
-  const _HostLiveActions({
-    required this.sellLabel,
-    required this.auctionLabel,
-    required this.onSell,
-    required this.onAuction,
-  });
-
-  final String sellLabel;
-  final String auctionLabel;
-  final VoidCallback onSell;
-  final VoidCallback? onAuction;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 96,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextButton(
-            onPressed: onSell,
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(sellLabel),
-          ),
-          FilledButton(
-            onPressed: onAuction,
-            style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(auctionLabel),
-          ),
-        ],
       ),
     );
   }
@@ -1808,6 +1726,7 @@ class _LiveBottomDock extends StatelessWidget {
     required this.onExtend,
     required this.offeredQty,
     required this.onBuyPinned,
+    required this.onOpenPinned,
     required this.onSendChat,
     required this.onOpenShop,
     required this.onOpenCart,
@@ -1835,6 +1754,7 @@ class _LiveBottomDock extends StatelessWidget {
   final VoidCallback onExtend;
   final int offeredQty;
   final VoidCallback? onBuyPinned;
+  final VoidCallback? onOpenPinned;
   final VoidCallback onSendChat;
   final VoidCallback onOpenShop;
   final VoidCallback onOpenCart;
@@ -1853,7 +1773,9 @@ class _LiveBottomDock extends StatelessWidget {
     final secsLeft = left.inSeconds.clamp(0, 30);
     final open = a?.isOpen == true;
     final awaiting = a?.awaitingExtend == true;
-    final showCard = !hideAuctionCard && (a != null || pinned != null);
+    final activeAuction = a != null && (open || awaiting);
+    final showCard =
+        !hideAuctionCard && (activeAuction || pinned != null);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1874,7 +1796,7 @@ class _LiveBottomDock extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (hideAuctionCard && (a != null || pinned != null))
+              if (hideAuctionCard && (activeAuction || pinned != null))
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -1887,7 +1809,7 @@ class _LiveBottomDock extends StatelessWidget {
                     label: const Text('Show deal'),
                   ),
                 ),
-              if (showCard && a != null)
+              if (showCard && activeAuction)
                 _SleekAuctionCard(
                   auction: a,
                   pinned: pinned,
@@ -1903,12 +1825,13 @@ class _LiveBottomDock extends StatelessWidget {
                   onExtend: onExtend,
                   onDismiss: onDismissAuction,
                 )
-              else if (showCard && pinned != null)
-                _SleekBuyCard(
+              else if (showCard && pinned != null && onOpenPinned != null)
+                LiveSaleProductCard(
                   product: pinned!,
                   offeredQty: offeredQty,
                   isHost: isHost,
                   onBuy: onBuyPinned,
+                  onOpenProduct: onOpenPinned!,
                   onDismiss: onDismissAuction,
                 ),
               if (isHost && a != null && (open || awaiting)) ...[
@@ -2267,93 +2190,6 @@ class _SleekAuctionCard extends StatelessWidget {
                 color: Color(0xFF333333),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SleekBuyCard extends StatelessWidget {
-  const _SleekBuyCard({
-    required this.product,
-    required this.offeredQty,
-    required this.isHost,
-    required this.onBuy,
-    required this.onDismiss,
-  });
-
-  final Product product;
-  final int offeredQty;
-  final bool isHost;
-  final VoidCallback? onBuy;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: product.images.isNotEmpty
-                  ? HubsomImage(
-                      url: product.images.first,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      color: HubsomColors.mist,
-                      child: const Icon(Icons.shopping_bag),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  formatGhs(product.effectivePrice),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                  ),
-                ),
-                Text(
-                  '$offeredQty for sale · Huber shipping',
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-          if (!isHost && onBuy != null)
-            FilledButton(
-              onPressed: offeredQty <= 0 ? null : onBuy,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE91E63),
-              ),
-              child: Text(offeredQty <= 0 ? 'Sold out' : 'Buy'),
-            ),
-          IconButton(
-            onPressed: onDismiss,
-            icon: const Icon(Icons.close, size: 18),
-          ),
         ],
       ),
     );

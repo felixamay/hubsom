@@ -7,11 +7,15 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/services/ghana_places.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
+import '../../models/seller.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/shipment_zone_fee_fields.dart';
 
 class SellerProductNewPage extends ConsumerStatefulWidget {
   const SellerProductNewPage({
@@ -19,12 +23,15 @@ class SellerProductNewPage extends ConsumerStatefulWidget {
     this.returnTo,
     this.productId,
     this.addToLiveStreamId,
+    this.auctionLot = false,
   });
   final String? returnTo;
   /// When set, the form edits an existing listing.
   final String? productId;
   /// When set after create, attach the new product to this live show.
   final String? addToLiveStreamId;
+  /// Create a live-auction lot that stays hidden from the public store.
+  final bool auctionLot;
 
   @override
   ConsumerState<SellerProductNewPage> createState() =>
@@ -35,6 +42,10 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   final _name = TextEditingController();
   final _description = TextEditingController();
   final _price = TextEditingController();
+  final _shipmentFee = TextEditingController();
+  final _outOfRegionFee = TextEditingController();
+  final _zoneCities = <String>{};
+  Seller? _seller;
   final _stock = TextEditingController(text: '10');
   final _formKey = GlobalKey<FormState>();
   final _images = <String>[];
@@ -48,7 +59,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   int _flashDurationHours = 24;
   DateTime? _existingFlashEndsAt;
   String? _error;
-  bool _auctionOnSave = false;
+  late bool _auctionLot = widget.auctionLot;
 
   bool get _isEdit =>
       widget.productId != null && widget.productId!.trim().isNotEmpty;
@@ -60,10 +71,20 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
-      _loadingEdit = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadExisting());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSeller();
+      if (_isEdit) _loadExisting();
+    });
+    if (_isEdit) _loadingEdit = true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isEdit) return;
+    final kind = GoRouterState.of(context).uri.queryParameters['kind'];
+    if (kind == 'auction') _auctionLot = true;
+    if (kind == 'store') _auctionLot = false;
   }
 
   @override
@@ -71,8 +92,20 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
     _name.dispose();
     _description.dispose();
     _price.dispose();
+    _shipmentFee.dispose();
+    _outOfRegionFee.dispose();
     _stock.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSeller() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+    try {
+      final seller = await LocalCommerceStore.ensureSellerForUser(user);
+      if (!mounted) return;
+      setState(() => _seller = seller);
+    } catch (_) {}
   }
 
   Future<void> _loadExisting() async {
@@ -100,6 +133,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
       _price.text = product.priceGhs.toStringAsFixed(
         product.priceGhs == product.priceGhs.roundToDouble() ? 0 : 2,
       );
+      _shipmentFee.text = _feeText(product.shipmentFeeGhs);
+      _outOfRegionFee.text = _feeText(product.outOfRegionShipmentFeeGhs);
+      _zoneCities
+        ..clear()
+        ..addAll(product.shipmentZoneCities.map(GhanaPlaces.displayCity));
       _stock.text = '${product.stock}';
       setState(() {
         _images
@@ -131,6 +169,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
           _flashEnabled = false;
           _existingFlashEndsAt = null;
         }
+        _auctionLot = product.auctionOnly;
         _loadingEdit = false;
       });
     } catch (e) {
@@ -140,6 +179,13 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         _error = '$e';
       });
     }
+  }
+
+  String _feeText(double value) {
+    if (value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
   }
 
   String get _returnTo {
@@ -222,16 +268,18 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
         'description': _description.text.trim(),
         'category': _category,
         'priceGhs': double.tryParse(_price.text) ?? 0,
+        'shipmentFeeGhs': double.tryParse(_shipmentFee.text.trim()) ?? 0,
+        'shipmentZoneCities': _zoneCities.toList(),
+        'outOfRegionShipmentFeeGhs':
+            double.tryParse(_outOfRegionFee.text.trim()) ?? 0,
         'stock': int.tryParse(_stock.text) ?? 0,
         'images': List<String>.from(_images),
-        'supports': [
-          'buy-now',
-          'store-listing',
-          'live-selling',
-          'live-auction',
-        ],
+        'supports': _auctionLot
+            ? ['live-auction']
+            : ['buy-now', 'store-listing', 'live-selling'],
+        'auctionOnly': _auctionLot,
       };
-      if (_flashEnabled) {
+      if (_flashEnabled && !_auctionLot) {
         final endsAt = DateTime.now()
             .toUtc()
             .add(Duration(hours: _flashDurationHours))
@@ -264,7 +312,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
           liveId.isNotEmpty &&
           id.isNotEmpty) {
         try {
-          if (_auctionOnSave) {
+          if (_auctionLot) {
             await ref.read(liveRepositoryProvider).startAuction(
                   streamId: liveId,
                   productId: id,
@@ -279,13 +327,18 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 );
             await ref.read(liveRepositoryProvider).pinProduct(liveId, id);
           }
-        } catch (_) {}
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not add to live: $e')),
+          );
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _auctionOnSave
-                  ? 'Product is now on auction in your live show'
+              _auctionLot
+                  ? 'Auction lot is live — tap it anytime to start selling'
                   : 'Product added for sale on your live show',
             ),
           ),
@@ -314,19 +367,53 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
   Widget build(BuildContext context) {
     if (_loadingEdit) {
       return Scaffold(
-        appBar: AppBar(title: Text(_isEdit ? 'Edit product' : 'New product')),
+        appBar: AppBar(
+          title: Text(_isEdit
+              ? (_auctionLot ? 'Edit auction lot' : 'Edit product')
+              : (_auctionLot ? 'New auction lot' : 'New product')),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit product' : 'New product')),
+      appBar: AppBar(
+        title: Text(_isEdit
+            ? (_auctionLot ? 'Edit auction lot' : 'Edit product')
+            : (_auctionLot ? 'New auction lot' : 'New product')),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('Store product'),
+                  icon: Icon(Icons.storefront_outlined),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('Auction lot'),
+                  icon: Icon(Icons.gavel),
+                ),
+              ],
+              selected: {_auctionLot},
+              onSelectionChanged: _isEdit
+                  ? null
+                  : (next) => setState(() => _auctionLot = next.first),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _auctionLot
+                  ? 'Hidden from your store. During live, tap this lot to start selling.'
+                  : 'Shows in your store and marketplace. During live, tap it to sell at the listed price.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             if (widget.addToLiveStreamId != null &&
                 widget.addToLiveStreamId!.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -334,22 +421,15 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                   color: HubsomColors.mint,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  'This product will join your live show as soon as you save it. You do not need to end the live first.',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                child: Text(
+                  _auctionLot
+                      ? 'Saving starts this auction on your live show. Tap the lot later to sell the next unit.'
+                      : 'This product will join your live show at the listed price as soon as you save it.',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Put on auction now'),
-                subtitle: const Text(
-                  'Start bidding on this listing. Leave off to sell at the listed price.',
-                ),
-                value: _auctionOnSave,
-                onChanged: (v) => setState(() => _auctionOnSave = v),
-              ),
-              const SizedBox(height: 12),
             ],
+            const SizedBox(height: 12),
             Text(
               'Product photos',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -464,10 +544,26 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _price,
-              decoration: const InputDecoration(labelText: 'Price (GHS)'),
+              decoration: InputDecoration(
+                labelText: _auctionLot
+                    ? 'Asking / starting price (GHS)'
+                    : 'Price (GHS)',
+                helperText: _auctionLot
+                    ? 'Used as the ask. Viewers bid up from a lower start on live.'
+                    : null,
+              ),
               keyboardType: TextInputType.number,
               validator: (v) =>
                   ((double.tryParse(v ?? '') ?? 0) <= 0) ? 'Enter a valid price' : null,
+            ),
+            const SizedBox(height: 8),
+            ShipmentZoneFeeFields(
+              inZoneFee: _shipmentFee,
+              outOfRegionFee: _outOfRegionFee,
+              selectedCities: _zoneCities,
+              seller: _seller,
+              enabled: !_busy,
+              onCitiesChanged: () => setState(() {}),
             ),
             const SizedBox(height: 12),
             Text(
@@ -526,6 +622,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 ),
               ],
             ),
+            if (!_auctionLot) ...[
             const SizedBox(height: 20),
             Text(
               'Flash sale',
@@ -617,6 +714,7 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
                 },
               ),
             ],
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -630,7 +728,11 @@ class _SellerProductNewPageState extends ConsumerState<SellerProductNewPage> {
               child: Text(
                 _busy
                     ? (_isEdit ? 'Saving…' : 'Publishing…')
-                    : (_isEdit ? 'Save changes' : 'Publish product'),
+                    : (_isEdit
+                        ? 'Save changes'
+                        : (_auctionLot
+                            ? 'Publish auction lot'
+                            : 'Publish product')),
               ),
             ),
             if (kIsWeb)

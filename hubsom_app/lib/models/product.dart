@@ -35,6 +35,9 @@ class Product extends Equatable {
     required this.description,
     required this.category,
     required this.priceGhs,
+    this.shipmentFeeGhs = 0,
+    this.shipmentZoneCities = const [],
+    this.outOfRegionShipmentFeeGhs = 0,
     this.compareAtGhs,
     this.currency = 'GHS',
     required this.images,
@@ -47,6 +50,7 @@ class Product extends Equatable {
     this.supports = const [],
     this.hasDemoVideo = false,
     this.demoVideoUrl,
+    this.auctionOnly = false,
   });
 
   final String id;
@@ -55,6 +59,12 @@ class Product extends Equatable {
   final String description;
   final String category;
   final double priceGhs;
+  /// Per-unit in-zone delivery fee (selected cities around the seller).
+  final double shipmentFeeGhs;
+  /// Cities the in-zone fee covers. Anywhere else uses [outOfRegionShipmentFeeGhs].
+  final List<String> shipmentZoneCities;
+  /// Per-unit fee when the buyer is outside the selected cities.
+  final double outOfRegionShipmentFeeGhs;
   final double? compareAtGhs;
   final String currency;
   final List<String> images;
@@ -69,6 +79,37 @@ class Product extends Equatable {
   final bool hasDemoVideo;
   /// Remote/demo URL when not stored locally in Hive.
   final String? demoVideoUrl;
+  /// Live-auction lot — created separately and hidden from the public store.
+  final bool auctionOnly;
+
+  bool get isAuctionLot => auctionOnly;
+
+  bool get hasShipmentZones => shipmentZoneCities.isNotEmpty;
+
+  bool get hasShipmentFee =>
+      shipmentFeeGhs > 0 || outOfRegionShipmentFeeGhs > 0;
+
+  bool get hasShipmentRange =>
+      hasShipmentZones &&
+      outOfRegionShipmentFeeGhs > 0 &&
+      (outOfRegionShipmentFeeGhs - shipmentFeeGhs).abs() > 0.001;
+
+  double get minShipmentFeeGhs {
+    if (!hasShipmentFee) return 0;
+    if (!hasShipmentRange) {
+      return shipmentFeeGhs > 0 ? shipmentFeeGhs : outOfRegionShipmentFeeGhs;
+    }
+    return shipmentFeeGhs < outOfRegionShipmentFeeGhs
+        ? shipmentFeeGhs
+        : outOfRegionShipmentFeeGhs;
+  }
+
+  double get maxShipmentFeeGhs {
+    if (!hasShipmentRange) return minShipmentFeeGhs;
+    return shipmentFeeGhs > outOfRegionShipmentFeeGhs
+        ? shipmentFeeGhs
+        : outOfRegionShipmentFeeGhs;
+  }
 
   double get effectivePrice {
     if (!hasActiveFlashSale) return priceGhs;
@@ -88,6 +129,14 @@ class Product extends Equatable {
         description: json['description'] as String? ?? '',
         category: json['category'] as String? ?? 'miscellaneous',
         priceGhs: (json['priceGhs'] as num?)?.toDouble() ?? 0,
+        shipmentFeeGhs: (json['shipmentFeeGhs'] as num?)?.toDouble() ?? 0,
+        shipmentZoneCities: (json['shipmentZoneCities'] as List?)
+                ?.map((e) => '$e'.trim())
+                .where((e) => e.isNotEmpty)
+                .toList() ??
+            const [],
+        outOfRegionShipmentFeeGhs:
+            (json['outOfRegionShipmentFeeGhs'] as num?)?.toDouble() ?? 0,
         compareAtGhs: (json['compareAtGhs'] as num?)?.toDouble(),
         currency: json['currency'] as String? ?? 'GHS',
         images: (json['images'] as List?)?.cast<String>() ?? const [],
@@ -102,6 +151,7 @@ class Product extends Equatable {
         supports: (json['supports'] as List?)?.cast<String>() ?? const [],
         hasDemoVideo: json['hasDemoVideo'] as bool? ?? false,
         demoVideoUrl: json['demoVideoUrl'] as String?,
+        auctionOnly: json['auctionOnly'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +161,11 @@ class Product extends Equatable {
         'description': description,
         'category': category,
         'priceGhs': priceGhs,
+        if (shipmentFeeGhs > 0) 'shipmentFeeGhs': shipmentFeeGhs,
+        if (shipmentZoneCities.isNotEmpty)
+          'shipmentZoneCities': shipmentZoneCities,
+        if (outOfRegionShipmentFeeGhs > 0)
+          'outOfRegionShipmentFeeGhs': outOfRegionShipmentFeeGhs,
         if (compareAtGhs != null) 'compareAtGhs': compareAtGhs,
         'currency': currency,
         'images': images,
@@ -123,6 +178,7 @@ class Product extends Equatable {
         'supports': supports,
         'hasDemoVideo': hasDemoVideo,
         if (demoVideoUrl != null) 'demoVideoUrl': demoVideoUrl,
+        if (auctionOnly) 'auctionOnly': true,
       };
 
   @override
@@ -131,11 +187,15 @@ class Product extends Equatable {
         slug,
         name,
         priceGhs,
+        shipmentFeeGhs,
+        shipmentZoneCities,
+        outOfRegionShipmentFeeGhs,
         sellerId,
         stock,
         hasDemoVideo,
         demoVideoUrl,
         flashSale,
+        auctionOnly,
       ];
 
   Product copyWith({
@@ -143,6 +203,9 @@ class Product extends Equatable {
     String? description,
     String? category,
     double? priceGhs,
+    double? shipmentFeeGhs,
+    List<String>? shipmentZoneCities,
+    double? outOfRegionShipmentFeeGhs,
     double? compareAtGhs,
     List<String>? images,
     int? stock,
@@ -156,6 +219,7 @@ class Product extends Equatable {
     FlashSale? flashSale,
     bool clearFlashSale = false,
     String? slug,
+    bool? auctionOnly,
   }) {
     return Product(
       id: id,
@@ -164,6 +228,10 @@ class Product extends Equatable {
       description: description ?? this.description,
       category: category ?? this.category,
       priceGhs: priceGhs ?? this.priceGhs,
+      shipmentFeeGhs: shipmentFeeGhs ?? this.shipmentFeeGhs,
+      shipmentZoneCities: shipmentZoneCities ?? this.shipmentZoneCities,
+      outOfRegionShipmentFeeGhs:
+          outOfRegionShipmentFeeGhs ?? this.outOfRegionShipmentFeeGhs,
       compareAtGhs: compareAtGhs ?? this.compareAtGhs,
       currency: currency,
       images: images ?? this.images,
@@ -177,6 +245,7 @@ class Product extends Equatable {
       hasDemoVideo: hasDemoVideo ?? this.hasDemoVideo,
       demoVideoUrl:
           clearDemoVideoUrl ? null : (demoVideoUrl ?? this.demoVideoUrl),
+      auctionOnly: auctionOnly ?? this.auctionOnly,
     );
   }
 }

@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/product.dart';
 import '../../models/product_social.dart';
 import '../../models/promotion.dart';
+import '../../models/purchase_offer.dart';
 import '../../models/review.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
@@ -13,11 +16,23 @@ import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/cloud_video_media.dart';
+import '../services/video_frame_thumb.dart';
+import '../services/local_blob_store.dart';
 import '../services/local_commerce_store.dart';
+import '../services/local_promotion_store.dart';
+import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
+import '../services/shop_video_cloud.dart';
+import '../services/shop_video_upload_progress.dart';
+import '../services/video_for_slow_network.dart';
+
+/// Cloud reads on the Home / feed path must never hold the UI on a slow link;
+/// local data renders and the merge finishes in the background.
+const _cloudMergeBudget = Duration(seconds: 6);
 
 class CatalogRepository {
   CatalogRepository(
@@ -56,10 +71,12 @@ class CatalogRepository {
           .timeout(const Duration(seconds: 4));
 
       final raw = res.data;
-      if (ApiResponse.isHtml(raw)) return local;
+      if (ApiResponse.isHtml(raw)) {
+        return local.where((p) => !p.isAuctionLot).toList();
+      }
 
       final data = ApiResponse.decode(raw);
-      if (data == null) return local;
+      if (data == null) return local.where((p) => !p.isAuctionLot).toList();
 
       final list = data is List
           ? data
@@ -67,7 +84,7 @@ class CatalogRepository {
               ? data['products'] as List
               : <dynamic>[];
 
-      if (list.isEmpty) return local;
+      if (list.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
       final products = <Product>[];
       for (final e in list) {
@@ -75,17 +92,17 @@ class CatalogRepository {
           products.add(Product.fromJson(Map<String, dynamic>.from(e)));
         }
       }
-      if (products.isEmpty) return local;
+      if (products.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
       await LocalStore.cacheJson(
         'products',
         products.map((p) => p.toJson()).toList(),
       );
-      return products;
+      return products.where((p) => !p.isAuctionLot).toList();
     } on DioException {
-      return local;
+      return local.where((p) => !p.isAuctionLot).toList();
     } catch (_) {
-      return local;
+      return local.where((p) => !p.isAuctionLot).toList();
     }
   }
 
@@ -316,59 +333,155 @@ class CatalogRepository {
     );
   }
 
-  Future<List<ShopVideo>> listShopVideos() async {
+  /// Pull cloud social data, but give up waiting after [_cloudMergeBudget] so
+  /// a slow link never blanks Home or the feed. The merge keeps running and
+  /// lands in local storage for the next read.
+  Future<void> _mergeCloudSocialBounded() async {
     try {
-      await LocalCommerceStore.mergeCloudSocial();
+      await LocalCommerceStore.mergeCloudSocial().timeout(_cloudMergeBudget);
     } catch (_) {}
+  }
+
+  Future<List<ShopVideo>> listShopVideos() async {
+    await _mergeCloudSocialBounded();
     final list = LocalCommerceStore.listShopVideos();
-    // Never block the homepage/timeline on media backfill — do it in background.
+    // Publish any local-only clips / thumbnails from this device. Do not
+    // download other people's videos in the background — that saturates a
+    // slow Ghana link before the clip the shopper is watching can start.
     // ignore: unawaited_futures
-    _publishAndHydrateInBackground(list);
+    _backfillShopVideoUrls(list);
     return list;
   }
 
-  Future<void> _publishAndHydrateInBackground(List<ShopVideo> list) async {
-    try {
-      await _backfillShopVideoUrls(list);
-      final refreshed = LocalCommerceStore.listShopVideos();
-      for (final video in refreshed.take(12)) {
-        await CloudVideoMedia.ensureLocalBytes(
-          videoId: video.id,
-          videoUrl: video.videoUrl,
-          mimeType: video.mimeType,
-        );
-      }
-    } catch (_) {}
+  Future<List<ShopVideo>> myShopVideos() async {
+    final user = _currentUser();
+    if (user == null) return const [];
+    await _mergeCloudSocialBounded();
+    return LocalCommerceStore.listShopVideos()
+        .where((v) => v.authorId == user.id)
+        .toList();
   }
 
+  /// Clips whose upload is running right now (Publish + Home backfill can
+  /// both ask for the same video; never push the chunks twice).
+  static final Set<String> _publishing = <String>{};
+
   Future<void> _backfillShopVideoUrls(List<ShopVideo> list) async {
-    final needs = list.where((v) => !v.hasPublishedMedia).take(8).toList();
+    final user = _currentUser();
+    final needs = list
+        .where((v) => !v.hasPublishedMedia && !_publishing.contains(v.id))
+        .where((v) => user == null || v.authorId == user.id)
+        .take(4)
+        .toList();
     for (final video in needs) {
       try {
         final stored = await ProductDemoVideoStore.load(video.id);
         if (stored == null) continue;
-        final url = await CloudVideoMedia.publish(
+        await _publishShopVideoInBackground(
+          videoId: video.id,
+          bytes: stored.bytes,
+          mimeType: stored.mimeType,
+        );
+      } catch (_) {}
+    }
+    await _migrateShopVideosToStorage(list);
+    await _backfillShopVideoThumbs(list);
+  }
+
+  /// Once the project has a Storage bucket, lift my own clips out of the
+  /// Firestore-chunk fallback so they stream from the CDN (seeking, Safari)
+  /// and stop eating Firestore quota.
+  Future<void> _migrateShopVideosToStorage(List<ShopVideo> list) async {
+    final user = _currentUser();
+    if (user == null) return;
+    if (!await CloudMedia.available()) return;
+    final stale = list
+        .where((v) => v.authorId == user.id)
+        .where((v) => CloudVideoMedia.isFirestoreRef(v.videoUrl))
+        .where((v) => !_publishing.contains(v.id))
+        .take(2)
+        .toList();
+    for (final video in stale) {
+      if (!_publishing.add(video.id)) continue;
+      try {
+        final stored = await ProductDemoVideoStore.load(video.id);
+        if (stored == null) continue;
+        final url = await CloudVideoMedia.migrateToStorage(
           videoId: video.id,
           bytes: stored.bytes,
           mimeType: stored.mimeType,
         );
         if (url == null || url.isEmpty) continue;
-        await LocalCommerceStore.updateShopVideo(video.copyWith(videoUrl: url));
+        await LocalCommerceStore.updateShopVideo(
+          video.copyWith(videoUrl: url),
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('CatalogRepository._migrateShopVideosToStorage: $e');
+        }
+      } finally {
+        _publishing.remove(video.id);
+      }
+    }
+  }
+
+  /// Uploader's device: make sure every clip of mine has a still other
+  /// phones can load. Missing stills are grabbed from the stored bytes;
+  /// device-only blob refs are inlined into the Firestore doc.
+  Future<void> _backfillShopVideoThumbs(List<ShopVideo> list) async {
+    final user = _currentUser();
+    if (user == null) return;
+    final mine = list.where((v) => v.authorId == user.id).take(12);
+    var pushed = 0;
+    for (final video in mine) {
+      if (pushed >= 4) break;
+      try {
+        final thumb = video.thumbnailUrl?.trim() ?? '';
+        if (thumb.isEmpty) {
+          final stored = await ProductDemoVideoStore.load(video.id);
+          if (stored == null) continue;
+          final frame = await captureShopVideoFrame(
+            bytes: stored.bytes,
+            mimeType: stored.mimeType,
+          ).timeout(const Duration(seconds: 15), onTimeout: () => null);
+          if (frame == null || frame.isEmpty) continue;
+          final data = 'data:image/jpeg;base64,${base64Encode(frame)}';
+          String ref;
+          try {
+            ref = await LocalBlobStore.putDataUrl(data);
+          } catch (_) {
+            ref = data;
+          }
+          await LocalCommerceStore.updateShopVideo(
+            video.copyWith(thumbnailUrl: ref),
+          );
+          pushed++;
+          continue;
+        }
+        if (LocalBlobStore.isRef(thumb) &&
+            portableShopVideoThumb(thumb) != null &&
+            !_thumbSynced.contains(video.id)) {
+          await LocalCommerceStore.syncShopVideoToCloud(video);
+          _thumbSynced.add(video.id);
+          pushed++;
+        }
       } catch (_) {}
     }
   }
 
+  static final Set<String> _thumbSynced = <String>{};
+
   Future<ShopVideo?> getShopVideo(String id) async {
-    try {
-      await LocalCommerceStore.mergeCloudSocial();
-    } catch (_) {}
+    await _mergeCloudSocialBounded();
     var video = LocalCommerceStore.getShopVideo(id);
     if (video == null) return null;
-    await CloudVideoMedia.ensureLocalBytes(
-      videoId: video.id,
-      videoUrl: video.videoUrl,
-      mimeType: video.mimeType,
-    );
+    if (!video.hasRemoteVideo) {
+      await CloudVideoMedia.ensureLocalBytes(
+        videoId: video.id,
+        videoUrl: video.videoUrl,
+        mimeType: video.mimeType,
+      );
+    }
     return LocalCommerceStore.getShopVideo(id) ?? video;
   }
 
@@ -378,53 +491,145 @@ class CatalogRepository {
     required List<String> productIds,
     String caption = '',
     String soundTitle = '',
+    Uint8List? thumbnailBytes,
   }) async {
     final user = _currentUser();
     if (user == null) throw StateError('Sign in to upload a video');
-    // Create metadata first so we have a stable id, then upload media.
-    final draft = await LocalCommerceStore.createShopVideo(
+    final prepared = await prepareShopVideoForSlowNetwork(
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    // Everything Publish waits on is local. Cloud writes (metadata, still,
+    // video chunks) run in the background so a slow link never pins the
+    // "Publishing video…" state.
+    String? thumbUrl;
+    if (thumbnailBytes != null && thumbnailBytes.isNotEmpty) {
+      final data = 'data:image/jpeg;base64,${base64Encode(thumbnailBytes)}';
+      try {
+        thumbUrl = await LocalBlobStore.putDataUrl(data);
+      } catch (_) {
+        thumbUrl = data;
+      }
+    }
+    final video = await LocalCommerceStore.createShopVideo(
       author: user,
       productIds: productIds,
       caption: caption,
       soundTitle: soundTitle,
-      mimeType: mimeType,
+      mimeType: prepared.mimeType,
+      thumbnailUrl: thumbUrl,
+      syncCloud: false,
     );
     await ProductDemoVideoStore.save(
-      productId: draft.id,
-      bytes: bytes,
-      mimeType: mimeType,
+      productId: video.id,
+      bytes: prepared.bytes,
+      mimeType: prepared.mimeType,
     );
-    final remoteUrl = await CloudVideoMedia.publish(
-      videoId: draft.id,
-      bytes: bytes,
-      mimeType: mimeType,
-    );
-    final video = remoteUrl == null || remoteUrl.isEmpty
-        ? draft
-        : (await LocalCommerceStore.updateShopVideo(
-              draft.copyWith(videoUrl: remoteUrl),
-            )) ??
-            draft.copyWith(videoUrl: remoteUrl);
-    // Force metadata to cloud even if media publish failed (other devices
-    // still see the card; media hydrates when bytes become available).
-    try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
-    } catch (_) {}
-    // Post new videos to the vertical timeline feed.
+    TimelinePost? post;
     try {
       Product? linked;
       for (final id in productIds) {
-        linked = await getProduct(id);
+        linked = LocalCommerceStore.getProduct(id);
         if (linked != null) break;
       }
-      await LocalCommerceStore.shareVideoToTimeline(
+      post = await LocalCommerceStore.shareVideoToTimeline(
         video: video,
         author: user,
         linkedProduct: linked,
         caption: caption,
+        syncCloud: false,
       );
     } catch (_) {}
+    unawaited(
+      _publishShopVideoInBackground(
+        videoId: video.id,
+        bytes: prepared.bytes,
+        mimeType: prepared.mimeType,
+        timelinePost: post,
+      ),
+    );
     return video;
+  }
+
+  Future<void> deleteShopVideo(String videoId) async {
+    final user = _currentUser();
+    if (user == null) throw StateError('Sign in to delete a video');
+    final video = LocalCommerceStore.getShopVideo(videoId);
+    if (video == null) throw StateError('Video not found');
+    if (video.authorId != user.id) {
+      throw StateError('You can only delete your own videos');
+    }
+
+    await LocalCommerceStore.deleteShopVideo(videoId);
+    await ProductDemoVideoStore.remove(videoId);
+    await _patchLikedVideo(videoId, false);
+    await _patchSavedVideo(videoId, false);
+    unawaited(_deleteShopVideoInBackground(videoId));
+  }
+
+  Future<void> _deleteShopVideoInBackground(String videoId) async {
+    try {
+      await CloudMedia.deleteShopVideoAssets(videoId: videoId);
+      await CloudVideoMedia.deletePublished(videoId: videoId);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('CatalogRepository._deleteShopVideoInBackground: $e');
+      }
+    }
+  }
+
+  /// Cloud side of Publish, in order: metadata doc with the inline still (so
+  /// Home on other phones shows the card at once), the timeline post, then
+  /// the clip itself, then the doc again with the playable URL.
+  Future<void> _publishShopVideoInBackground({
+    required String videoId,
+    required Uint8List bytes,
+    required String mimeType,
+    TimelinePost? timelinePost,
+  }) async {
+    if (!_publishing.add(videoId)) return;
+    ShopVideoUploadProgress.start(videoId);
+    try {
+      final draft = LocalCommerceStore.getShopVideo(videoId);
+      if (draft == null) return;
+      await LocalCommerceStore.syncShopVideoToCloud(draft);
+      _thumbSynced.add(videoId);
+      if (timelinePost != null) {
+        await LocalCommerceStore.syncTimelinePost(
+          timelinePost.copyWith(
+            videoThumbnailUrl: portableShopVideoThumb(draft.thumbnailUrl),
+          ),
+        );
+      }
+
+      final remoteUrl = await CloudVideoMedia.publish(
+        videoId: videoId,
+        bytes: bytes,
+        mimeType: mimeType,
+        onProgress: (f) => ShopVideoUploadProgress.report(videoId, f),
+      ).timeout(const Duration(minutes: 20), onTimeout: () => null);
+      if (remoteUrl == null || remoteUrl.isEmpty) return;
+
+      final current = LocalCommerceStore.getShopVideo(videoId);
+      if (current == null) return;
+      final patched = current.copyWith(videoUrl: remoteUrl);
+      await LocalCommerceStore.updateShopVideo(patched);
+      if (timelinePost != null) {
+        await LocalCommerceStore.syncTimelinePost(
+          timelinePost.copyWith(
+            videoUrl: remoteUrl,
+            videoThumbnailUrl: portableShopVideoThumb(patched.thumbnailUrl),
+          ),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('CatalogRepository._publishShopVideoInBackground: $e');
+      }
+    } finally {
+      _publishing.remove(videoId);
+      ShopVideoUploadProgress.finish(videoId);
+    }
   }
 
   Future<bool> toggleVideoLike(String videoId) async {
@@ -547,15 +752,22 @@ class CatalogRepository {
         // Enrich existing posts with remote videoUrl when missing.
         for (final entry in byId.entries.toList()) {
           final post = entry.value;
-          if (!post.isLivePost &&
-              post.videoId == video.id &&
-              (post.videoUrl == null || post.videoUrl!.isEmpty) &&
-              video.videoUrl != null &&
-              video.videoUrl!.isNotEmpty) {
-            byId[entry.key] = post.copyWith(
-              type: 'video',
-              videoUrl: video.videoUrl,
-            );
+          if (!post.isLivePost && post.videoId == video.id) {
+            final needUrl = (post.videoUrl == null || post.videoUrl!.isEmpty) &&
+                video.videoUrl != null &&
+                video.videoUrl!.isNotEmpty;
+            final needThumb = (post.videoThumbnailUrl == null ||
+                    post.videoThumbnailUrl!.isEmpty) &&
+                video.thumbnailUrl != null &&
+                video.thumbnailUrl!.isNotEmpty;
+            if (needUrl || needThumb) {
+              byId[entry.key] = post.copyWith(
+                type: 'video',
+                videoUrl: needUrl ? video.videoUrl : post.videoUrl,
+                videoThumbnailUrl:
+                    needThumb ? video.thumbnailUrl : post.videoThumbnailUrl,
+              );
+            }
           }
         }
         continue;
@@ -573,6 +785,7 @@ class CatalogRepository {
         type: 'video',
         videoId: video.id,
         videoUrl: video.videoUrl,
+        videoThumbnailUrl: video.thumbnailUrl,
         productId: linked?.id ??
             (video.productIds.isNotEmpty ? video.productIds.first : video.id),
         productName: linked?.name ??
@@ -672,27 +885,66 @@ class CatalogRepository {
     );
   }
 
-  Future<List<Promotion>> listPromotions(String placement) async {
+  Future<List<PurchaseOffer>> listPurchaseOffers() async {
+    if (!CloudStore.useNetwork) {
+      return LocalPurchaseOfferStore.all();
+    }
     try {
       final res = await _api
           .get(
             '/api/promotions',
-            queryParameters: {'placement': placement},
+            queryParameters: {'placement': 'offers'},
           )
           .timeout(const Duration(seconds: 4));
       final data = ApiResponse.decode(res.data);
-      if (data == null) return const [];
-      final list = data is List
-          ? data
-          : (data is Map && data['promotions'] is List)
-              ? data['promotions'] as List
-              : <dynamic>[];
-      return list
-          .map((e) => Promotion.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {
-      return const [];
+      if (data != null) {
+        final list = data is List
+            ? data
+            : (data is Map && data['promotions'] is List)
+                ? data['promotions'] as List
+                : <dynamic>[];
+        final remote = list
+            .map(
+              (e) =>
+                  PurchaseOffer.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
+            .where((o) => o.id.isNotEmpty && o.title.isNotEmpty)
+            .toList();
+        await LocalPurchaseOfferStore.mergeRemote(remote);
+      }
+    } catch (_) {}
+    await LocalPurchaseOfferStore.pullCloud();
+    return LocalPurchaseOfferStore.all();
+  }
+
+  Future<List<Promotion>> listPromotions(String placement) async {
+    if (CloudStore.useNetwork) {
+      try {
+        final res = await _api
+            .get(
+              '/api/promotions',
+              queryParameters: {'placement': placement},
+            )
+            .timeout(const Duration(seconds: 4));
+        final data = ApiResponse.decode(res.data);
+        if (data != null) {
+          final list = data is List
+              ? data
+              : (data is Map && data['promotions'] is List)
+                  ? data['promotions'] as List
+                  : <dynamic>[];
+          final remote = list
+              .map(
+                (e) => Promotion.fromJson(Map<String, dynamic>.from(e as Map)),
+              )
+              .where((p) => p.id.isNotEmpty && p.title.isNotEmpty)
+              .toList();
+          await LocalPromotionStore.mergeRemote(remote);
+        }
+      } catch (_) {}
+      await LocalPromotionStore.pullCloud();
     }
+    return LocalPromotionStore.forPlacement(placement);
   }
 
   Future<bool> followSeller(String sellerId) async {

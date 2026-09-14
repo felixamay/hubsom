@@ -1,14 +1,21 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../models/live_gift.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
+import '../services/cloud_media.dart';
 import '../services/cloud_store.dart';
 import '../services/gift_store.dart';
+import '../services/live_chat_store.dart';
+import '../services/live_viewer_identity.dart';
+import '../services/local_blob_store.dart';
 import '../services/local_commerce_store.dart';
+import '../services/local_notification_store.dart';
 import '../services/local_store.dart';
+import '../services/shop_video_cloud.dart';
 import 'auth_repository.dart';
 
 class LiveRepository {
@@ -30,8 +37,40 @@ class LiveRepository {
 
   Future<void> _syncStream(LiveStream stream) async {
     try {
-      await CloudStore.upsertDocs(CloudStore.streams, [stream.toJson()]);
+      final json = stream.toJson();
+      final portableCover = await _portableCover(stream.id, stream.cover);
+      if (portableCover.isNotEmpty) json['cover'] = portableCover;
+      await CloudStore.upsertDocs(CloudStore.streams, [json]);
     } catch (_) {}
+  }
+
+  /// Returns a cover URL that every device can load.
+  ///
+  /// A `hubsom-blob://` ref exists only in this browser's IndexedDB; we resolve
+  /// it to a data URL and either inline it (small images) or push it to Storage
+  /// (large images). HTTP(S) URLs are returned unchanged.
+  Future<String> _portableCover(String streamId, String raw) async {
+    if (raw.isEmpty) return raw;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final dataUrl =
+        LocalBlobStore.isRef(raw) ? LocalBlobStore.resolve(raw) : raw;
+    if (dataUrl == null || dataUrl.isEmpty) return '';
+    if (!dataUrl.startsWith('data:image')) return '';
+    // Small enough to embed inline inside the Firestore doc.
+    if (dataUrl.length <= shopVideoInlineThumbMaxChars) return dataUrl;
+    // Too large to inline — push to Storage and store the https URL instead.
+    try {
+      final comma = dataUrl.indexOf(',');
+      if (comma < 0) return '';
+      final bytes = base64Decode(dataUrl.substring(comma + 1));
+      final url = await CloudMedia.uploadLiveCover(
+        streamId: streamId,
+        bytes: Uint8List.fromList(bytes),
+      );
+      return url ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<List<LiveStream>> listStreams({String? status}) async {
@@ -84,13 +123,11 @@ class LiveRepository {
   }
 
   Future<LiveStream?> _cloudStream(String id) async {
+    // Read the one doc. Listing the whole collection to find it made opening a
+    // live show slower the more shows had ever been created.
     try {
-      final rows = await CloudStore.listDocs(CloudStore.streams);
-      for (final row in rows) {
-        if ('${row['id']}' == id) {
-          return LiveStream.fromJson(row);
-        }
-      }
+      final row = await CloudStore.getDoc(CloudStore.streams, id);
+      if (row != null && row.isNotEmpty) return LiveStream.fromJson(row);
     } catch (_) {}
     return null;
   }
@@ -126,7 +163,17 @@ class LiveRepository {
     }
 
     if (joinAsViewer && local != null && local.isLive) {
-      local = await LocalCommerceStore.joinViewer(id) ?? local;
+      final user = _user;
+      final before = local.viewerCount;
+      local = await LocalCommerceStore.joinViewer(
+            id,
+            viewerId: LiveViewerIdentity.current(userId: user?.id),
+            isHost: LiveViewerIdentity.isHost(local, user),
+          ) ??
+          local;
+      // Only push when this join actually changed the audience, so re-entering
+      // a room costs nothing.
+      if (local.viewerCount != before) await _syncStream(local);
     }
     return local;
   }
@@ -137,7 +184,10 @@ class LiveRepository {
       final data = ApiResponse.asMap(res.data);
       final streamMap = data?['stream'] as Map? ?? data;
       if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        final stream =
+            LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        await LocalNotificationStore.notifySellerWentLive(stream);
+        return stream;
       }
     } catch (_) {
       // fall through to local engine
@@ -145,10 +195,15 @@ class LiveRepository {
 
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+    final cover = '${body['cover'] ?? ''}'.trim();
+    if (cover.isEmpty) {
+      throw StateError('Add a thumbnail for Watch live and Live now');
+    }
     final stream = await LocalCommerceStore.createStream(
       user: user,
       title: body['title'] as String? ?? 'Hubsom Live Show',
       description: body['description'] as String? ?? '',
+      cover: cover,
       productIds: (body['productIds'] as List?)?.cast<String>() ?? const [],
       productQuantities: parseProductQuantities(body['productQuantities']),
       pinnedProductId: body['pinnedProductId'] as String?,
@@ -160,6 +215,7 @@ class LiveRepository {
       multiHost: body['multiHost'] as bool? ?? false,
     );
     await _syncStream(stream);
+    await LocalNotificationStore.notifySellerWentLive(stream);
     return stream;
   }
 
@@ -277,8 +333,27 @@ class LiveRepository {
     } catch (_) {
       // fall through
     }
-    return LocalCommerceStore.listChat(streamId);
+
+    // Chat used to be read from this device only, so a viewer never saw anyone
+    // else's messages. Merge in what the room has actually said.
+    final local = LocalCommerceStore.listChat(streamId);
+    try {
+      final cloud = await LiveChatStore.listForStream(streamId);
+      if (cloud.isEmpty) return local;
+      final merged = LiveChatStore.merge(local, cloud);
+      await LocalCommerceStore.cacheChat(streamId, merged);
+      return merged;
+    } catch (_) {
+      return local;
+    }
   }
+
+  /// Pushes the room's chat as it is written, so messages land without waiting
+  /// for the next refresh.
+  Stream<List<ChatMessage>> watchChat(String streamId) =>
+      LiveChatStore.watchForStream(streamId);
+
+  bool get canWatchChat => LiveChatStore.canWatch;
 
   Future<ChatMessage> sendChat(String streamId, String text) async {
     try {
@@ -296,6 +371,8 @@ class LiveRepository {
     }
     final user = _user;
     if (user == null) throw AuthException('Sign in required');
+    // Publishing to the room happens inside sendChat, so bid and auction
+    // notices reach everyone too.
     return LocalCommerceStore.sendChat(
       streamId: streamId,
       user: user,

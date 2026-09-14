@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../widgets/hubsom_logo.dart';
+import '../../widgets/hubsom_phone_app_bar.dart';
 import '../../widgets/responsive_scaffold.dart';
 
 /// Footer: Home / Categories / Sell / Timeline / Dashboard
@@ -42,18 +43,29 @@ class MainShell extends ConsumerWidget {
     ),
   ];
 
-  /// Browse-only links guests may see. Sell is signed-in only.
+  /// Browse links everyone may see. Sell and Dashboard stay AuthGate locked.
   static const guestBrowseItems = <(String value, IconData icon, String label)>[
     ('live', Icons.videocam_outlined, 'Live'),
     ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('auctions', Icons.gavel, 'Auctions'),
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
+    ('sell', Icons.add_business_outlined, 'Sellers Dashboard'),
+    ('dashboard', Icons.insights_outlined, 'Dashboard'),
+    ('contact', Icons.mail_outline, 'Contact us'),
   ];
 
-  static const signedInBrowseItems = <(String value, IconData icon, String label)>[
-    ...guestBrowseItems,
-    ('sell', Icons.add_business_outlined, 'Sell'),
-  ];
+  static const signedInBrowseItems = guestBrowseItems;
+
+  static List<String> footerLabels({required bool signedIn}) =>
+      _tabs.map((t) => t.label).toList();
+
+  /// Live / inbox icons move into ☰ below this width so Search never
+  /// sits on top of the Hubsom wordmark on large phones.
+  static bool inlineHeaderExtras(double width) =>
+      HubsomPhoneAppBar.inlineExtras(width);
+
+  static Widget phoneTitle({required double width}) =>
+      HubsomPhoneAppBar.title(width: width);
 
   static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
@@ -73,13 +85,7 @@ class MainShell extends ConsumerWidget {
     required int shellIndex,
     required bool signedIn,
   }) {
-    if (signedIn) return shellIndex;
-    return switch (shellIndex) {
-      0 => 0,
-      1 => 1,
-      3 => 2,
-      _ => 0,
-    };
+    return shellIndex;
   }
 
   void _onFooterTap(
@@ -88,17 +94,7 @@ class MainShell extends ConsumerWidget {
     int visibleIndex, {
     required bool signedIn,
   }) {
-    if (signedIn) {
-      _onTap(context, ref, visibleIndex);
-      return;
-    }
-    final shellIndex = switch (visibleIndex) {
-      0 => 0,
-      1 => 1,
-      2 => 3,
-      _ => 0,
-    };
-    _onTap(context, ref, shellIndex);
+    _onTap(context, ref, visibleIndex);
   }
 
   void _onTap(BuildContext context, WidgetRef ref, int index) {
@@ -129,6 +125,8 @@ class MainShell extends ConsumerWidget {
       'auctions' => '/auctions',
       'flash' => '/flash-sales',
       'sell' => '/sell',
+      'dashboard' => '/dashboard',
+      'contact' => '/contact',
       'account' => '/account',
       'profile' => '/account/profile',
       'saved' => '/account/saved',
@@ -240,26 +238,11 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartCountProvider);
     final unreadMessages = ref.watch(unreadMessagesCountProvider);
+    final unreadNotifications = ref.watch(unreadNotificationsCountProvider);
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
     final menu = _buildMenu(signedIn: signedIn);
-    final footerTabs = signedIn
-        ? _tabs
-        : const [
-            (path: '/', label: 'Home', icon: Icons.home_outlined, selected: Icons.home),
-            (
-              path: '/categories',
-              label: 'Categories',
-              icon: Icons.grid_view_outlined,
-              selected: Icons.grid_view
-            ),
-            (
-              path: '/timeline',
-              label: 'Timeline',
-              icon: Icons.dynamic_feed_outlined,
-              selected: Icons.dynamic_feed
-            ),
-          ];
+    const footerTabs = _tabs;
     final selectedFooter = _visibleFooterIndex(
       shellIndex: navigationShell.currentIndex,
       signedIn: signedIn,
@@ -299,6 +282,7 @@ class MainShell extends ConsumerWidget {
                   _TopBar(
                     cartCount: cartCount,
                     unreadMessages: unreadMessages,
+                    unreadNotifications: unreadNotifications,
                     showMessages: signedIn,
                     menuEntries: menu,
                     onMenuSelected: (v) => _onMenuSelected(context, ref, v),
@@ -312,47 +296,22 @@ class MainShell extends ConsumerWidget {
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const HubsomLogo(height: 30, showWordmark: true),
-        actions: [
-          IconButton(
-            tooltip: 'Search',
-            onPressed: () => context.go('/marketplace'),
-            icon: const Icon(Icons.search),
-          ),
-          IconButton(
-            tooltip: 'Live',
-            onPressed: () => context.go('/live'),
-            icon: const Icon(Icons.videocam_outlined),
-          ),
-          if (signedIn)
-            IconButton(
-              tooltip: 'Messages',
-              onPressed: () => context.go('/messages'),
-              icon: Badge(
-                isLabelVisible: unreadMessages > 0,
-                label: Text('$unreadMessages'),
-                child: const Icon(Icons.chat_bubble_outline),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Cart',
-            onPressed: () => context.go('/cart'),
-            icon: Badge(
-              isLabelVisible: cartCount > 0,
-              label: Text('$cartCount'),
-              child: const Icon(Icons.shopping_bag_outlined),
-            ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Menu',
-            icon: const Icon(Icons.menu),
-            onSelected: (value) => _onMenuSelected(context, ref, value),
-            itemBuilder: (_) => menu,
-          ),
-          const SizedBox(width: 4),
-        ],
+      appBar: HubsomPhoneAppBar(
+        width: width,
+        signedIn: signedIn,
+        cartCount: cartCount,
+        unreadMessages: unreadMessages,
+        unreadNotifications: unreadNotifications,
+        menuEntries: menu,
+        onSearch: () => context.go('/marketplace'),
+        onLive: () => context.go('/live'),
+        onNotifications: () => context.go('/notifications'),
+        onMessages: () => context.go('/messages'),
+        onCart: () => context.go('/cart'),
+        onMenuSelected: (value) => _onMenuSelected(context, ref, value),
       ),
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
@@ -376,6 +335,7 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.cartCount,
     required this.unreadMessages,
+    required this.unreadNotifications,
     required this.showMessages,
     required this.menuEntries,
     required this.onMenuSelected,
@@ -383,6 +343,7 @@ class _TopBar extends StatelessWidget {
 
   final int cartCount;
   final int unreadMessages;
+  final int unreadNotifications;
   final bool showMessages;
   final List<PopupMenuEntry<String>> menuEntries;
   final ValueChanged<String> onMenuSelected;
@@ -414,6 +375,16 @@ class _TopBar extends StatelessWidget {
                 icon: const Icon(Icons.videocam_outlined),
                 tooltip: 'Live',
               ),
+              if (showMessages)
+                IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: () => context.go('/notifications'),
+                  icon: Badge(
+                    isLabelVisible: unreadNotifications > 0,
+                    label: Text('$unreadNotifications'),
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                ),
               if (showMessages)
                 IconButton(
                   tooltip: 'Messages',

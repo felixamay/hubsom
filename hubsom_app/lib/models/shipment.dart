@@ -105,6 +105,7 @@ class Shipment extends Equatable {
     this.assignedHuberName,
     this.offers = const [],
     this.notes,
+    this.offeredFeeGhs,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -120,8 +121,13 @@ class Shipment extends Equatable {
   final String? assignedHuberName;
   final List<DeliveryOffer> offers;
   final String? notes;
+  /// Seller-set payout shown to riders on the offer.
+  final double? offeredFeeGhs;
   final String createdAt;
   final String updatedAt;
+
+  bool get hasRiderOfferDetails =>
+      (offeredFeeGhs ?? 0) > 0 && destination.hasCustomerContact;
 
   factory Shipment.fromJson(Map<String, dynamic> json) => Shipment(
         id: json['id'] as String,
@@ -143,6 +149,7 @@ class Shipment extends Equatable {
                 .toList() ??
             const [],
         notes: json['notes'] as String?,
+        offeredFeeGhs: (json['offeredFeeGhs'] as num?)?.toDouble(),
         createdAt: json['createdAt'] as String? ?? '',
         updatedAt: json['updatedAt'] as String? ?? '',
       );
@@ -153,6 +160,9 @@ class Shipment extends Equatable {
     String? assignedHuberName,
     List<DeliveryOffer>? offers,
     String? updatedAt,
+    OrderShipping? destination,
+    double? offeredFeeGhs,
+    String? notes,
   }) =>
       Shipment(
         id: id,
@@ -160,12 +170,13 @@ class Shipment extends Equatable {
         createdByUserId: createdByUserId,
         orderIds: orderIds,
         items: items,
-        destination: destination,
+        destination: destination ?? this.destination,
         status: status ?? this.status,
         assignedHuberId: assignedHuberId ?? this.assignedHuberId,
         assignedHuberName: assignedHuberName ?? this.assignedHuberName,
         offers: offers ?? this.offers,
-        notes: notes,
+        notes: notes ?? this.notes,
+        offeredFeeGhs: offeredFeeGhs ?? this.offeredFeeGhs,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -182,6 +193,7 @@ class Shipment extends Equatable {
         if (assignedHuberName != null) 'assignedHuberName': assignedHuberName,
         'offers': offers.map((e) => e.toJson()).toList(),
         if (notes != null) 'notes': notes,
+        if (offeredFeeGhs != null) 'offeredFeeGhs': offeredFeeGhs,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

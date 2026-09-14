@@ -160,6 +160,15 @@ class SellerRepository {
       );
     }
     final priceGhs = (body['priceGhs'] as num?)?.toDouble() ?? 0;
+    final shipmentFeeGhs = (body['shipmentFeeGhs'] as num?)?.toDouble() ?? 0;
+    if (shipmentFeeGhs < 0) {
+      throw AuthException('Shipment fee cannot be negative');
+    }
+    final outOfRegionFee = _parseOutOfRegionFee(body);
+    if (outOfRegionFee < 0) {
+      throw AuthException('Out of region shipment fee cannot be negative');
+    }
+    final zoneCities = _parseZoneCities(body);
 
     // Always write the local catalog first so Go live can see the product even
     // when Firebase Hosting has no /api/products backend.
@@ -171,13 +180,16 @@ class SellerRepository {
         description: body['description'] as String? ?? '',
         category: body['category'] as String? ?? 'miscellaneous',
         priceGhs: priceGhs,
+        shipmentFeeGhs: shipmentFeeGhs,
+        shipmentZoneCities: zoneCities,
+        outOfRegionShipmentFeeGhs: outOfRegionFee,
         compareAtGhs: flashSale != null ? priceGhs : null,
         stock: stock,
         images: images,
-        supports: (body['supports'] as List?)?.cast<String>() ??
-            const ['buy-now', 'store-listing', 'live-selling', 'live-auction'],
+        supports: (body['supports'] as List?)?.cast<String>(),
         hasDemoVideo: hasDemoVideo,
         flashSale: flashSale,
+        auctionOnly: body['auctionOnly'] == true,
       );
     } catch (e) {
       final message = '$e';
@@ -310,12 +322,30 @@ class SellerRepository {
     }
     final nextPrice =
         (body['priceGhs'] as num?)?.toDouble() ?? existing.priceGhs;
+    final nextShipmentFee = body.containsKey('shipmentFeeGhs')
+        ? (body['shipmentFeeGhs'] as num?)?.toDouble() ?? 0
+        : existing.shipmentFeeGhs;
+    if (nextShipmentFee < 0) {
+      throw AuthException('Shipment fee cannot be negative');
+    }
+    final nextOutOfRegion = body.containsKey('outOfRegionShipmentFeeGhs')
+        ? _parseOutOfRegionFee(body)
+        : existing.outOfRegionShipmentFeeGhs;
+    if (nextOutOfRegion < 0) {
+      throw AuthException('Out of region shipment fee cannot be negative');
+    }
+    final nextZoneCities = body.containsKey('shipmentZoneCities')
+        ? _parseZoneCities(body)
+        : existing.shipmentZoneCities;
 
     final updated = existing.copyWith(
       name: name,
       description: body['description'] as String? ?? existing.description,
       category: body['category'] as String? ?? existing.category,
       priceGhs: nextPrice,
+      shipmentFeeGhs: nextShipmentFee,
+      shipmentZoneCities: nextZoneCities,
+      outOfRegionShipmentFeeGhs: nextOutOfRegion,
       compareAtGhs: nextFlash != null ? nextPrice : existing.compareAtGhs,
       stock: nextStock,
       images: images,
@@ -325,6 +355,9 @@ class SellerRepository {
       flashSale: nextFlash,
       clearFlashSale: clearFlash,
       slug: slug.isEmpty ? existing.slug : slug,
+      auctionOnly: body.containsKey('auctionOnly')
+          ? body['auctionOnly'] == true
+          : existing.auctionOnly,
     );
 
     try {
@@ -408,7 +441,10 @@ class SellerRepository {
     final user = _user;
     if (user == null) return const [];
     final seller = await LocalCommerceStore.ensureSellerForUser(user);
-    final local = LocalCommerceStore.listProducts(sellerId: seller.id);
+    final local = LocalCommerceStore.listProducts(
+      sellerId: seller.id,
+      includeAuctionLots: true,
+    );
 
     try {
       final remoteRows = await CloudStore.listDocs(CloudStore.products);
@@ -433,6 +469,26 @@ class SellerRepository {
   Future<Map<String, dynamic>> social(String sellerId) async {
     final res = await _api.get('/api/sellers/$sellerId/social');
     return ApiResponse.asMap(res.data) ?? {};
+  }
+
+  List<String> _parseZoneCities(Map<String, dynamic> body) {
+    final raw = body['shipmentZoneCities'];
+    if (raw is! List) return const [];
+    final seen = <String>{};
+    final cities = <String>[];
+    for (final item in raw) {
+      final name = '$item'.trim();
+      if (name.isEmpty) continue;
+      final key = name.toLowerCase();
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      cities.add(name);
+    }
+    return cities;
+  }
+
+  double _parseOutOfRegionFee(Map<String, dynamic> body) {
+    return (body['outOfRegionShipmentFeeGhs'] as num?)?.toDouble() ?? 0;
   }
 
   FlashSale? _parseFlashSale(Map<String, dynamic> body) {

@@ -277,6 +277,10 @@ class LiveStream extends Equatable {
   /// Open bidding on a show that is actually live — closed / unsold lots stay off Auctions.
   bool get isLiveAuction => isLive && auction != null && auction!.isOpen;
 
+  /// Clock is running or the host can still extend — otherwise treat as a fixed-price sale.
+  bool get hasActiveAuction =>
+      auction != null && (auction!.isOpen || auction!.awaitingExtend);
+
   /// Remaining units for sale on this show. Falls back to [fallback] for older streams.
   int offeredQty(String productId, {int fallback = 0}) {
     final qty = productQuantities[productId];
@@ -339,6 +343,7 @@ class LiveStream extends Equatable {
 
   LiveStream copyWith({
     String? status,
+    String? cover,
     int? viewerCount,
     int? peakViewers,
     String? endedAt,
@@ -357,7 +362,7 @@ class LiveStream extends Equatable {
         sellerId: sellerId,
         status: status ?? this.status,
         channelName: channelName,
-        cover: cover,
+        cover: cover ?? this.cover,
         viewerCount: viewerCount ?? this.viewerCount,
         peakViewers: peakViewers ?? this.peakViewers,
         startedAt: startedAt,

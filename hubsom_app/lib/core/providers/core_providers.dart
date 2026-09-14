@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/cart.dart';
@@ -6,6 +8,9 @@ import '../../models/product.dart';
 import '../../models/seller.dart';
 import '../../models/shop_video.dart';
 import '../../models/user.dart';
+import '../auth/idle_session.dart';
+import '../auth/passkey_bridge.dart';
+import '../auth/passkey_models.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/catalog_repository.dart';
 import '../repositories/huber_repository.dart';
@@ -16,9 +21,12 @@ import '../repositories/seller_repository.dart';
 import '../services/agora_service.dart';
 import '../services/api_client.dart';
 import '../services/cloud_store.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/location_service.dart';
+import '../services/shipment_fee.dart';
 import '../services/maps_service.dart';
+import '../services/local_notification_store.dart';
 import '../services/notification_service.dart';
 import '../services/payment_service.dart';
 
@@ -32,8 +40,15 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+final passkeyBridgeProvider = Provider<PasskeyBridge>(
+  (ref) => PasskeyBridge.instance,
+);
+
 final authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => AuthRepository(ref.watch(apiClientProvider)),
+  (ref) => AuthRepository(
+    ref.watch(apiClientProvider),
+    passkeys: ref.watch(passkeyBridgeProvider),
+  ),
 );
 
 final catalogRepositoryProvider = Provider<CatalogRepository>(
@@ -66,6 +81,18 @@ final unreadMessagesCountProvider = Provider<int>((ref) {
 
 /// Bump to refresh inbox / unread badge after send or read.
 final messagesTickProvider = StateProvider<int>((ref) => 0);
+
+/// Bump after a live-follow alert is written or marked read.
+final notificationsTickProvider = StateProvider<int>((ref) => 0);
+
+/// Unread in-app alerts for the signed-in user (header badge).
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  ref.watch(authStateProvider);
+  ref.watch(notificationsTickProvider);
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return 0;
+  return LocalNotificationStore.unreadCountFor(user.id);
+});
 
 final sellerRepositoryProvider = Provider<SellerRepository>(
   (ref) => SellerRepository(ref.watch(apiClientProvider)),
@@ -116,8 +143,15 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
   final AuthRepository _repo;
 
   Future<void> _hydrate() async {
+    if (await IdleSession.expireIfIdle()) {
+      state = const AsyncValue.data(null);
+      return;
+    }
     final local = _repo.currentUser();
     state = AsyncValue.data(local);
+    if (local != null) {
+      await IdleSession.touch();
+    }
     await CloudStore.hydrateLocalCache();
     if (local != null) {
       final fresh = await _repo.fetchProfile();
@@ -157,6 +191,7 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
       );
       state = AsyncValue.data(user);
     } catch (e, st) {
+      await _repo.invalidateSession();
       state = const AsyncValue.data(null);
       Error.throwWithStackTrace(e, st);
     }
@@ -166,6 +201,36 @@ class AuthController extends StateNotifier<AsyncValue<HubsomUser?>> {
     final user = await _repo.enableHuber(details: details);
     state = AsyncValue.data(user);
   }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) {
+    return _repo.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
+  Future<void> signInWithPasskey({String? email}) async {
+    state = const AsyncValue.loading();
+    try {
+      final user = await _repo.signInWithPasskey(email: email);
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = const AsyncValue.data(null);
+      Error.throwWithStackTrace(e, st);
+    }
+  }
+
+  Future<PasskeyRecord> registerPasskey() => _repo.registerPasskey();
+
+  Future<void> removePasskey(String credentialId) =>
+      _repo.removePasskey(credentialId);
+
+  List<PasskeyRecord> listPasskeys() => _repo.listPasskeys();
+
+  bool get passkeysSupported => _repo.passkeysSupported;
 
   Future<void> signOut() async {
     await _repo.signOut();
@@ -216,6 +281,7 @@ class CartController extends StateNotifier<List<CartItem>> {
           streamId: item.streamId ?? existing.streamId,
           name: item.name.isNotEmpty ? item.name : existing.name,
           priceGhs: item.priceGhs,
+          shipmentFeeGhs: item.shipmentFeeGhs,
           image: item.image ?? existing.image,
           category: item.category ?? existing.category,
         );
@@ -244,6 +310,7 @@ class CartController extends StateNotifier<List<CartItem>> {
       streamId: streamId,
       name: product.name,
       priceGhs: product.effectivePrice,
+      shipmentFeeGhs: product.minShipmentFeeGhs,
       image: product.images.isNotEmpty ? product.images.first : null,
       category: product.category,
     );
@@ -263,6 +330,7 @@ class CartController extends StateNotifier<List<CartItem>> {
         streamId: item.streamId ?? existing.streamId,
         name: item.name.isNotEmpty ? item.name : existing.name,
         priceGhs: item.priceGhs,
+        shipmentFeeGhs: item.shipmentFeeGhs,
         image: item.image ?? existing.image,
         category: item.category ?? existing.category,
       );
@@ -270,6 +338,42 @@ class CartController extends StateNotifier<List<CartItem>> {
     } else {
       state = [...state, item];
     }
+    await _persist();
+  }
+
+  Future<void> applyDestination({
+    String? city,
+    String? region,
+    double? latitude,
+    double? longitude,
+    GeoLocation? location,
+  }) async {
+    final lat = latitude ?? location?.latitude;
+    final lng = longitude ?? location?.longitude;
+    var changed = false;
+    final next = <CartItem>[];
+    for (final item in state) {
+      final product = LocalCommerceStore.getProduct(item.productId);
+      if (product == null) {
+        next.add(item);
+        continue;
+      }
+      final quote = ShipmentFee.quote(
+        product,
+        city: city,
+        region: region,
+        latitude: lat,
+        longitude: lng,
+      );
+      if ((quote.feeGhs - item.shipmentFeeGhs).abs() >= 0.001) {
+        changed = true;
+        next.add(item.copyWith(shipmentFeeGhs: quote.feeGhs));
+      } else {
+        next.add(item);
+      }
+    }
+    if (!changed) return;
+    state = next;
     await _persist();
   }
 
@@ -296,6 +400,9 @@ class CartController extends StateNotifier<List<CartItem>> {
   }
 
   double get subtotal => state.fold(0, (sum, e) => sum + e.lineTotal);
+  double get shipmentTotal =>
+      state.fold(0, (sum, e) => sum + e.shipmentLineTotal);
+  double get payableTotal => subtotal + shipmentTotal;
   int get count => state.fold(0, (sum, e) => sum + e.quantity);
 }
 
@@ -307,6 +414,24 @@ final productsProvider = FutureProvider.autoDispose
 
 final streamsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   return ref.watch(liveRepositoryProvider).listStreams();
+});
+
+/// Refreshes [streamsProvider] the moment the streams collection changes, so a
+/// seller going live shows up for users without waiting out a poll interval.
+///
+/// Watch this anywhere a live show is listed; it is a no-op when Firestore
+/// cannot push, and those screens keep their own slower refresh as a fallback.
+final liveStreamsPulseProvider = StreamProvider.autoDispose<void>((ref) {
+  final controller = StreamController<void>();
+  final sub = CloudStore.watchCollection(CloudStore.streams).listen((_) {
+    ref.invalidate(streamsProvider);
+    if (!controller.isClosed) controller.add(null);
+  });
+  ref.onDispose(() {
+    sub.cancel();
+    controller.close();
+  });
+  return controller.stream;
 });
 
 final promotionsProvider =

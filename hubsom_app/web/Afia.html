@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hubsom Admin — Afia portal">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="icon" type="image/png" href="/favicon.png"/>
+  <title>Hubsom Admin</title>
+  <script>
+    (function () {
+      var alreadyReloaded = false;
+      try { alreadyReloaded = sessionStorage.getItem('hubsom_sw_reloaded') === '1'; } catch (_) {}
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+        }).catch(function () {});
+      }
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (reg) { return reg.unregister(); })).then(function () {
+          if (alreadyReloaded || !regs.length) return;
+          try { sessionStorage.setItem('hubsom_sw_reloaded', '1'); } catch (_) {}
+          location.reload();
+        });
+      }).catch(function () {});
+      navigator.serviceWorker.register = function () {
+        return Promise.reject(new Error('Hubsom disables service workers so Safari cannot pin an old build'));
+      };
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+  <style>
+    html, body { height: 100%; margin: 0; background: #0A3D5C; }
+    #hubsom-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    #hubsom-boot[hidden] { display: none; }
+    #hubsom-boot h1 { margin: 0 0 8px; font-size: 28px; }
+    #hubsom-boot p { margin: 0; opacity: 0.85; }
+    #afia-door {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #0A3D5C;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    }
+    #afia-door[hidden] { display: none; }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border-radius: 28px;
+      padding: 32px 24px;
+      box-sizing: border-box;
+    }
+    h1 { margin: 0 0 6px; text-align: center; color: #0A3D5C; font-size: 28px; font-weight: 800; }
+    p { margin: 0 0 22px; text-align: center; color: #5b6b75; }
+    label { display: block; margin: 0 0 6px; font-weight: 700; color: #0A3D5C; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 0 0 14px;
+      padding: 13px 14px;
+      border: 1px solid #c5d4de;
+      border-radius: 14px;
+      font: inherit;
+    }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: #0A3D5C;
+      color: #fff;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    #afia-error { color: #b42318; min-height: 1.2em; margin: 0 0 12px; }
+  </style>
+</head>
+<body>
+  <div id="hubsom-boot" hidden>
+    <h1>Hubsom Admin</h1>
+    <p>Opening the Afia console…</p>
+  </div>
+  <div id="afia-door">
+    <form id="afia-form" class="card" autocomplete="on">
+      <h1>Hubsom Admin</h1>
+      <p>Afia console</p>
+      <label for="afia-email">Email</label>
+      <input id="afia-email" name="email" type="email" autocomplete="username" required>
+      <label for="afia-password">Password</label>
+      <input id="afia-password" name="password" type="password" autocomplete="current-password" required>
+      <p id="afia-error"></p>
+      <button type="submit">Open console</button>
+    </form>
+  </div>
+  <script src="/afia_gate.js"></script>
+  <script>hubsomAfiaStart();</script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

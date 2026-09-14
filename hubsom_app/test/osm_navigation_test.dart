@@ -55,6 +55,18 @@ void main() {
     final uri = MapsService.osmDirectionsUri(store, buyer);
     expect(uri.host, 'www.openstreetmap.org');
     expect(uri.queryParameters['route'], contains('5.55'));
+    final maps = MapsService.googleMapsDirectionsUri(to: buyer);
+    expect(maps.host, 'www.google.com');
+    expect(maps.path, '/maps/dir/');
+    expect(maps.queryParameters['destination'], '5.66,-0.02');
+    expect(maps.queryParameters['travelmode'], 'driving');
+    expect(maps.queryParameters.containsKey('origin'), isFalse);
+    final withOrigin = MapsService.googleMapsDirectionsUri(from: store, to: buyer);
+    expect(withOrigin.queryParameters['origin'], '5.55,-0.18');
+    expect(
+      MapsService.directionUris(to: buyer).first.host,
+      'www.google.com',
+    );
   });
 
   test('seller GPS pin is used for Huber pickup, not city center', () async {
@@ -133,6 +145,7 @@ void main() {
       orderIds: [order.id],
       sellerId: 'seller-gps',
       createdByUserId: 'seller-gps',
+      offeredFeeGhs: 25,
     );
     expect(shipment.destination.location?.latitude, closeTo(5.6667, 0.0001));
     expect(shipment.destination.location?.source, 'gps');

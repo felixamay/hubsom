@@ -7,6 +7,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/product_demo_video_picker.dart';
+import '../../core/services/shop_video_limits.dart';
+import '../../core/services/product_photo_compress.dart';
+import '../../core/services/product_photo_picker.dart';
+import '../../core/services/video_frame_thumb.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
@@ -25,17 +29,16 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   final _sound = TextEditingController();
   Uint8List? _bytes;
   String _mime = 'video/mp4';
-  List<Product> _catalog = const [];
+  Uint8List? _thumbBytes;
   final Set<String> _selected = {};
-  bool _loading = true;
   bool _busy = false;
+  bool _pickingThumb = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _selected.addAll(widget.preselectedProductIds);
-    _loadCatalog();
   }
 
   @override
@@ -45,46 +48,50 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
     super.dispose();
   }
 
-  Future<void> _loadCatalog() async {
-    setState(() => _loading = true);
-    try {
-      final products =
-          await ref.read(catalogRepositoryProvider).listProducts(limit: 80);
-      if (!mounted) return;
-      setState(() {
-        _catalog = products;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '$e';
-      });
-    }
-  }
-
   Future<void> _pickVideo() async {
     setState(() => _error = null);
     try {
-      final picked = await pickProductDemoVideo(maxSeconds: 15);
+      final picked = await pickProductDemoVideo(
+        maxSeconds: ShopVideoLimits.maxSeconds,
+      );
       if (picked == null) return;
       setState(() {
         _bytes = picked.bytes;
         _mime = picked.mimeType;
       });
+      if (_thumbBytes == null || _thumbBytes!.isEmpty) {
+        await _autoThumbnailFromVideo();
+      }
     } catch (e) {
       setState(() => _error = '$e');
     }
   }
 
+  Future<void> _autoThumbnailFromVideo() async {
+    final bytes = _bytes;
+    if (bytes == null || bytes.isEmpty) return;
+    try {
+      final frame = await captureShopVideoFrame(
+        bytes: bytes,
+        mimeType: _mime,
+      ).timeout(const Duration(seconds: 12), onTimeout: () => null);
+      if (!mounted || frame == null || frame.isEmpty) return;
+      setState(() => _thumbBytes = frame);
+    } catch (_) {}
+  }
+
   Future<void> _publish() async {
+    if (_busy) return;
     if (!ensureSignedIn(context, ref, message: 'Sign in to upload a video')) {
       return;
     }
     final bytes = _bytes;
     if (bytes == null || bytes.isEmpty) {
       setState(() => _error = 'Pick a short video first');
+      return;
+    }
+    if (_thumbBytes == null || _thumbBytes!.isEmpty) {
+      setState(() => _error = 'Add a thumbnail — pick the video again or upload a still');
       return;
     }
     if (_selected.isEmpty) {
@@ -96,12 +103,21 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
       _error = null;
     });
     try {
-      final video = await ref.read(catalogRepositoryProvider).createShopVideo(
+      final video = await ref
+          .read(catalogRepositoryProvider)
+          .createShopVideo(
             bytes: bytes,
             mimeType: _mime,
             productIds: _selected.toList(),
             caption: _caption.text.trim(),
             soundTitle: _sound.text.trim(),
+            thumbnailBytes: _thumbBytes,
+          )
+          .timeout(
+            const Duration(seconds: 90),
+            onTimeout: () => throw StateError(
+              'Saving your video took too long. Try a shorter clip or check storage space.',
+            ),
           );
       ref.invalidate(shopVideosProvider);
       ref.invalidate(productsProvider((category: null, q: null)));
@@ -115,14 +131,50 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
     }
   }
 
+  Future<void> _pickThumbnail() async {
+    if (_pickingThumb) return;
+    setState(() {
+      _error = null;
+      _pickingThumb = true;
+    });
+    try {
+      final picked = await pickProductPhotos(remaining: 1);
+      if (picked.isEmpty) return;
+      final compressed = await compressProductPhoto(
+        picked.first.bytes,
+        maxSide: 720,
+        quality: 74,
+      );
+      if (!mounted) return;
+      if (compressed.isEmpty) {
+        setState(() => _error = 'Could not read that photo. Try a JPEG or PNG.');
+        return;
+      }
+      setState(() => _thumbBytes = compressed);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _pickingThumb = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final catalogAsync = ref.watch(productsProvider((category: null, q: null)));
+    final catalog = catalogAsync.when(
+      data: (list) => list.whereType<Product>().toList(),
+      loading: () => const <Product>[],
+      error: (_, _) => const <Product>[],
+    );
+    final loadingCatalog = catalogAsync.isLoading && catalog.isEmpty;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Add video')),
-      body: _loading
+      body: loadingCatalog
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 Container(
                   width: double.infinity,
@@ -132,7 +184,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'This is not Add product. You are posting a video clip. Link existing products so watchers open the product page.',
+                    'This is not Add product. Post an MP4 clip up to 2 minutes so it plays on iPhone and Android. Link existing products so watchers open the product page.',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -141,7 +193,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                   onPressed: _busy ? null : _pickVideo,
                   icon: const Icon(Icons.video_library_outlined),
                   label: Text(
-                    _bytes == null ? 'Pick video (≤15s)' : 'Change video',
+                    _bytes == null ? ShopVideoLimits.pickLabel : 'Change video',
                   ),
                 ),
                 if (_bytes != null) ...[
@@ -154,6 +206,69 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 20),
+                Text(
+                  'Thumbnail',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Upload a still from the clip, or we grab one automatically when you pick the video.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                if (_thumbBytes != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            _thumbBytes!,
+                            width: 140,
+                            height: 200,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: IconButton(
+                            visualDensity: VisualDensity.compact,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.black54,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _busy || _pickingThumb
+                                ? null
+                                : () => setState(() => _thumbBytes = null),
+                            icon: const Icon(Icons.close, size: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_thumbBytes != null) const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy || _pickingThumb ? null : _pickThumbnail,
+                  icon: _pickingThumb
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.image_outlined),
+                  label: Text(
+                    _pickingThumb
+                        ? 'Preparing thumbnail…'
+                        : _thumbBytes == null
+                            ? 'Upload thumbnail'
+                            : 'Change thumbnail',
+                  ),
+                ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _caption,
@@ -185,10 +300,10 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
-                if (_catalog.isEmpty)
+                if (catalog.isEmpty)
                   const Text('No products available to link yet.')
                 else
-                  ..._catalog.map((p) {
+                  ...catalog.map((p) {
                     final selected = _selected.contains(p.id);
                     final thumb = p.images.isNotEmpty ? p.images.first : '';
                     return CheckboxListTile(
@@ -236,13 +351,34 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     style: TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _publish,
-                  child: Text(_busy ? 'Publishing video…' : 'Publish video'),
-                ),
               ],
             ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton(
+            onPressed: _busy ? null : _publish,
+            child: _busy
+                ? const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Text('Publishing video…'),
+                    ],
+                  )
+                : const Text('Publish video'),
+          ),
+        ),
+      ),
     );
   }
 }

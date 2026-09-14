@@ -191,10 +191,19 @@ class LocalStore {
   static String? get sessionToken => getString('sessionToken');
   static String? get userJson => getString('userJson');
 
+  static int? get lastActivityMs {
+    final raw = getString('lastActivityMs');
+    if (raw == null || raw.isEmpty) return null;
+    return int.tryParse(raw);
+  }
+
   static Future<void> setSessionToken(String? value) =>
       setString('sessionToken', value);
 
   static Future<void> setUserJson(String? value) => setString('userJson', value);
+
+  static Future<void> setLastActivityMs(int? value) =>
+      setString('lastActivityMs', value?.toString());
 
   /// Local credential vault: email → { salt, hash, userJson }
   static Map<String, dynamic> loadCredentialVault() {
@@ -249,5 +258,6 @@ class LocalStore {
   static Future<void> clearSession() async {
     await setSessionToken(null);
     await setUserJson(null);
+    await setLastActivityMs(null);
   }
 }

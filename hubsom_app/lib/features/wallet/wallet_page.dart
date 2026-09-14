@@ -4,15 +4,77 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
 import '../../core/services/gift_store.dart';
+import '../../core/services/payment_account_store.dart';
+import '../../core/services/withdrawal_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
+import '../../models/withdrawal_request.dart';
 import '../../widgets/gift_points_sheet.dart';
 
-class WalletPage extends ConsumerWidget {
+class WalletPage extends ConsumerStatefulWidget {
   const WalletPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WalletPage> createState() => _WalletPageState();
+}
+
+class _WalletPageState extends ConsumerState<WalletPage> {
+  final _amount = TextEditingController();
+  final _handle = TextEditingController();
+  String _rail = 'mtn-momo';
+  bool _busy = false;
+  String? _error;
+
+  static const _rails = <(String, String)>[
+    ('mtn-momo', 'MTN MoMo'),
+    ('telecel-cash', 'Telecel Cash'),
+    ('airteltigo-money', 'AirtelTigo Money'),
+  ];
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _handle.dispose();
+    super.dispose();
+  }
+
+  Future<void> _withdraw() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return;
+    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await PaymentAccountStore.withdraw(
+        user: user,
+        amountGhs: amount,
+        rail: _rail,
+        handle: _handle.text.trim(),
+      );
+      ref.read(authStateProvider.notifier).applyLocalUser(result.user);
+      if (!mounted) return;
+      _amount.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Withdrawal of ${formatGhs(result.request.amountGhs)} submitted',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e'.replaceFirst('Bad state: ', '').replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
     final hostEarnings =
         user == null ? 0.0 : GiftStore.pendingEarningsGhs(user);
@@ -33,7 +95,7 @@ class WalletPage extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Available balance',
+                  'Withdrawable balance',
                   style: TextStyle(color: Colors.white70),
                 ),
                 Text(
@@ -64,8 +126,8 @@ class WalletPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           const Text(
-            'Buy gift points to send roses, crowns, and more during live shows. '
-            'Pay with MoMo, card, or your Hubsom wallet.',
+            'This payment account is for withdrawals only. '
+            'It cannot receive product payments.',
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -83,13 +145,100 @@ class WalletPage extends ConsumerWidget {
                   : 'Received gifts & withdraw',
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Gift points are separate from your shopping wallet. '
-            'Pay with MoMo, Telecel, AirtelTigo, card, or deduct from wallet GHS.',
+          const SizedBox(height: 20),
+          Text(
+            'Withdraw',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
           ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final rail in _rails)
+                ChoiceChip(
+                  label: Text(rail.$2),
+                  selected: _rail == rail.$1,
+                  onSelected: _busy ? null : (_) => setState(() => _rail = rail.$1),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _handle,
+            keyboardType: TextInputType.phone,
+            enabled: !_busy,
+            decoration: const InputDecoration(labelText: 'MoMo number'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            enabled: !_busy,
+            decoration: const InputDecoration(labelText: 'Amount (GHS)'),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _busy || user == null ? null : _withdraw,
+            icon: const Icon(Icons.outbox_outlined),
+            label: Text(_busy ? 'Submitting…' : 'Withdraw'),
+          ),
+          ..._withdrawalHistory(user?.id),
         ],
       ),
     );
+  }
+
+  List<Widget> _withdrawalHistory(String? userId) {
+    if (userId == null) return const [];
+    final rows = WithdrawalStore.forUser(userId);
+    if (rows.isEmpty) return const [];
+    return [
+      const SizedBox(height: 28),
+      Text(
+        'Your withdrawals',
+        style: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      for (final row in rows.take(20)) _WithdrawalTile(request: row),
+    ];
+  }
+}
+
+class _WithdrawalTile extends StatelessWidget {
+  const _WithdrawalTile({required this.request});
+
+  final WithdrawalRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(formatGhs(request.amountGhs)),
+      subtitle: Text('${request.handle} · ${_railLabel(request.rail)}'),
+      trailing: Chip(
+        label: Text(request.isProcessed ? 'Processed' : 'Pending'),
+      ),
+    );
+  }
+
+  static String _railLabel(String rail) {
+    return switch (rail) {
+      'telecel-cash' => 'Telecel Cash',
+      'airteltigo-money' => 'AirtelTigo Money',
+      _ => 'MTN MoMo',
+    };
   }
 }

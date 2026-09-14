@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/services/cloud_video_media.dart';
 import '../core/services/product_demo_blob_url.dart';
 import '../core/services/product_demo_video_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import 'hubsom_image.dart';
 
 /// Web: play from local bytes (blob URL) and/or a real http(s) remote URL.
 ///
@@ -19,6 +21,7 @@ class ProductDemoVideoPlayer extends StatefulWidget {
     this.expand = false,
     this.borderRadius = 14,
     this.showPlayOverlay = true,
+    this.posterUrl,
   });
 
   final String productId;
@@ -28,6 +31,8 @@ class ProductDemoVideoPlayer extends StatefulWidget {
   final bool expand;
   final double borderRadius;
   final bool showPlayOverlay;
+  /// Still shown instantly while the first video bytes arrive.
+  final String? posterUrl;
 
   @override
   State<ProductDemoVideoPlayer> createState() => _ProductDemoVideoPlayerState();
@@ -109,49 +114,72 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       });
     }
 
-    final stored = await ProductDemoVideoStore.load(widget.productId);
-    if (!mounted || gen != _loadGen) return;
-
-    if (stored != null && stored.bytes.isNotEmpty) {
-      final blobUrl = await createDemoVideoObjectUrl(
-        bytes: stored.bytes,
-        mimeType: stored.mimeType.isEmpty ? 'video/mp4' : stored.mimeType,
-      );
-      if (!mounted || gen != _loadGen) {
-        revokeDemoVideoObjectUrl(blobUrl);
-        return;
-      }
-      _ownedBlobUrl = blobUrl;
-      await _attachController(
-        VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
-        gen: gen,
-      );
-      return;
-    }
-
+    // Stream https first. If that fails (old moov-at-end MP4, dead URL,
+    // Safari), pull Firestore chunks / Hive so the clip still plays on a
+    // new phone that never uploaded it.
     final remote = widget.remoteUrl?.trim();
     if (_isPlayableRemote(remote)) {
-      await _attachController(
-        VideoPlayerController.networkUrl(Uri.parse(remote!)),
+      final streamed = await _attachController(
+        VideoPlayerController.networkUrl(
+          Uri.parse(remote!),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+        ),
         gen: gen,
       );
-      return;
+      if (streamed) return;
     }
 
+    if (await _attachStored(gen)) return;
+
+    await CloudVideoMedia.ensureLocalBytes(
+      videoId: widget.productId,
+      videoUrl: widget.remoteUrl,
+      allowChunkFallbackForHttp: true,
+    );
+    if (!mounted || gen != _loadGen) return;
+    if (await _attachStored(gen)) return;
+
     if (mounted && gen == _loadGen) {
-      setState(() => _error = widget.expand ? null : 'No demo video');
+      setState(
+        () => _error = widget.expand
+            ? 'Video is still uploading from the seller\'s phone.\nCheck back shortly.'
+            : 'No demo video',
+      );
     }
   }
 
-  Future<void> _attachController(
+  Future<bool> _attachStored(int gen) async {
+    final stored = await ProductDemoVideoStore.load(widget.productId);
+    if (!mounted || gen != _loadGen) return false;
+    if (stored == null || stored.bytes.isEmpty) return false;
+    final blobUrl = await createDemoVideoObjectUrl(
+      bytes: stored.bytes,
+      mimeType: stored.mimeType.isEmpty ? 'video/mp4' : stored.mimeType,
+    );
+    if (!mounted || gen != _loadGen) {
+      revokeDemoVideoObjectUrl(blobUrl);
+      return false;
+    }
+    _ownedBlobUrl = blobUrl;
+    return _attachController(
+      VideoPlayerController.networkUrl(Uri.parse(blobUrl)),
+      gen: gen,
+    );
+  }
+
+  Future<bool> _attachController(
     VideoPlayerController controller, {
     required int gen,
   }) async {
     try {
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 20));
       if (!mounted || gen != _loadGen) {
         await controller.dispose();
-        return;
+        return false;
+      }
+      if (controller.value.hasError) {
+        await controller.dispose();
+        return false;
       }
       await controller.setLooping(true);
       // Start muted so a later autoplay play() is allowed by the browser.
@@ -167,15 +195,12 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
       if (widget.autoplay) {
         await _playMuted(controller);
       }
+      return true;
     } catch (_) {
       try {
         await controller.dispose();
       } catch (_) {}
-      if (mounted && gen == _loadGen) {
-        setState(
-          () => _error = widget.expand ? null : 'Could not play demo video',
-        );
-      }
+      return false;
     }
   }
 
@@ -236,6 +261,7 @@ class _ProductDemoVideoPlayerState extends State<ProductDemoVideoPlayer> {
         expand: widget.expand,
         borderRadius: widget.borderRadius,
         showPlayOverlay: widget.showPlayOverlay,
+        posterUrl: widget.posterUrl,
         onToggle: _onTapToggle,
       );
 }
@@ -252,6 +278,7 @@ class _DemoVideoScaffold extends StatelessWidget {
     required this.borderRadius,
     required this.showPlayOverlay,
     required this.onToggle,
+    this.posterUrl,
   });
 
   final String? error;
@@ -264,33 +291,48 @@ class _DemoVideoScaffold extends StatelessWidget {
   final double borderRadius;
   final bool showPlayOverlay;
   final VoidCallback onToggle;
+  final String? posterUrl;
 
   @override
   Widget build(BuildContext context) {
     if (error != null) {
+      final message = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
       return ColoredBox(
         color: Colors.black,
         child: expand
-            ? const SizedBox.expand()
-            : SizedBox(
-                height: 160,
-                child: Center(
-                  child: Text(
-                    error!,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ),
+            ? SizedBox.expand(child: message)
+            : SizedBox(height: 160, child: message),
       );
     }
     if (!ready || controller == null || controller!.value.hasError) {
+      final poster = posterUrl?.trim() ?? '';
       return ColoredBox(
         color: Colors.black,
-        child: Center(
-          child: CircularProgressIndicator(
-            color: expand ? Colors.white54 : HubsomColors.forest,
-            strokeWidth: expand ? 2 : 3,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (poster.isNotEmpty)
+              HubsomImage(
+                url: poster,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(color: Colors.black),
+              ),
+            Center(
+              child: CircularProgressIndicator(
+                color: expand ? Colors.white54 : HubsomColors.forest,
+                strokeWidth: expand ? 2 : 3,
+              ),
+            ),
+          ],
         ),
       );
     }

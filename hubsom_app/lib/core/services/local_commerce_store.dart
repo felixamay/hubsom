@@ -10,9 +10,15 @@ import '../../models/seller.dart';
 import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../models/user.dart';
+import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
+import 'live_chat_store.dart';
+import 'live_viewer_identity.dart';
+import 'local_blob_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'shop_video_cloud.dart';
+import 'shop_video_merge.dart';
 import 'storage_media.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
@@ -189,14 +195,20 @@ class LocalCommerceStore {
 
   // --- products ---
 
+  static List<Product> _allProducts() => _readList(_productsKey)
+      .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
+
   static List<Product> listProducts({
     String? category,
     String? q,
     String? sellerId,
+    bool includeAuctionLots = false,
   }) {
-    var list = _readList(_productsKey)
-        .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    var list = _allProducts();
+    if (!includeAuctionLots) {
+      list = list.where((p) => !p.isAuctionLot).toList();
+    }
     if (category != null && category.isNotEmpty) {
       list = list.where((p) => p.category == category).toList();
     }
@@ -218,7 +230,7 @@ class LocalCommerceStore {
   }
 
   static Product? getProduct(String idOrSlug) {
-    for (final p in listProducts()) {
+    for (final p in _allProducts()) {
       if (p.id == idOrSlug || p.slug == idOrSlug) return p;
     }
     return null;
@@ -230,18 +242,17 @@ class LocalCommerceStore {
     required String description,
     required String category,
     required double priceGhs,
+    double shipmentFeeGhs = 0,
+    List<String> shipmentZoneCities = const [],
+    double outOfRegionShipmentFeeGhs = 0,
     required int stock,
     List<String> images = const [],
-    List<String> supports = const [
-      'buy-now',
-      'store-listing',
-      'live-selling',
-      'live-auction',
-    ],
+    List<String>? supports,
     bool hasDemoVideo = false,
     String? demoVideoUrl,
     FlashSale? flashSale,
     double? compareAtGhs,
+    bool auctionOnly = false,
   }) async {
     if (images.length < 3) {
       throw StateError('Upload at least 3 product photos before publishing');
@@ -259,16 +270,27 @@ class LocalCommerceStore {
       description: description,
       category: category,
       priceGhs: priceGhs,
+      shipmentFeeGhs: shipmentFeeGhs < 0 ? 0 : shipmentFeeGhs,
+      shipmentZoneCities: shipmentZoneCities
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      outOfRegionShipmentFeeGhs:
+          outOfRegionShipmentFeeGhs < 0 ? 0 : outOfRegionShipmentFeeGhs,
       compareAtGhs: compareAtGhs,
       images: images,
       sellerId: seller.id,
       stock: stock,
-      supports: supports,
+      supports: supports ??
+          (auctionOnly
+              ? const ['live-auction']
+              : const ['buy-now', 'store-listing', 'live-selling']),
       hasDemoVideo: hasDemoVideo,
       demoVideoUrl: demoVideoUrl,
-      flashSale: flashSale,
+      flashSale: auctionOnly ? null : flashSale,
+      auctionOnly: auctionOnly,
     );
-    final products = listProducts();
+    final products = _allProducts();
     products.insert(0, product);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
     return getProduct(id) ?? product;
@@ -278,7 +300,7 @@ class LocalCommerceStore {
     if (product.images.length < 3) {
       throw StateError('Keep at least 3 product photos');
     }
-    final products = listProducts();
+    final products = _allProducts();
     final idx = products.indexWhere((p) => p.id == product.id);
     if (idx < 0) {
       throw StateError('Product not found');
@@ -289,7 +311,7 @@ class LocalCommerceStore {
   }
 
   static Future<void> deleteProduct(String productId) async {
-    final products = listProducts();
+    final products = _allProducts();
     products.removeWhere((p) => p.id == productId);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
 
@@ -375,20 +397,54 @@ class LocalCommerceStore {
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
     final auction = preferFresherAuction(local.auction, remote.auction);
     final preferRemoteEnded = !remote.isLive && local.isLive;
-    final viewers = remote.viewerCount > local.viewerCount
-        ? remote.viewerCount
-        : local.viewerCount;
+    // A viewer who cached this show before it started holds a non-live copy.
+    // Without this the cached status wins forever and the seller never shows as
+    // live on that device. Only safe while the show was never ended here.
+    final locallyEnded = (local.endedAt ?? '').trim().isNotEmpty;
+    final preferRemoteLive = remote.isLive && !local.isLive && !locallyEnded;
+    final takeRemoteStatus = preferRemoteEnded || preferRemoteLive;
+    // Take the cloud's count rather than the larger of the two: clamping
+    // upwards made the audience number monotonic, so a viewer leaving could
+    // never bring it back down. Peak stays a high-water mark below.
+    final viewers = remote.viewerCount;
     final products = <String>{...local.productIds, ...remote.productIds}.toList();
+    // Prefer the remote cover when the local copy is either empty or a
+    // device-only blob ref that no other phone can resolve. The remote cover
+    // travels as a data: URL or https URL so it works everywhere.
+    final cover = _bestCover(local.cover, remote.cover);
     return local.copyWith(
-      status: preferRemoteEnded ? remote.status : local.status,
+      status: takeRemoteStatus ? remote.status : local.status,
       endedAt: preferRemoteEnded ? remote.endedAt : local.endedAt,
+      cover: cover,
       viewerCount: viewers,
-      peakViewers: viewers > local.peakViewers ? viewers : local.peakViewers,
+      peakViewers: [viewers, local.peakViewers, remote.peakViewers]
+          .reduce((a, b) => a > b ? a : b),
       pinnedProductId: remote.pinnedProductId ?? local.pinnedProductId,
       productIds: products,
       auction: auction,
       replayAvailable: remote.replayAvailable || local.replayAvailable,
     );
+  }
+
+  /// Pick the most portable cover URL between [a] and [b].
+  ///
+  /// Preference order: https > data:image > the other, falling back to
+  /// whatever is non-empty. Device-only blob refs are treated as empty because
+  /// they cannot be resolved on any other device.
+  static String _bestCover(String a, String b) {
+    bool isPortable(String v) =>
+        v.isNotEmpty &&
+        !LocalBlobStore.isRef(v) &&
+        (v.startsWith('http://') ||
+            v.startsWith('https://') ||
+            v.startsWith('data:image'));
+    bool isHttp(String v) =>
+        v.startsWith('http://') || v.startsWith('https://');
+    if (isPortable(b) && (!isPortable(a) || (!isHttp(a) && isHttp(b)))) {
+      return b;
+    }
+    if (isPortable(a)) return a;
+    return b.isNotEmpty ? b : a;
   }
 
   static LiveStream? findStreamByAuction(String auctionId) {
@@ -407,7 +463,10 @@ class LocalCommerceStore {
         sellerId: s.sellerId,
         status: s.status,
         channelName: s.channelName,
-        cover: s.isLive ? StorageMedia.persistable(s.cover) : '',
+        // Keep any portable cover (https or data:image) so other devices can
+        // display the thumbnail. Only blob refs are device-only and must be
+        // dropped. Ended streams don't need a cover cached locally.
+        cover: s.isLive ? _portableCoverForCache(s.cover) : '',
         viewerCount: s.viewerCount,
         peakViewers: s.peakViewers,
         startedAt: s.startedAt,
@@ -484,6 +543,7 @@ class LocalCommerceStore {
     required HubsomUser user,
     required String title,
     String description = '',
+    required String cover,
     required List<String> productIds,
     Map<String, int>? productQuantities,
     String? pinnedProductId,
@@ -555,6 +615,11 @@ class LocalCommerceStore {
       );
     }
 
+    final persistedCover = await _persistLiveCover(cover);
+    if (persistedCover.isEmpty) {
+      throw StateError('Add a thumbnail for Watch live and Live now');
+    }
+
     final id = 'live-${_uuid.v4().substring(0, 8)}';
     final now = DateTime.now().toUtc().toIso8601String();
     final stream = LiveStream(
@@ -564,13 +629,10 @@ class LocalCommerceStore {
       sellerId: seller.id,
       status: 'live',
       channelName: 'hubsom-$id',
-      cover: StorageMedia.persistable(
-        getProduct(pin)?.images.isNotEmpty == true
-            ? getProduct(pin)!.images.first
-            : '',
-      ),
-      viewerCount: 1,
-      peakViewers: 1,
+      cover: persistedCover,
+      // The host is not in their own audience, so a new show starts at zero.
+      viewerCount: 0,
+      peakViewers: 0,
       startedAt: now,
       productIds: owned,
       productQuantities: quantities,
@@ -857,9 +919,20 @@ class LocalCommerceStore {
     return next;
   }
 
-  static Future<LiveStream?> joinViewer(String id) async {
+  /// Count [viewerId] into the audience, at most once per show.
+  ///
+  /// Re-entering the room — a seller stepping out to Home and back, say — must
+  /// not add another view, and the host is not part of their own audience.
+  static Future<LiveStream?> joinViewer(
+    String id, {
+    required String viewerId,
+    required bool isHost,
+  }) async {
     final s = getStream(id);
     if (s == null || !s.isLive) return s;
+    if (isHost || viewerId.isEmpty) return s;
+    if (LiveViewerIdentity.alreadyCounted(id, viewerId)) return s;
+    await LiveViewerIdentity.markCounted(id, viewerId);
     return updateStream(id, viewerCount: s.viewerCount + 1);
   }
 
@@ -1009,6 +1082,9 @@ class LocalCommerceStore {
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
+    try {
+      await AdminTreasuryStore.recordPaidOrder(order);
+    } catch (_) {}
     await updateStream(
       streamId,
       auction: auction.copyWith(status: 'sold', orderId: orderId),
@@ -1149,6 +1225,21 @@ class LocalCommerceStore {
     return list.reversed.toList();
   }
 
+  /// Store what the room has said so it survives a reload and is there before
+  /// the cloud answers. Takes newest-first, as [listChat] returns.
+  static Future<void> cacheChat(
+    String streamId,
+    List<ChatMessage> newestFirst,
+  ) async {
+    if (streamId.isEmpty) return;
+    final map = _chatMap();
+    final trimmed = newestFirst.length > LiveChatStore.maxMessages
+        ? newestFirst.sublist(0, LiveChatStore.maxMessages)
+        : newestFirst;
+    map[streamId] = trimmed.reversed.toList();
+    await _saveChat(map);
+  }
+
   static Future<ChatMessage> sendChat({
     required String streamId,
     required HubsomUser user,
@@ -1166,8 +1257,18 @@ class LocalCommerceStore {
     );
     final map = _chatMap();
     final list = <ChatMessage>[...(map[streamId] ?? const <ChatMessage>[]), msg];
-    map[streamId] = list;
+    map[streamId] = list.length > LiveChatStore.maxMessages
+        ? list.sublist(list.length - LiveChatStore.maxMessages)
+        : list;
     await _saveChat(map);
+    // Every kind of live message funnels through here — viewer chat, bid
+    // notices, auction results — so publishing here is what makes the room
+    // shared instead of each device talking to itself.
+    try {
+      await LiveChatStore.send(msg);
+    } catch (_) {
+      // The sender still sees their own message.
+    }
     return msg;
   }
 
@@ -1352,6 +1453,7 @@ class LocalCommerceStore {
     required HubsomUser author,
     Product? linkedProduct,
     String caption = '',
+    bool syncCloud = true,
   }) async {
     final post = TimelinePost(
       id: 'post-${_uuid.v4().substring(0, 8)}',
@@ -1361,6 +1463,7 @@ class LocalCommerceStore {
       type: 'video',
       videoId: video.id,
       videoUrl: video.videoUrl,
+      videoThumbnailUrl: video.thumbnailUrl,
       productId: linkedProduct?.id ??
           (video.productIds.isNotEmpty ? video.productIds.first : video.id),
       productName: linkedProduct?.name ??
@@ -1375,7 +1478,21 @@ class LocalCommerceStore {
           : caption.trim(),
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
-    return _insertTimelinePost(post);
+    return _insertTimelinePost(post, syncCloud: syncCloud);
+  }
+
+  /// Push a timeline post to Firestore (used after a video finishes publishing
+  /// so other phones get the playable URL and a portable thumbnail).
+  static Future<void> syncTimelinePost(TimelinePost post) async {
+    final rows = _readList(_timelineKey);
+    final idx = rows.indexWhere((e) => e is Map && '${e['id']}' == post.id);
+    if (idx >= 0) {
+      rows[idx] = post.toJson();
+      await _writeList(_timelineKey, rows);
+    }
+    try {
+      await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
+    } catch (_) {}
   }
 
   static Future<TimelinePost> shareLiveToTimeline({
@@ -1410,13 +1527,18 @@ class LocalCommerceStore {
     return _insertTimelinePost(post);
   }
 
-  static Future<TimelinePost> _insertTimelinePost(TimelinePost post) async {
+  static Future<TimelinePost> _insertTimelinePost(
+    TimelinePost post, {
+    bool syncCloud = true,
+  }) async {
     final rows = _readList(_timelineKey);
     rows.insert(0, post.toJson());
     await _writeList(_timelineKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
-    } catch (_) {}
+    if (syncCloud) {
+      try {
+        await CloudStore.upsertDocs(CloudStore.timelinePosts, [post.toJson()]);
+      } catch (_) {}
+    }
     return post;
   }
 
@@ -1478,27 +1600,14 @@ class LocalCommerceStore {
     try {
       final videos = await CloudStore.listDocs(CloudStore.shopVideos);
       if (videos.isNotEmpty) {
-        final byId = <String, Map<String, dynamic>>{
+        final local = [
           for (final v in _readList(_shopVideosKey))
-            if (v is Map) '${v['id']}': Map<String, dynamic>.from(v),
-        };
-        for (final v in videos) {
-          final id = '${v['id']}';
-          final incoming = Map<String, dynamic>.from(v);
-          final existing = byId[id];
-          if (existing != null) {
-            final merged = <String, dynamic>{...existing, ...incoming};
-            final localUrl = '${existing['videoUrl'] ?? ''}';
-            final remoteUrl = '${incoming['videoUrl'] ?? ''}';
-            if (remoteUrl.isEmpty && localUrl.isNotEmpty) {
-              merged['videoUrl'] = localUrl;
-            }
-            byId[id] = merged;
-          } else {
-            byId[id] = incoming;
-          }
-        }
-        await _writeList(_shopVideosKey, byId.values.toList());
+            if (v is Map) Map<String, dynamic>.from(v),
+        ];
+        await _writeList(
+          _shopVideosKey,
+          mergeShopVideoDocs(local: local, incoming: videos),
+        );
       }
     } catch (_) {}
   }
@@ -1536,7 +1645,7 @@ class LocalCommerceStore {
     } catch (_) {}
 
     // Refresh product rating aggregates locally.
-    final products = listProducts();
+    final products = _allProducts();
     final idx = products.indexWhere((p) => p.id == productId);
     if (idx >= 0) {
       final all = listReviews(productId);
@@ -1574,13 +1683,18 @@ class LocalCommerceStore {
     String soundTitle = '',
     String mimeType = 'video/mp4',
     String? videoUrl,
+    String? thumbnailUrl,
+    String? id,
+    bool syncCloud = true,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
     }
     final seller = await ensureSellerForUser(author);
     final video = ShopVideo(
-      id: 'vid-${_uuid.v4().substring(0, 10)}',
+      id: (id != null && id.trim().isNotEmpty)
+          ? id.trim()
+          : 'vid-${_uuid.v4().substring(0, 10)}',
       authorId: author.id,
       authorName: author.name,
       authorImage: author.image ?? seller.avatar,
@@ -1593,18 +1707,20 @@ class LocalCommerceStore {
       mimeType: mimeType,
       shareCount: 0,
       videoUrl: videoUrl,
+      thumbnailUrl: thumbnailUrl,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);
     rows.insert(0, video.toJson());
     await _writeList(_shopVideosKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
-    } catch (_) {}
+    if (syncCloud) await syncShopVideoToCloud(video);
     return video;
   }
 
-  static Future<ShopVideo?> updateShopVideo(ShopVideo video) async {
+  static Future<ShopVideo?> updateShopVideo(
+    ShopVideo video, {
+    bool syncCloud = true,
+  }) async {
     final rows = _readList(_shopVideosKey);
     final idx = rows.indexWhere((e) {
       if (e is! Map) return false;
@@ -1613,10 +1729,71 @@ class LocalCommerceStore {
     if (idx < 0) return null;
     rows[idx] = video.toJson();
     await _writeList(_shopVideosKey, rows);
-    try {
-      await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
-    } catch (_) {}
+    if (syncCloud) await syncShopVideoToCloud(video);
     return video;
+  }
+
+  /// Firestore copy of a shop video, with a thumbnail every phone can load.
+  static Future<void> syncShopVideoToCloud(ShopVideo video) async {
+    try {
+      await CloudStore.upsertDocs(
+        CloudStore.shopVideos,
+        [shopVideoCloudJson(video)],
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> deleteShopVideo(String videoId) async {
+    if (videoId.isEmpty) return;
+
+    final rows = _readList(_shopVideosKey);
+    rows.removeWhere((e) => e is Map && '${e['id']}' == videoId);
+    await _writeList(_shopVideosKey, rows);
+
+    final timeline = _readList(_timelineKey);
+    final removedPostIds = <String>[];
+    timeline.removeWhere((e) {
+      if (e is! Map) return false;
+      if ('${e['videoId'] ?? ''}' != videoId) return false;
+      removedPostIds.add('${e['id']}');
+      return true;
+    });
+    await _writeList(_timelineKey, timeline);
+
+    final comments = _readList(_commentsKey);
+    final removedCommentIds = <String>[];
+    comments.removeWhere((e) {
+      if (e is! Map) return false;
+      if ('${e['productId']}' != videoId) return false;
+      removedCommentIds.add('${e['id']}');
+      return true;
+    });
+    await _writeList(_commentsKey, comments);
+
+    final likes = _likesMap();
+    if (likes.containsKey(videoId)) {
+      likes.remove(videoId);
+      await _saveLikesMap(likes);
+    }
+
+    final saves = _videoSavesMap();
+    if (saves.containsKey(videoId)) {
+      saves.remove(videoId);
+      await _saveVideoSavesMap(saves);
+    }
+
+    try {
+      await CloudStore.deleteDoc(CloudStore.shopVideos, videoId);
+      for (final id in removedPostIds) {
+        if (id.isEmpty) continue;
+        await CloudStore.deleteDoc(CloudStore.timelinePosts, id);
+      }
+      for (final id in removedCommentIds) {
+        if (id.isEmpty) continue;
+        await CloudStore.deleteDoc(CloudStore.productComments, id);
+      }
+      await CloudStore.deleteDoc(CloudStore.productLikes, videoId);
+    } catch (_) {}
   }
 
   static Future<int> recordVideoShare(String videoId) async {
@@ -1681,6 +1858,27 @@ class LocalCommerceStore {
   }
 
   // --- helpers ---
+
+  /// A cover URL that survives being cached on this device AND loaded by
+  /// other devices. https and data:image pass through; device-only blob
+  /// refs are dropped (the portable version travels in Firestore).
+  static String _portableCoverForCache(String raw) {
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('data:image')) return raw;
+    return '';
+  }
+
+  /// Persist a seller-picked live thumbnail as a blob ref or short URL.
+  static Future<String> _persistLiveCover(String? raw) async {
+    final v = raw?.trim() ?? '';
+    if (v.isEmpty) return '';
+    if (StorageMedia.isInlineData(v)) {
+      final stored = await StorageMedia.externalizeTree(v);
+      return StorageMedia.persistable(stored is String ? stored : '');
+    }
+    return StorageMedia.persistable(v);
+  }
 
   static List<dynamic> _readList(String key) {
     final raw = LocalStore.getString(key);

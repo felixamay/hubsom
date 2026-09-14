@@ -59,6 +59,7 @@ void main() {
     return LocalCommerceStore.createStream(
       user: seller,
       title: 'Sunday live bargains',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
       auctionProductId: product.id,
@@ -285,6 +286,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Sell then auction',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       pinnedProductId: product.id,
     );
@@ -472,6 +474,7 @@ void main() {
     final stream = await LocalCommerceStore.createStream(
       user: seller,
       title: 'Last lot',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
       productIds: [product.id],
       productQuantities: {product.id: 1},
       pinnedProductId: product.id,

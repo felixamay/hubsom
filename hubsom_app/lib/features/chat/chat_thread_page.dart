@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
+import '../../core/support/support_chat.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../models/message.dart';
 
@@ -34,7 +35,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     setState(() {
       loading = true;
       error = null;
-      peerName = repo.peerName(widget.userId);
+      peerName = SupportChat.isSupportPeer(widget.userId)
+          ? SupportChat.displayName
+          : repo.peerName(widget.userId);
     });
     try {
       final list = await repo.thread(widget.userId);
@@ -108,7 +111,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final meId = ref.watch(authStateProvider).valueOrNull?.id;
     return Scaffold(
       appBar: AppBar(
-        title: Text(peerName.isEmpty ? 'Chat' : peerName),
+        title: Text(
+        SupportChat.isSupportPeer(widget.userId)
+            ? SupportChat.pageTitle
+            : (peerName.isEmpty ? 'Chat' : peerName),
+      ),
       ),
       body: Column(
         children: [

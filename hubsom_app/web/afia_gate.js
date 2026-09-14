@@ -1,0 +1,99 @@
+(function () {
+  var KEY = 'flutter.hubsom_afiaUnlockedEmail';
+  var EMAIL = 'felixames0808@gmail.com';
+  var HASH = 'ac668d772d82fb28c85601fb52fef2d4cf127147fced8701ac69fa9c70f78601';
+  var APP = '/afia';
+
+  function unlocked() {
+    try {
+      return JSON.parse(localStorage.getItem(KEY) || 'null') === EMAIL;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function sha256hex(text) {
+    var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf))
+      .map(function (b) { return b.toString(16).padStart(2, '0'); })
+      .join('');
+  }
+
+  function hideDoor() {
+    var door = document.getElementById('afia-door');
+    if (door) door.setAttribute('hidden', 'hidden');
+  }
+
+  function showDoor() {
+    var door = document.getElementById('afia-door');
+    if (door) door.removeAttribute('hidden');
+  }
+
+  function showBoot() {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.removeAttribute('hidden');
+  }
+
+  function hideBoot() {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.setAttribute('hidden', 'hidden');
+  }
+
+  function stayOnAfia() {
+    if (window.location.pathname !== APP) {
+      window.history.replaceState({}, '', APP);
+    }
+  }
+
+  function bindForm() {
+    var form = document.getElementById('afia-form');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = (document.getElementById('afia-email').value || '').trim().toLowerCase();
+      var password = document.getElementById('afia-password').value || '';
+      var err = document.getElementById('afia-error');
+      if (err) err.textContent = '';
+      sha256hex('afia-portal::' + password + '::hubsom').then(function (hash) {
+        if (email !== EMAIL || hash !== HASH) {
+          if (err) err.textContent = 'Email or password is not valid for this portal.';
+          return;
+        }
+        localStorage.setItem(KEY, JSON.stringify(EMAIL));
+        stayOnAfia();
+        hideDoor();
+        showBoot();
+        window.location.replace(APP);
+      }).catch(function () {
+        if (err) err.textContent = 'Could not open this portal. Try again.';
+      });
+    });
+  }
+
+  window.hubsomAfiaStart = function () {
+    var params = new URLSearchParams(window.location.search || '');
+    if (params.get('logout') === '1') {
+      localStorage.removeItem(KEY);
+      stayOnAfia();
+      hideBoot();
+      showDoor();
+      bindForm();
+      return;
+    }
+    stayOnAfia();
+    if (unlocked()) {
+      hideDoor();
+      showBoot();
+      return;
+    }
+    hideBoot();
+    showDoor();
+    bindForm();
+  };
+
+  window.addEventListener('flutter-first-frame', function () {
+    var boot = document.getElementById('hubsom-boot');
+    if (boot) boot.remove();
+    if (unlocked()) hideDoor();
+  });
+})();

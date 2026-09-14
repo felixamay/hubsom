@@ -198,6 +198,57 @@ class LocalHuberStore {
     return saveOrder(current.copyWith(status: status));
   }
 
+  static Future<Order> updateOrderDetails(
+    String orderId, {
+    String? status,
+    OrderShipping? shipping,
+  }) async {
+    final current = getOrder(orderId);
+    if (current == null) throw StateError('Order not found');
+    final nextShipping =
+        shipping == null ? current.shipping : resolveDestination(shipping);
+    final updated = await saveOrder(
+      current.copyWith(
+        status: status ?? current.status,
+        shipping: nextShipping,
+      ),
+    );
+    if (nextShipping != null) {
+      final now = DateTime.now().toUtc().toIso8601String();
+      for (final shipment in listShipments()) {
+        if (!shipment.orderIds.contains(orderId)) continue;
+        if (shipment.status == 'assigned' ||
+            shipment.status == 'shipped' ||
+            shipment.status == 'out_for_delivery' ||
+            shipment.status == 'delivered' ||
+            shipment.status == 'cancelled') {
+          continue;
+        }
+        await saveShipment(
+          shipment.copyWith(destination: nextShipping, updatedAt: now),
+        );
+      }
+    }
+    return updated;
+  }
+
+  static Future<Shipment> updateShipmentDetails(
+    String shipmentId, {
+    OrderShipping? destination,
+    double? offeredFeeGhs,
+  }) async {
+    final current = getShipment(shipmentId);
+    if (current == null) throw StateError('Shipment not found');
+    return saveShipment(
+      current.copyWith(
+        destination:
+            destination == null ? null : resolveDestination(destination),
+        offeredFeeGhs: offeredFeeGhs,
+        updatedAt: DateTime.now().toUtc().toIso8601String(),
+      ),
+    );
+  }
+
   static Future<void> syncOrdersForShipment(
     Shipment shipment,
     String orderStatus,
@@ -253,10 +304,38 @@ class LocalHuberStore {
     return shipment;
   }
 
+  static OrderShipping resolveDestination(OrderShipping shipping) {
+    final destPin = GhanaPlaces.resolve(
+      address: shipping.line1,
+      city: shipping.city,
+      region: shipping.region,
+      latitude: shipping.location?.latitude,
+      longitude: shipping.location?.longitude,
+    );
+    if (shipping.location != null) return shipping;
+    return OrderShipping(
+      recipientName: shipping.recipientName,
+      phone: shipping.phone,
+      line1: shipping.line1,
+      line2: shipping.line2,
+      city: shipping.city,
+      region: shipping.region,
+      notes: shipping.notes,
+      label: shipping.label,
+      location: GeoLocation(
+        latitude: destPin.latitude,
+        longitude: destPin.longitude,
+        source: 'place-fallback',
+      ),
+    );
+  }
+
   static Future<Shipment> createShipmentFromOrders({
     required List<String> orderIds,
     required String sellerId,
     required String createdByUserId,
+    double? offeredFeeGhs,
+    OrderShipping? destination,
   }) async {
     final orders = listOrders().where((o) => orderIds.contains(o.id)).toList();
     if (orders.isEmpty) {
@@ -292,31 +371,9 @@ class LocalHuberStore {
             source: 'map-pin',
           ),
         );
-    final destPin = GhanaPlaces.resolve(
-      address: shipping.line1,
-      city: shipping.city,
-      region: shipping.region,
-      latitude: shipping.location?.latitude,
-      longitude: shipping.location?.longitude,
-    );
-    final dest = shipping.location != null
-        ? shipping
-        : OrderShipping(
-            recipientName: shipping.recipientName,
-            phone: shipping.phone,
-            line1: shipping.line1,
-            line2: shipping.line2,
-            city: shipping.city,
-            region: shipping.region,
-            notes: shipping.notes,
-            label: shipping.label,
-            location: GeoLocation(
-              latitude: destPin.latitude,
-              longitude: destPin.longitude,
-              source: 'place-fallback',
-            ),
-          );
+    final dest = resolveDestination(destination ?? shipping);
     final now = DateTime.now().toUtc().toIso8601String();
+    final fromProducts = Order.shipmentFeeFor(orders);
     final created = await saveShipment(
       Shipment(
         id: 'shp_${_uuid.v4().replaceAll('-', '').substring(0, 10)}',
@@ -325,6 +382,8 @@ class LocalHuberStore {
         orderIds: orderIds,
         items: items,
         destination: dest,
+        offeredFeeGhs:
+            offeredFeeGhs ?? (fromProducts > 0 ? fromProducts : null),
         status: 'ready',
         createdAt: now,
         updatedAt: now,
@@ -388,9 +447,17 @@ class LocalHuberStore {
     }
     final now = DateTime.now().toUtc();
     final expiresAt = now.add(offerTtl).toIso8601String();
-    final fee = preferredFeeGhs ??
-        (defaultFeeGhs + shipment.items.length * 2).clamp(15, 80).toDouble();
     final dest = shipment.destination;
+    final fee = preferredFeeGhs ?? shipment.offeredFeeGhs;
+    if (fee == null || fee <= 0) {
+      throw StateError('Add a shipment fee before offering to riders');
+    }
+    if (dest.phone.trim().isEmpty) {
+      throw StateError('Add the customer phone number before offering to riders');
+    }
+    if (dest.line1.trim().isEmpty && dest.city.trim().isEmpty) {
+      throw StateError('Add the customer location before offering to riders');
+    }
     final seller = _sellerForShipment(shipment.sellerId);
     final pickup = GhanaPlaces.resolve(
       address: seller?.address,
@@ -435,6 +502,7 @@ class LocalHuberStore {
           pickupLabel: pickupLabel,
           pickupCity: pickupCity,
           recipientName: dest.recipientName,
+          recipientPhone: dest.phone,
           dropoffLine1: dest.line1,
           dropoffCity: dest.city,
           itemCount: shipment.items.fold<int>(0, (s, e) => s + e.quantity),
@@ -552,6 +620,7 @@ class LocalHuberStore {
       sellerName: offer.sellerName,
       pickupAddress: '${offer.pickupLabel}, ${offer.pickupCity}',
       customerName: offer.recipientName,
+      customerPhone: offer.recipientPhone,
       dropoffAddress: '${offer.dropoffLine1}, ${offer.dropoffCity}',
       feeGhs: offer.offeredFeeGhs ?? defaultFeeGhs,
       pickupLatitude: offer.pickupLatitude,

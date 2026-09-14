@@ -1,11 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/categories.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/cloud_video_media.dart';
-import '../../core/services/product_demo_video_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
@@ -15,12 +15,15 @@ import '../../models/shop_video.dart';
 import '../../models/stream.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/product_card.dart';
-import '../../widgets/product_demo_video_player.dart';
+import '../../widgets/shop_video_poster.dart';
 import '../../widgets/promo_banner.dart';
 import '../../widgets/responsive_scaffold.dart';
 
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
+
+  @override
+  ConsumerState<HomePage> createState() => _HomePageState();
 
   static TextStyle _sectionTitle(BuildContext context) {
     final base = Theme.of(context).textTheme.titleMedium;
@@ -41,15 +44,37 @@ class HomePage extends ConsumerWidget {
       height: 1.35,
     );
   }
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  // Re-query live streams on a short cycle so a seller going live while the
+  // home page is already open always appears within ~10 s on browsers where
+  // the Firestore WebSocket listener silently fails (e.g. Safari).
+  Timer? _liveRefresh;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _liveRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) ref.invalidate(streamsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveRefresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
+    // Keeps "Live now" current without the user reloading the page.
+    ref.watch(liveStreamsPulseProvider);
     final streamsAsync = ref.watch(streamsProvider);
     final promosAsync = ref.watch(promotionsProvider('landing'));
     final videosAsync = ref.watch(shopVideosProvider);
     final sellersAsync = ref.watch(sellersProvider);
-    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
 
     final products = productsAsync.when(
       data: (list) => list.whereType<Product>().toList(),
@@ -111,7 +136,7 @@ class HomePage extends ConsumerWidget {
                 children: [
                   Text(
                     'Live commerce for Ghana — shop now, catch auctions, and buy while shows are live.',
-                    style: _subheading(context),
+                    style: HomePage._subheading(context),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
@@ -126,11 +151,10 @@ class HomePage extends ConsumerWidget {
                         onPressed: () => context.push('/live'),
                         child: const Text('Watch live'),
                       ),
-                      if (signedIn)
-                        OutlinedButton(
-                          onPressed: () => context.push('/sell'),
-                          child: const Text('Sell on Hubsom'),
-                        ),
+                      OutlinedButton(
+                        onPressed: () => context.push('/sell'),
+                        child: const Text('Sell on Hubsom'),
+                      ),
                     ],
                   ),
                 ],
@@ -138,11 +162,66 @@ class HomePage extends ConsumerWidget {
             ),
           ),
 
+          // Live now — same portrait grid as Shop videos, before Categories.
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Live now',
+              titleStyle: HomePage._sectionTitle(context),
+              actionLabel: 'See all',
+              onAction: () => context.push('/live'),
+            ),
+          ),
+          if (live.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No one is live right now. Sellers can start a show from Sell → Go live.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: HubsomColors.ink.withValues(alpha: 0.7),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => context.push('/live'),
+                      icon: const Icon(Icons.videocam_outlined),
+                      label: const Text('Watch live'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            SliverGrid(
+              gridDelegate: ContainedVideoGridDelegate.forContext(context),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final s = live[i];
+                  Product? linked;
+                  for (final id in [
+                    if (s.pinnedProductId != null) s.pinnedProductId!,
+                    ...s.productIds,
+                  ]) {
+                    final match = products.where((p) => p.id == id);
+                    if (match.isNotEmpty) {
+                      linked = match.first;
+                      break;
+                    }
+                  }
+                  return _HomeLiveNowCard(stream: s, linkedProduct: linked);
+                },
+                childCount: live.length.clamp(0, 12),
+              ),
+            ),
+
           // Categories — real app taxonomy (not seeded products).
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Categories',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/categories'),
             ),
@@ -195,95 +274,17 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Ads',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
               ),
             ),
             SliverToBoxAdapter(child: PromoBanner(promotions: promos)),
-          ],
-
-          // Live now
-          if (live.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: _SectionHeader(
-                title: 'Live now',
-                titleStyle: _sectionTitle(context),
-                actionLabel: 'See all',
-                onAction: () => context.push('/live'),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 160,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: live.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final s = live[i];
-                    return InkWell(
-                      onTap: () => context.push('/live/${s.id}'),
-                      child: Container(
-                        width: 220,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              HubsomColors.forest,
-                              HubsomColors.blue,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              color: HubsomColors.live,
-                              child: const Text(
-                                'LIVE',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              s.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              '${s.viewerCount} watching',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
           ],
 
           // Flash sales — always listed; products only when sellers run an active sale.
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Flash sales',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/flash-sales'),
             ),
@@ -321,7 +322,7 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Live auctions',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
                 actionLabel: 'See all',
                 onAction: () => context.push('/auctions'),
               ),
@@ -333,7 +334,7 @@ class HomePage extends ConsumerWidget {
           SliverToBoxAdapter(
             child: _SectionHeader(
               title: 'Shop videos',
-              titleStyle: _sectionTitle(context),
+              titleStyle: HomePage._sectionTitle(context),
               actionLabel: 'See all',
               onAction: () => context.push('/videos'),
             ),
@@ -362,22 +363,18 @@ class HomePage extends ConsumerWidget {
               ),
             )
           else
-            SliverGrid(
-              gridDelegate: ContainedVideoGridDelegate.forContext(context),
-              delegate: SliverChildBuilderDelegate(
-                (_, i) {
-                  final v = videos[i];
-                  Product? linked;
-                  for (final id in v.productIds) {
-                    final match = products.where((p) => p.id == id);
-                    if (match.isNotEmpty) {
-                      linked = match.first;
-                      break;
-                    }
-                  }
-                  return _HomeShopVideoCard(video: v, linkedProduct: linked);
-                },
-                childCount: videos.length.clamp(0, 12),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: _homeShopVideoCardWidth * 14 / 9,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: videos.length.clamp(0, 20),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) => SizedBox(
+                    width: _homeShopVideoCardWidth,
+                    child: _HomeShopVideoCard(video: videos[i]),
+                  ),
+                ),
               ),
             ),
 
@@ -386,7 +383,9 @@ class HomePage extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: 'Stores',
-                titleStyle: _sectionTitle(context),
+                titleStyle: HomePage._sectionTitle(context),
+                actionLabel: 'See all',
+                onAction: () => context.push('/stores'),
               ),
             ),
             SliverToBoxAdapter(
@@ -446,7 +445,7 @@ class HomePage extends ConsumerWidget {
           ContainedBuyNow(
             products: products,
             crossAxisCount: cross,
-            titleStyle: _sectionTitle(context),
+            titleStyle: HomePage._sectionTitle(context),
           ),
         ],
       ),
@@ -483,7 +482,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// At least 3 vertical columns of portrait shop-video tiles.
+/// At least 3 vertical columns of portrait tiles (Live now grid).
 class ContainedVideoGridDelegate {
   ContainedVideoGridDelegate._();
 
@@ -508,51 +507,22 @@ class ContainedVideoGridDelegate {
   }
 }
 
-/// Portrait shop-video card: real first frame as thumbnail, opens the feed.
-class _HomeShopVideoCard extends StatefulWidget {
+/// Portrait shop-video card: a frame from the clip, opens the feed.
+///
+/// Do not mount a video player here — initializing every card on Home
+/// saturates a slow network before the shopper taps one clip.
+const _homeShopVideoCardWidth = 132.0;
+
+class _HomeShopVideoCard extends StatelessWidget {
   const _HomeShopVideoCard({
     required this.video,
-    this.linkedProduct,
   });
 
   final ShopVideo video;
-  final Product? linkedProduct;
-
-  @override
-  State<_HomeShopVideoCard> createState() => _HomeShopVideoCardState();
-}
-
-class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
-  late final Future<bool> _readyFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _readyFuture = _prepare();
-  }
-
-  Future<bool> _prepare() async {
-    final video = widget.video;
-    if (video.hasRemoteVideo) return true;
-    final hydrated = await CloudVideoMedia.ensureLocalBytes(
-      videoId: video.id,
-      videoUrl: video.videoUrl,
-      mimeType: video.mimeType,
-    );
-    if (hydrated) return true;
-    final local = await ProductDemoVideoStore.load(video.id);
-    return local != null;
-  }
 
   @override
   Widget build(BuildContext context) {
-    final video = widget.video;
-    final linkedProduct = widget.linkedProduct;
     final caption = video.caption.trim();
-    final cover =
-        linkedProduct != null && linkedProduct.images.isNotEmpty
-            ? linkedProduct.images.first
-            : null;
 
     return Material(
       color: Colors.transparent,
@@ -569,45 +539,7 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (cover != null)
-                  HubsomImage(
-                    url: cover,
-                    fit: BoxFit.cover,
-                    placeholder: const ColoredBox(color: Colors.black),
-                  )
-                else
-                  const ColoredBox(color: Colors.black),
-                FutureBuilder<bool>(
-                  future: _readyFuture,
-                  builder: (context, snap) {
-                    final ready = snap.data == true;
-                    if (!ready) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    }
-                    return AbsorbPointer(
-                      child: ProductDemoVideoPlayer(
-                        productId: video.id,
-                        remoteUrl: video.hasRemoteVideo ? video.videoUrl : null,
-                        expand: true,
-                        autoplay: false,
-                        borderRadius: 0,
-                        showPlayOverlay: false,
-                      ),
-                    );
-                  },
-                ),
+                ShopVideoPoster(video: video),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -663,6 +595,171 @@ class _HomeShopVideoCardState extends State<_HomeShopVideoCard> {
                           fontSize: 10,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Portrait live tile: same shop-video card shell, plus LIVE + viewer count.
+class _HomeLiveNowCard extends StatelessWidget {
+  const _HomeLiveNowCard({
+    required this.stream,
+    this.linkedProduct,
+  });
+
+  final LiveStream stream;
+  final Product? linkedProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = stream.cover.trim().isNotEmpty
+        ? stream.cover
+        : (linkedProduct != null && linkedProduct!.images.isNotEmpty
+            ? linkedProduct!.images.first
+            : null);
+    final host = stream.hosts.isNotEmpty ? stream.hosts.first.name : '';
+    final watching = stream.viewerCount <= 0
+        ? '0 watching'
+        : '${stream.viewerCount} watching';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/live/${stream.id}'),
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.black,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (cover != null)
+                  HubsomImage(
+                    url: cover,
+                    fit: BoxFit.cover,
+                    placeholder: const ColoredBox(color: Colors.black),
+                  )
+                else
+                  const ColoredBox(color: Colors.black),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 72,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.78),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const Center(
+                  child: Icon(
+                    Icons.play_circle_fill,
+                    size: 40,
+                    color: Colors.white,
+                  ),
+                ),
+                Positioned(
+                  left: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    color: HubsomColors.live,
+                    child: const Text(
+                      'LIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.remove_red_eye_outlined,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          watching,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stream.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          height: 1.2,
+                        ),
+                      ),
+                      if (host.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          host,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

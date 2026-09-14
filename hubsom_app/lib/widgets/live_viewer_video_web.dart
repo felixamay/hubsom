@@ -7,6 +7,7 @@ import 'package:web/web.dart' as web;
 
 import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import '../core/utils/browser_detect_web.dart';
 import 'live_webrtc_helpers_web.dart';
 
 /// Viewer stage: pulls the host camera/mic over WebRTC (Firestore signaling).
@@ -29,71 +30,162 @@ class LiveViewerVideo extends StatefulWidget {
 }
 
 class _LiveViewerVideoState extends State<LiveViewerVideo> {
+  /// Give the host this long to answer before asking for a fresh offer.
+  static const _connectTimeout = Duration(seconds: 20);
+  static const _heartbeatEvery = Duration(seconds: 15);
+
   late final String _viewType;
+
+  /// Direct reference to the <video> element.
+  /// On Safari this element lives in document.body (not the shadow DOM).
+  /// On other browsers it is returned from the HtmlElementView factory.
+  web.HTMLVideoElement? _videoEl;
+
   web.RTCPeerConnection? _pc;
+  web.MediaStream? _remote;
+  web.MediaStream? _assembled;
+  StreamSubscription<LiveWebrtcSignal?>? _watch;
   Timer? _poll;
+  Timer? _upkeep;
+  Timer? _attachRetry;
+  Timer? _iceFlush;
   bool _ready = false;
-  bool _connecting = true;
-  bool _needsUnmute = false;
+  bool _muted = true;
+  bool _handling = false;
+  bool _answerPublished = false;
+  bool _playBlocked = false;
   String? _status;
   int _hostIceApplied = 0;
+  int _icePublished = 0;
   String? _acceptedOfferSdp;
+  DateTime _attemptStartedAt = DateTime.now();
+  DateTime _lastHeartbeat = DateTime.now();
   final List<String> _localIce = [];
-  bool _iceDirty = false;
+
+  // ── Safari body-level video ──────────────────────────────────────────────
+  // Flutter CanvasKit embeds HtmlElementView inside a shadow root. Safari
+  // refuses to paint <video> elements in shadow roots regardless of CSS
+  // compositing hints. On Safari we therefore create a second <video> element
+  // directly in document.body *underneath* the Flutter view so it shows
+  // through Flutter's transparent canvas while chat, buttons and the
+  // tap-to-play overlay stay on top. The HtmlElementView slot becomes an
+  // invisible placeholder that keeps the Flutter layout intact.
+  web.HTMLVideoElement? _safariBodyEl;
+
+  /// Connection diagnostics shown while no video frames are being painted.
+  String? _diag;
+
+  void _initSafariBodyVideo() {
+    final v = web.HTMLVideoElement()
+      ..muted = true
+      ..setAttribute('playsinline', '')
+      ..setAttribute('webkit-playsinline', '')
+      ..setAttribute('autoplay', '')
+      ..setAttribute('muted', '')
+      ..style.setProperty('position', 'fixed')
+      ..style.setProperty('top', '0')
+      ..style.setProperty('left', '0')
+      ..style.setProperty('width', '100%')
+      ..style.setProperty('height', '100%')
+      ..style.setProperty('object-fit', 'cover')
+      ..style.setProperty('background-color', '#0b1f17')
+      ..style.setProperty('display', 'none'); // hidden until stream arrives
+    mountBehindFlutter(v);
+    _safariBodyEl = v;
+    _videoEl = v; // All WebRTC attachment code goes through _videoEl
+  }
 
   @override
   void initState() {
     super.initState();
-    _viewType =
-        'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
-    ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
-      final video = web.HTMLVideoElement()
-        ..autoplay = true
-        ..setAttribute('playsinline', 'true')
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17';
-      video.id = _viewType;
-      return video;
-    });
+    _viewType = 'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
+
+    if (isSafariBrowser()) {
+      // Safari: video lives in document.body. HtmlElementView gets a
+      // transparent <div> placeholder so Flutter's layout is unaffected.
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final div = web.document.createElement('div') as web.HTMLDivElement;
+        div.style.width = '100%';
+        div.style.height = '100%';
+        return div;
+      });
+      _initSafariBodyVideo();
+    } else {
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final video = web.HTMLVideoElement()
+          ..autoplay = true
+          ..muted = true
+          ..setAttribute('playsinline', '')
+          ..setAttribute('webkit-playsinline', '')
+          ..setAttribute('autoplay', '')
+          ..setAttribute('muted', '')
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.objectFit = 'cover'
+          ..style.backgroundColor = '#0b1f17'
+          ..style.transform = 'translateZ(0)'
+          ..style.setProperty('-webkit-transform', 'translateZ(0)')
+          ..style.setProperty('will-change', 'transform')
+          ..style.display = 'block';
+        video.id = _viewType;
+        _videoEl = video;
+        return video;
+      });
+    }
+    _muted = true;
+    _status = 'Connecting to seller…';
     unawaited(_bootstrap());
-    _poll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_tick());
+
+    if (LiveWebrtcSignalStore.canWatch) {
+      _watch = LiveWebrtcSignalStore.watchOne(
+        widget.streamId,
+        widget.viewerId,
+      ).listen((signal) => unawaited(_handle(signal)));
+    } else {
+      _poll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_pollOnce());
+      });
+    }
+
+    _upkeep = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_upkeepTick());
     });
   }
 
   Future<void> _bootstrap() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await LiveWebrtcSignalStore.upsert(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-        streamId: widget.streamId,
-        viewerId: widget.viewerId,
-        state: 'waiting',
-        updatedAt: now,
-      ),
-    );
-    if (mounted) {
-      setState(() {
-        _connecting = true;
-        _status = 'Connecting to seller…';
-      });
-    }
-    await _tick();
+    await _announce();
+    if (!LiveWebrtcSignalStore.canWatch) await _pollOnce();
   }
 
-  Future<void> _tick() async {
-    if (!mounted) return;
+  Future<void> _announce() async {
+    _attemptStartedAt = DateTime.now();
+    _lastHeartbeat = DateTime.now();
     try {
-      final signal = await LiveWebrtcSignalStore.get(
-        widget.streamId,
-        widget.viewerId,
+      await LiveWebrtcSignalStore.announceViewer(
+        streamId: widget.streamId,
+        viewerId: widget.viewerId,
       );
-      if (signal == null || signal.state == 'closed') {
-        if (signal?.state == 'closed') {
-          await _resetPeer(rejoin: true);
-        }
+    } catch (_) {}
+  }
+
+  Future<void> _pollOnce() async {
+    try {
+      await _handle(
+        await LiveWebrtcSignalStore.get(widget.streamId, widget.viewerId),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _handle(LiveWebrtcSignal? signal) async {
+    if (!mounted || _handling) return;
+    _handling = true;
+    try {
+      if (signal == null) {
+        await _announce();
+        return;
+      }
+      if (signal.state == 'closed') {
+        await _resetPeer(rejoin: true);
         return;
       }
 
@@ -104,31 +196,86 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
 
       final pc = _pc;
       if (pc != null && signal.hostIce.length > _hostIceApplied) {
-        await applyRemoteIce(
+        _hostIceApplied = await applyRemoteIce(
           pc,
           signal.hostIce,
           appliedCount: _hostIceApplied,
         );
-        _hostIceApplied = signal.hostIce.length;
-      }
-
-      if (_iceDirty && _localIce.isNotEmpty) {
-        _iceDirty = false;
-        final latest = await LiveWebrtcSignalStore.get(
-          widget.streamId,
-          widget.viewerId,
-        );
-        if (latest != null && latest.state != 'closed') {
-          await LiveWebrtcSignalStore.upsert(
-            latest.copyWith(
-              viewerIce: List<String>.from(_localIce),
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-        }
       }
     } catch (_) {
-      // Keep polling; live room still works without video.
+    } finally {
+      _handling = false;
+    }
+  }
+
+  Future<void> _upkeepTick() async {
+    if (!mounted) return;
+    try {
+      final pc = _pc;
+      if (pc != null &&
+          (isDeadPeerState(pc.connectionState) ||
+              isDeadPeerState(pc.iceConnectionState))) {
+        await _resetPeer(rejoin: true);
+        return;
+      }
+
+      if (DateTime.now().difference(_lastHeartbeat) > _heartbeatEvery) {
+        _lastHeartbeat = DateTime.now();
+        await LiveWebrtcSignalStore.viewerHeartbeat(
+          streamId: widget.streamId,
+          viewerId: widget.viewerId,
+        );
+      }
+
+      if (!_ready &&
+          DateTime.now().difference(_attemptStartedAt) > _connectTimeout) {
+        await _resetPeer(rejoin: true);
+      }
+      _refreshDiag();
+    } catch (_) {}
+  }
+
+  /// Surfaces peer/video state so a blank stage can be reported precisely.
+  /// Hidden automatically once real frames are painting.
+  void _refreshDiag() {
+    if (!mounted) return;
+    final pc = _pc;
+    final video = _videoEl;
+    String? next;
+    if (pc != null) {
+      final painting = video != null && video.videoWidth > 0;
+      if (!painting) {
+        final size = video == null
+            ? 'no element'
+            : '${video.videoWidth}x${video.videoHeight} rs${video.readyState}'
+                '${video.paused ? ' paused' : ''}';
+        next = 'peer ${pc.connectionState} · ice ${pc.iceConnectionState} · '
+            'video $size';
+      }
+    }
+    if (next != _diag) setState(() => _diag = next);
+  }
+
+  void _scheduleIceFlush() {
+    if (!_answerPublished) return;
+    _iceFlush?.cancel();
+    _iceFlush = Timer(const Duration(milliseconds: 60), () {
+      unawaited(_flushIce());
+    });
+  }
+
+  Future<void> _flushIce() async {
+    if (!_answerPublished || _localIce.length <= _icePublished) return;
+    final pending = _localIce.sublist(_icePublished);
+    _icePublished = _localIce.length;
+    try {
+      await LiveWebrtcSignalStore.appendIce(
+        streamId: widget.streamId,
+        viewerId: widget.viewerId,
+        viewer: pending,
+      );
+    } catch (_) {
+      _icePublished -= pending.length;
     }
   }
 
@@ -137,28 +284,23 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final pc = web.RTCPeerConnection(liveRtcConfig());
     _pc = pc;
     _hostIceApplied = 0;
+    _icePublished = 0;
     _localIce.clear();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
+    _assembled = null;
+    _attemptStartedAt = DateTime.now();
 
     pc.ontrack = ((web.Event event) {
       final te = event as web.RTCTrackEvent;
       final streams = te.streams.toDart;
-      web.MediaStream? remote;
       if (streams.isNotEmpty) {
-        remote = streams.first;
-      } else {
-        final stream = web.MediaStream();
-        stream.addTrack(te.track);
-        remote = stream;
+        _showRemote(streams.first);
+        return;
       }
-      _attach(remote);
-      if (mounted) {
-        setState(() {
-          _ready = true;
-          _connecting = false;
-          _status = null;
-        });
-      }
+      final assembled = _assembled ??= web.MediaStream();
+      assembled.addTrack(te.track);
+      _showRemote(assembled);
     }).toJS;
 
     pc.onicecandidate = ((web.Event event) {
@@ -168,14 +310,19 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       _localIce.add(encoded);
-      _iceDirty = true;
+      _scheduleIceFlush();
     }).toJS;
 
-    final offer = web.RTCSessionDescriptionInit(
-      type: signal.offerType ?? 'offer',
-      sdp: signal.offerSdp ?? '',
-    );
-    await pc.setRemoteDescription(offer).toDart;
+    await pc
+        .setRemoteDescription(
+          web.RTCSessionDescriptionInit(
+            type: signal.offerType?.isNotEmpty == true
+                ? signal.offerType!
+                : 'offer',
+            sdp: signal.offerSdp ?? '',
+          ),
+        )
+        .toDart;
     final answer = await pc.createAnswer().toDart;
     if (answer == null) return;
     await pc
@@ -188,50 +335,114 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         .toDart;
 
     _acceptedOfferSdp = signal.offerSdp;
-    await LiveWebrtcSignalStore.upsert(
-      signal.copyWith(
+    await LiveWebrtcSignalStore.upsertViewerSide(
+      LiveWebrtcSignal(
+        id: signal.id,
+        streamId: signal.streamId,
+        viewerId: signal.viewerId,
         state: 'answered',
         answerSdp: answer.sdp,
         answerType: answer.type,
-        viewerIce: List<String>.from(_localIce),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    if (mounted) {
+    _answerPublished = true;
+    unawaited(_flushIce());
+    if (mounted && !_ready) {
+      setState(() => _status = 'Almost there…');
+    }
+  }
+
+  void _showRemote(web.MediaStream stream) {
+    _remote = stream;
+    if (mounted && !_ready) {
       setState(() {
-        _connecting = true;
-        _status = 'Almost there…';
+        _ready = true;
+        _status = null;
       });
     }
+    _attach();
   }
 
-  void _attach(web.MediaStream stream) {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
+  void _attach() {
+    final stream = _remote;
+    final video = _videoEl;
+    if (stream == null) return;
+    if (video == null) {
+      _attachRetry?.cancel();
+      _attachRetry = Timer(const Duration(milliseconds: 120), () {
+        if (mounted) _attach();
+      });
+      return;
+    }
+
+    // Make the Safari body-level element visible once we have a stream.
+    final bodyEl = _safariBodyEl;
+    if (bodyEl != null) {
+      bodyEl.style.setProperty('display', 'block');
+    }
+
+    video.muted = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    if (video.srcObject != stream) {
       video.srcObject = stream;
-      video.muted = false;
-      video.play().toDart.then(
-        (_) {
-          if (mounted) setState(() => _needsUnmute = false);
-        },
-        onError: (_) {
-          video.muted = true;
-          video.play().toDart;
-          if (mounted) setState(() => _needsUnmute = true);
-        },
-      );
     }
+    video.play().toDart.then(
+      (_) {
+        // Muted play succeeded → immediately unmute so the user hears the
+        // seller without having to tap anything.
+        video.muted = false;
+        if (mounted && _playBlocked) setState(() => _playBlocked = false);
+        _syncMuteAffordance(video);
+      },
+      onError: (_) {
+        // Muted autoplay blocked (very rare – some private-browsing configs).
+        // Show the tap-to-play overlay; _userPlay() will retry muted + unmute.
+        if (mounted && !_playBlocked) setState(() => _playBlocked = true);
+      },
+    );
+    _attachRetry?.cancel();
+    _attachRetry = null;
+    _syncMuteAffordance(video);
   }
 
-  void _unmute() {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      video.muted = false;
-      video.play().toDart;
-    }
-    if (mounted) setState(() => _needsUnmute = false);
+  void _syncMuteAffordance(web.HTMLVideoElement video) {
+    Future<void>.delayed(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      if (video.muted != _muted) setState(() => _muted = video.muted);
+    });
+  }
+
+  void _toggleSound() {
+    final next = !_muted;
+    setState(() => _muted = next);
+    final video = _videoEl;
+    final stream = _remote;
+    if (video == null || stream == null) return;
+    attachStreamToElement(video: video, stream: stream, muted: next);
+  }
+
+  /// Called from the tap-to-play overlay.
+  ///
+  /// Safari's autoplay policy allows muted playback unconditionally, even
+  /// without a user gesture. We therefore always start muted and unmute once
+  /// the browser has accepted the play() promise — at which point unmuting is
+  /// always permitted because the media is already running.
+  void _userPlay() {
+    final video = _videoEl;
+    if (video == null) return;
+    video.muted = true; // muted play is always allowed
+    video.play().toDart.then(
+      (_) {
+        video.muted = false; // unmute while playing – always succeeds
+        if (mounted) setState(() { _playBlocked = false; _muted = false; });
+      },
+      onError: (_) {
+        // Should not happen (muted play is unconditional) but keep overlay
+        // visible so the user can retry.
+      },
+    );
   }
 
   Future<void> _disposePc() async {
@@ -247,33 +458,38 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   Future<void> _resetPeer({required bool rejoin}) async {
     await _disposePc();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
     _hostIceApplied = 0;
+    _icePublished = 0;
     _localIce.clear();
-    _iceDirty = false;
+    _remote = null;
+    _assembled = null;
+    _playBlocked = false; // reset so a fresh connect can re-evaluate
+    _attachRetry?.cancel();
+    _attachRetry = null;
+    _iceFlush?.cancel();
+    _iceFlush = null;
+    // Hide the Safari body-level element while reconnecting.
+    _safariBodyEl?.style.setProperty('display', 'none');
     if (mounted) {
       setState(() {
         _ready = false;
-        _connecting = true;
         _status = 'Reconnecting…';
       });
     }
-    if (rejoin) {
-      await LiveWebrtcSignalStore.upsert(
-        LiveWebrtcSignal(
-          id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-          streamId: widget.streamId,
-          viewerId: widget.viewerId,
-          state: 'waiting',
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
+    if (rejoin) await _announce();
   }
 
   @override
   void dispose() {
+    unawaited(_watch?.cancel());
     _poll?.cancel();
+    _upkeep?.cancel();
+    _attachRetry?.cancel();
+    _iceFlush?.cancel();
     unawaited(_disposePc());
+    _safariBodyEl?.remove();
+    _safariBodyEl = null;
     unawaited(
       LiveWebrtcSignalStore.close(widget.streamId, widget.viewerId),
     );
@@ -285,21 +501,38 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (_ready)
-          HtmlElementView(
-            viewType: _viewType,
-            onPlatformViewCreated: (_) {
-              // Stream may already be attached via ontrack.
-            },
-          )
-        else
+        // Always mounted: `ontrack` hands the stream to this element before
+        // the connection is visible. On Safari this is a transparent <div>;
+        // the real video is in document.body underneath the Flutter view.
+        HtmlElementView(
+          viewType: _viewType,
+          onPlatformViewCreated: (_) {
+            if (!isSafariBrowser()) _attach();
+          },
+        ),
+        if (!_ready)
           _PresenceFallback(
             hostName: widget.hostName,
             pulse: widget.pulse,
-            subtitle: _status ??
-                (_connecting ? 'Connecting to seller…' : 'Waiting for seller video'),
+            subtitle: _status ?? 'Connecting to seller…',
           ),
-        if (_ready)
+        if (_diag != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 72,
+            child: IgnorePointer(
+              child: Text(
+                _diag!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ),
+        if (_ready && !_playBlocked)
           Positioned(
             left: 16,
             bottom: 24,
@@ -318,18 +551,62 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
               ),
             ),
           ),
-        if (_ready && _needsUnmute)
+        if (_ready && !_playBlocked)
           Positioned(
             right: 16,
             bottom: 24,
             child: TextButton.icon(
-              onPressed: _unmute,
+              onPressed: _toggleSound,
               style: TextButton.styleFrom(
                 backgroundColor: Colors.black54,
                 foregroundColor: Colors.white,
               ),
-              icon: const Icon(Icons.volume_up, size: 18),
-              label: const Text('Tap for sound'),
+              icon: Icon(
+                _muted ? Icons.volume_off : Icons.volume_up,
+                size: 18,
+              ),
+              label: Text(_muted ? 'Tap for sound' : 'Mute'),
+            ),
+          ),
+        // Shown when the browser's autoplay policy blocks video.play().
+        // Tapping calls play() inside a real user-gesture context (which
+        // Safari always allows) and dismisses the overlay.
+        if (_playBlocked)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _userPlay,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.55),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.play_circle_outline,
+                      color: Colors.white,
+                      size: 72,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tap to watch',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.hostName,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],

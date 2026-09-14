@@ -1,3 +1,5 @@
+import 'afia_access.dart';
+
 /// Route access policy for Hubsom Flutter.
 ///
 /// Public routes are browse-only. All account, commerce, messaging, seller,
@@ -13,6 +15,8 @@ abstract final class AuthRoutes {
     '/timeline',
     '/videos',
     '/cart',
+    '/stores',
+    '/contact',
     '/auth/sign-in',
     '/auth/sign-up',
   };
@@ -31,7 +35,10 @@ abstract final class AuthRoutes {
     '/messages',
     '/notifications',
     '/settings',
+    '/settings/password',
+    '/settings/passkeys',
     '/dashboard',
+    '/admin/offers',
     '/sell',
     '/checkout',
     '/videos/upload',
@@ -53,13 +60,15 @@ abstract final class AuthRoutes {
 
   static bool isPublic(String location) {
     final path = location.split('?').first;
+    if (AfiaAccess.matchesPath(path)) return true;
     if (signedInExact.contains(path) ||
         path.startsWith('/account/') ||
         path.startsWith('/wallet/') ||
         path.startsWith('/messages/') ||
         path.startsWith('/seller') ||
         path.startsWith('/sell/') ||
-        path.startsWith('/huber')) {
+        path.startsWith('/huber') ||
+        path.startsWith('/admin')) {
       return false;
     }
     if (publicExact.contains(path)) return true;
@@ -83,6 +92,11 @@ abstract final class AuthRoutes {
   static bool requiresHuber(String location) {
     final path = location.split('?').first;
     return path == '/huber' || path.startsWith('/huber/');
+  }
+
+  static bool requiresAdmin(String location) {
+    final path = location.split('?').first;
+    return path == '/admin' || path.startsWith('/admin/');
   }
 
   static bool isSellerRole(String? role) =>

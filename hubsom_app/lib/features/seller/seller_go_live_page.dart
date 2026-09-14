@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/product_photo_compress.dart';
+import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
@@ -26,9 +30,13 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   /// Auction clock set by seller — max 30 seconds.
   int _auctionSeconds = 30;
   bool _busy = false;
+  bool _pickingCover = false;
+  String? _coverDataUrl;
   String? _error;
   List<Product> _products = const [];
   bool _loadingProducts = true;
+
+  static const _maxStoredBytes = 700_000;
 
   @override
   void initState() {
@@ -48,13 +56,18 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         _products = products;
         _loadingProducts = false;
         if (_products.isNotEmpty) {
+          final firstStore = _storeProducts.isNotEmpty
+              ? _storeProducts.first
+              : _products.first;
           _selected
             ..clear()
-            ..add(_products.first.id);
-          _qtys[_products.first.id] = _defaultQty(_products.first);
-          _auctionProductId = _products.first.id;
-          _askingPrice.text =
-              _products.first.effectivePrice.toStringAsFixed(0);
+            ..add(firstStore.id);
+          _qtys[firstStore.id] = _defaultQty(firstStore);
+          if (_auctionLots.isNotEmpty) {
+            _auctionProductId = _auctionLots.first.id;
+            _askingPrice.text =
+                _auctionLots.first.effectivePrice.toStringAsFixed(0);
+          }
         }
       });
     } catch (e) {
@@ -76,6 +89,12 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     super.dispose();
   }
 
+  List<Product> get _storeProducts =>
+      _products.where((p) => !p.isAuctionLot).toList();
+
+  List<Product> get _auctionLots =>
+      _products.where((p) => p.isAuctionLot).toList();
+
   int _defaultQty(Product p) => p.stock < 1 ? 0 : 1;
 
   int _qtyFor(Product p) {
@@ -89,7 +108,46 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
     setState(() => _qtys[p.id] = qty.clamp(1, p.stock));
   }
 
+  Future<void> _pickCover() async {
+    if (_pickingCover || _busy) return;
+    setState(() {
+      _pickingCover = true;
+      _error = null;
+    });
+    try {
+      final picked = await pickProductPhotos(remaining: 1);
+      if (picked.isEmpty) return;
+      final compressed = await compressProductPhoto(
+        picked.first.bytes,
+        maxSide: 960,
+        quality: 80,
+      );
+      if (compressed.isEmpty) {
+        setState(() => _error = 'Could not use that photo. Try another JPG/PNG.');
+        return;
+      }
+      if (compressed.lengthInBytes > _maxStoredBytes) {
+        setState(
+          () => _error =
+              'Photo is still too large after compress. Try a clearer, smaller shot.',
+        );
+        return;
+      }
+      setState(() {
+        _coverDataUrl = 'data:image/jpeg;base64,${base64Encode(compressed)}';
+      });
+    } catch (_) {
+      setState(() => _error = 'Could not pick a thumbnail. Try again.');
+    } finally {
+      if (mounted) setState(() => _pickingCover = false);
+    }
+  }
+
   Future<void> _start() async {
+    if (_coverDataUrl == null || _coverDataUrl!.trim().isEmpty) {
+      setState(() => _error = 'Add a thumbnail for Watch live and Live now');
+      return;
+    }
     if (_selected.isEmpty) {
       setState(() => _error = 'Select at least one of your products for the show');
       return;
@@ -126,6 +184,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
       final stream = await ref.read(liveRepositoryProvider).createStream({
         'title': _title.text.trim(),
         'description': _description.text.trim(),
+        'cover': _coverDataUrl,
         'status': 'live',
         'productIds': _selected.toList(),
         'productQuantities': {
@@ -178,6 +237,38 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _loadingProducts
+          ? null
+          : Material(
+              elevation: 8,
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      FilledButton.icon(
+                        onPressed: _busy || _products.isEmpty ? null : _start,
+                        icon: const Icon(Icons.videocam),
+                        label: Text(_busy ? 'Starting…' : 'Start live stream'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
       body: _loadingProducts
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -192,9 +283,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Pick products and set how many units are for this live. '
-                  'If you auction a product, the next unit of that product goes on auction automatically after each sale until quantity runs out. '
-                  'You can still list or auction any other product — or the same one again — without ending the show.',
+                  'Store products sell at the listed price. Auction lots are created separately and stay hidden from your store — tap one on live to start selling.',
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -206,6 +295,79 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                   controller: _description,
                   decoration: const InputDecoration(labelText: 'Description'),
                   maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Show thumbnail',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Required — this photo is what shoppers see on Watch live and Live now.',
+                ),
+                const SizedBox(height: 10),
+                Material(
+                  key: const Key('live-thumbnail-picker'),
+                  color: HubsomColors.mint.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: _busy || _pickingCover ? null : _pickCover,
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: _coverDataUrl == null
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (_pickingCover)
+                                  const CircularProgressIndicator()
+                                else
+                                  Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                    size: 40,
+                                    color: HubsomColors.forest.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _pickingCover
+                                      ? 'Compressing…'
+                                      : 'Choose thumbnail',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: HubsomImage(
+                                    url: _coverDataUrl,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 8,
+                                  bottom: 8,
+                                  child: FilledButton.tonalIcon(
+                                    onPressed:
+                                        _busy || _pickingCover ? null : _pickCover,
+                                    icon: const Icon(Icons.photo_camera_outlined),
+                                    label: Text(
+                                      _pickingCover ? 'Compressing…' : 'Change',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -223,14 +385,21 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'You need at least one product before going live. Create a product with 3+ photos, then you will return here.',
+                            'Create a store product or a hidden auction lot (3+ photos), then come back here.',
                           ),
                           const SizedBox(height: 12),
                           FilledButton(
                             onPressed: () => context.push(
-                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=store',
                             ),
-                            child: const Text('Create a product'),
+                            child: const Text('Create store product'),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            onPressed: () => context.push(
+                              '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=auction',
+                            ),
+                            child: const Text('Create auction lot'),
                           ),
                         ],
                       ),
@@ -266,7 +435,9 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                               subtitle: Text(
                                 out
                                     ? 'Out of stock — add quantity on the product first'
-                                    : '${formatGhs(p.effectivePrice)} · ${p.stock} in stock',
+                                    : p.isAuctionLot
+                                        ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot · hidden from store'
+                                        : '${formatGhs(p.effectivePrice)} · ${p.stock} in store',
                               ),
                               onChanged: out
                                   ? null
@@ -332,47 +503,64 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 if (_products.isNotEmpty) ...[
                   TextButton(
                     onPressed: () => context.push(
-                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}',
+                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=store',
                     ),
-                    child: const Text('Add another product'),
+                    child: const Text('Add store product'),
+                  ),
+                  TextButton(
+                    onPressed: () => context.push(
+                      '/seller/products/new?returnTo=${Uri.encodeComponent('/seller/go-live')}&kind=auction',
+                    ),
+                    child: const Text('Add auction lot'),
                   ),
                 ],
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Include live auction'),
-                  subtitle: const Text('Viewers can bid on one product'),
+                  title: const Text('Start with an auction lot'),
+                  subtitle: Text(
+                    _auctionLots.isEmpty
+                        ? 'Create an auction lot first — it stays hidden from your store'
+                        : 'Tap that lot on live to keep selling. Hidden from store.',
+                  ),
                   value: _auction,
-                  onChanged: _products.isEmpty || _selected.isEmpty
+                  onChanged: _auctionLots.isEmpty
                       ? null
                       : (v) => setState(() {
                             _auction = v;
-                            _auctionProductId ??= _selected.first;
+                            _auctionProductId ??= _auctionLots.first.id;
+                            if (v && _auctionProductId != null) {
+                              _selected.add(_auctionProductId!);
+                              final lot = _auctionLots.firstWhere(
+                                (p) => p.id == _auctionProductId,
+                              );
+                              _qtys[_auctionProductId!] = _defaultQty(lot);
+                            }
                           }),
                 ),
-                if (_auction && _selected.isNotEmpty) ...[
+                if (_auction && _auctionLots.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     key: ValueKey(
-                      'auction-${_selected.join(',')}-${_auctionProductId ?? ''}',
+                      'auction-${_auctionLots.map((p) => p.id).join(',')}-${_auctionProductId ?? ''}',
                     ),
-                    initialValue: _selected.contains(_auctionProductId ?? '')
+                    initialValue: _auctionLots.any((p) => p.id == _auctionProductId)
                         ? _auctionProductId
-                        : _selected.first,
+                        : _auctionLots.first.id,
                     items: [
-                      for (final id in _selected)
+                      for (final p in _auctionLots)
                         DropdownMenuItem(
-                          value: id,
-                          child: Text(
-                            _products.firstWhere((p) => p.id == id).name,
-                          ),
+                          value: p.id,
+                          child: Text(p.name),
                         ),
                     ],
                     onChanged: (v) {
                       setState(() {
                         _auctionProductId = v;
                         if (v == null) return;
-                        for (final p in _products) {
+                        _selected.add(v);
+                        for (final p in _auctionLots) {
                           if (p.id == v) {
+                            _qtys[v] = _defaultQty(p);
                             _askingPrice.text =
                                 p.effectivePrice.toStringAsFixed(0);
                             break;
@@ -381,7 +569,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                       });
                     },
                     decoration:
-                        const InputDecoration(labelText: 'Auction product'),
+                        const InputDecoration(labelText: 'Auction lot'),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -425,19 +613,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                         ),
                   ),
                 ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _busy || _products.isEmpty ? null : _start,
-                  icon: const Icon(Icons.videocam),
-                  label: Text(_busy ? 'Starting…' : 'Start live stream'),
-                ),
+                const SizedBox(height: 12),
               ],
             ),
     );

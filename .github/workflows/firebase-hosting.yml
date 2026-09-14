@@ -28,11 +28,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # HUBSOM_STORAGE_BUCKET is optional: set the repo variable only when the
+      # shop videos live in a bucket other than the project default.
       - name: Build web
+        env:
+          STORAGE_BUCKET: ${{ vars.HUBSOM_STORAGE_BUCKET }}
         run: >
           flutter build web --release --base-href / --pwa-strategy=none
           --dart-define=HUBSOM_API_BASE_URL=https://hubsom.com
           --dart-define=FIREBASE_ENABLED=true
+          --dart-define=HUBSOM_STORAGE_BUCKET=${STORAGE_BUCKET}
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
@@ -41,3 +46,11 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: ./scripts/deploy_hosting.sh
+
+      # Storage holds the shop videos. This is a no-op until Firebase Storage
+      # is enabled on the project, so it must never fail the deploy.
+      - name: Deploy Storage rules (skipped until Storage is enabled)
+        continue-on-error: true
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: ./scripts/setup_storage.sh || true

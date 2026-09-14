@@ -88,6 +88,7 @@ void main() {
       orderIds: [order.id],
       sellerId: 'seller-1',
       createdByUserId: 'seller-1',
+      offeredFeeGhs: 25,
     );
     final dispatched = await LocalHuberStore.dispatchToHubers(shipment);
     expect(dispatched.offers, isNotEmpty);

@@ -7,6 +7,7 @@ import 'package:web/web.dart' as web;
 
 import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
+import '../core/utils/browser_detect_web.dart';
 import 'live_webrtc_helpers_web.dart';
 
 /// Host camera preview + WebRTC publish so viewers can see the seller.
@@ -29,30 +30,77 @@ class LiveHostCamera extends StatefulWidget {
 }
 
 class _LiveHostCameraState extends State<LiveHostCamera> {
+  /// Drop a viewer that stopped checking in — a closed tab does not always get
+  /// to run its cleanup, and dead peers keep eating the host's uplink.
+  static const _viewerStaleAfter = Duration(seconds: 45);
+
   late final String _viewType;
+  web.HTMLVideoElement? _videoEl; // direct ref avoids getElementById in shadow DOM
   web.MediaStream? _media;
   String? _error;
   bool _ready = false;
   Timer? _publishPoll;
+  StreamSubscription<List<LiveWebrtcSignal>>? _watch;
+  bool _ticking = false;
   final Map<String, _HostPeer> _peers = {};
+  bool _pendingTick = false;
+
+  // Safari body-level video for the host's own preview (same shadow DOM issue).
+  web.HTMLVideoElement? _safariBodyEl;
+
+  void _initSafariBodyPreview() {
+    final v = web.HTMLVideoElement()
+      ..autoplay = true
+      ..setAttribute('playsinline', 'true')
+      ..style.setProperty('position', 'fixed')
+      ..style.setProperty('top', '0')
+      ..style.setProperty('left', '0')
+      ..style.setProperty('width', '100%')
+      ..style.setProperty('height', '100%')
+      ..style.setProperty('object-fit', 'cover')
+      ..style.setProperty('background-color', '#0b1f17')
+      ..style.setProperty('display', 'none');
+    silenceElement(v);
+    mountBehindFlutter(v);
+    _safariBodyEl = v;
+    _videoEl = v;
+  }
 
   @override
   void initState() {
     super.initState();
     _viewType =
         'hubsom-live-cam-${DateTime.now().microsecondsSinceEpoch}';
-    ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
-      final video = web.HTMLVideoElement()
-        ..autoplay = true
-        ..muted = true
-        ..setAttribute('playsinline', 'true')
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.backgroundColor = '#0b1f17';
-      video.id = _viewType;
-      return video;
-    });
+
+    if (isSafariBrowser()) {
+      // Safari: register a transparent placeholder so Flutter layout works.
+      // The actual preview video is in document.body (bypasses shadow DOM).
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final div = web.document.createElement('div') as web.HTMLDivElement;
+        div.style.width = '100%';
+        div.style.height = '100%';
+        return div;
+      });
+      _initSafariBodyPreview();
+    } else {
+      ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
+        final video = web.HTMLVideoElement()
+          ..autoplay = true
+          ..setAttribute('playsinline', 'true')
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.objectFit = 'cover'
+          ..style.backgroundColor = '#0b1f17'
+          ..style.transform = 'translateZ(0)'
+          ..style.setProperty('-webkit-transform', 'translateZ(0)')
+          ..style.setProperty('will-change', 'transform')
+          ..style.display = 'block';
+        silenceElement(video);
+        video.id = _viewType;
+        _videoEl = video;
+        return video;
+      });
+    }
     if (widget.enabled) {
       _start();
     }
@@ -80,15 +128,9 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
 
   Future<void> _start() async {
     try {
-      final stream =
-          await web.window.navigator.mediaDevices
-              .getUserMedia(
-                web.MediaStreamConstraints(
-                  video: true.toJS,
-                  audio: true.toJS,
-                ),
-              )
-              .toDart;
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(liveHostMediaConstraints())
+          .toDart;
       _media = stream;
       if (!widget.micOn) {
         for (final t in stream.getAudioTracks().toDart) {
@@ -118,6 +160,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   void _restartPublisher() {
     _publishPoll?.cancel();
     _publishPoll = null;
+    unawaited(_watch?.cancel());
+    _watch = null;
     final streamId = widget.streamId;
     final media = _media;
     if (streamId == null ||
@@ -126,20 +170,50 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         !widget.enabled) {
       return;
     }
-    _publishPoll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_hostTick(streamId, media));
-    });
+    // React the moment a viewer announces itself instead of up to a second
+    // later — a poll interval on every negotiation hop is what made viewers
+    // wait so long for the seller to appear.
+    if (LiveWebrtcSignalStore.canWatch) {
+      _watch = LiveWebrtcSignalStore.watchForStream(streamId).listen(
+        (signals) => unawaited(_hostTick(streamId, media, signals: signals)),
+      );
+      // Slow safety net for pruning viewers that simply went quiet.
+      _publishPoll = Timer.periodic(const Duration(seconds: 5), (_) {
+        unawaited(_hostTick(streamId, media));
+      });
+    } else {
+      _publishPoll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_hostTick(streamId, media));
+      });
+    }
     unawaited(_hostTick(streamId, media));
   }
 
-  Future<void> _hostTick(String streamId, web.MediaStream media) async {
+  Future<void> _hostTick(
+    String streamId,
+    web.MediaStream media, {
+    List<LiveWebrtcSignal>? signals,
+  }) async {
     if (!mounted) return;
+    if (_ticking) {
+      // A snapshot arrived while a tick was running. Re-run once it finishes
+      // so the latest state is never silently dropped.
+      _pendingTick = true;
+      return;
+    }
+    _ticking = true;
     try {
-      final signals = await LiveWebrtcSignalStore.listForStream(streamId);
+      signals ??= await LiveWebrtcSignalStore.listForStream(streamId);
       final activeIds = <String>{};
+      final now = DateTime.now().millisecondsSinceEpoch;
 
       for (final signal in signals) {
         if (signal.state == 'closed') {
+          await _dropPeer(signal.viewerId);
+          continue;
+        }
+        if (signal.viewerSeenAt > 0 &&
+            now - signal.viewerSeenAt > _viewerStaleAfter.inMilliseconds) {
           await _dropPeer(signal.viewerId);
           continue;
         }
@@ -151,30 +225,33 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           await _dropPeer(signal.viewerId);
           peer = null;
         }
+        if (peer != null &&
+            (isDeadPeerState(peer.pc.connectionState) ||
+                isDeadPeerState(peer.pc.iceConnectionState))) {
+          await _dropPeer(signal.viewerId);
+          peer = null;
+        }
         if (peer == null) {
-          if ((signal.answerSdp ?? '').isNotEmpty &&
-              signal.state == 'answered') {
-            // Stale session from a previous host tab — ask viewer to rejoin.
-            await LiveWebrtcSignalStore.upsert(
-              LiveWebrtcSignal(
-                id: signal.id,
-                streamId: streamId,
-                viewerId: signal.viewerId,
-                state: 'waiting',
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-            continue;
-          }
+          // Covers a viewer still marked 'answered' against a previous host
+          // tab too: offering again immediately is a round trip cheaper than
+          // bouncing it back to 'waiting' first.
           peer = await _createPeer(streamId, signal.viewerId, media);
           _peers[signal.viewerId] = peer;
+          // The answer arrives on the next pushed snapshot.
+          continue;
         }
+
+        // Only trust an answer written against the offer this peer published,
+        // otherwise a previous negotiation's answer can be applied to it.
+        if (signal.offerSdp != peer.offerSdp) continue;
 
         if (!peer.answerApplied && (signal.answerSdp ?? '').isNotEmpty) {
           await peer.pc
               .setRemoteDescription(
                 web.RTCSessionDescriptionInit(
-                  type: signal.answerType ?? 'answer',
+                  type: signal.answerType?.isNotEmpty == true
+                      ? signal.answerType!
+                      : 'answer',
                   sdp: signal.answerSdp ?? '',
                 ),
               )
@@ -182,40 +259,33 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
           peer.answerApplied = true;
         }
 
-        if (signal.viewerIce.length > peer.viewerIceApplied) {
-          await applyRemoteIce(
+        // Candidates can only be added once the answer is in place.
+        if (peer.answerApplied &&
+            signal.viewerIce.length > peer.viewerIceApplied) {
+          peer.viewerIceApplied = await applyRemoteIce(
             peer.pc,
             signal.viewerIce,
             appliedCount: peer.viewerIceApplied,
           );
-          peer.viewerIceApplied = signal.viewerIce.length;
         }
 
-        if (peer.iceDirty && peer.localIce.isNotEmpty) {
-          peer.iceDirty = false;
-          final latest = await LiveWebrtcSignalStore.get(
-            streamId,
-            signal.viewerId,
-          );
-          if (latest != null && latest.state != 'closed') {
-            await LiveWebrtcSignalStore.upsert(
-              latest.copyWith(
-                hostIce: List<String>.from(peer.localIce),
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-          }
-        }
+        await _flushIce(streamId, signal.viewerId, peer);
       }
 
-      final stale = _peers.keys
+      final gone = _peers.keys
           .where((id) => !activeIds.contains(id))
           .toList(growable: false);
-      for (final id in stale) {
+      for (final id in gone) {
         await _dropPeer(id);
       }
     } catch (_) {
       // Host preview still works if signaling fails.
+    } finally {
+      _ticking = false;
+      if (_pendingTick && mounted) {
+        _pendingTick = false;
+        unawaited(_hostTick(streamId, media));
+      }
     }
   }
 
@@ -238,7 +308,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       peer.localIce.add(encoded);
-      peer.iceDirty = true;
+      // Trickle straight away so the viewer can start checking paths while the
+      // rest of the candidates are still being gathered.
+      peer.iceFlush?.cancel();
+      peer.iceFlush = Timer(const Duration(milliseconds: 60), () {
+        unawaited(_flushIce(streamId, viewerId, peer));
+      });
     }).toJS;
 
     final offer = await pc.createOffer().toDart;
@@ -255,36 +330,62 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         )
         .toDart;
 
-    await LiveWebrtcSignalStore.upsert(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(streamId, viewerId),
+    // One write: advertise the offer and clear the previous negotiation's
+    // answer and candidates, which would otherwise be matched against it.
+    peer.offerSdp = offer.sdp;
+    await LiveWebrtcSignalStore.publishOffer(
+      streamId: streamId,
+      viewerId: viewerId,
+      offerSdp: offer.sdp,
+      offerType: offer.type,
+    );
+    // Held back until now because the offer write resets both ICE lists.
+    peer.offerPublished = true;
+    unawaited(_flushIce(streamId, viewerId, peer));
+    return peer;
+  }
+
+  Future<void> _flushIce(
+    String streamId,
+    String viewerId,
+    _HostPeer peer,
+  ) async {
+    if (!peer.offerPublished || peer.localIce.length <= peer.icePublished) {
+      return;
+    }
+    final pending = peer.localIce.sublist(peer.icePublished);
+    peer.icePublished = peer.localIce.length;
+    try {
+      await LiveWebrtcSignalStore.appendIce(
         streamId: streamId,
         viewerId: viewerId,
-        state: 'offered',
-        offerSdp: offer.sdp,
-        offerType: offer.type,
-        hostIce: List<String>.from(peer.localIce),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
-    return peer;
+        host: pending,
+      );
+    } catch (_) {
+      peer.icePublished -= pending.length;
+    }
   }
 
   Future<void> _dropPeer(String viewerId) async {
     final peer = _peers.remove(viewerId);
     if (peer == null) return;
+    peer.iceFlush?.cancel();
     try {
       peer.pc.close();
     } catch (_) {}
   }
 
   void _attach(web.MediaStream stream) {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      video.srcObject = stream;
-      video.play().toDart;
+    final video = _videoEl;
+    if (video == null) return;
+    silenceElement(video);
+    // Make the Safari body-level element visible once camera is ready.
+    final bodyEl = _safariBodyEl;
+    if (bodyEl != null) {
+      bodyEl.style.setProperty('display', 'block');
     }
+    video.srcObject = stream;
+    video.play().toDart;
   }
 
   void _stopTracks(web.MediaStream stream) {
@@ -296,6 +397,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   void _stop() {
     _publishPoll?.cancel();
     _publishPoll = null;
+    unawaited(_watch?.cancel());
+    _watch = null;
     for (final id in _peers.keys.toList(growable: false)) {
       unawaited(_dropPeer(id));
     }
@@ -313,6 +416,8 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   @override
   void dispose() {
     _stop();
+    _safariBodyEl?.remove();
+    _safariBodyEl = null;
     super.dispose();
   }
 
@@ -344,11 +449,9 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
-            final stream = _media;
-            if (stream != null) {
-              Future<void>.delayed(const Duration(milliseconds: 50), () {
-                _attach(stream);
-              });
+            if (!isSafariBrowser()) {
+              final stream = _media;
+              if (stream != null) _attach(stream);
             }
           },
         ),
@@ -380,9 +483,12 @@ class _HostPeer {
 
   final web.RTCPeerConnection pc;
   final List<String> localIce = [];
-  bool iceDirty = false;
   bool answerApplied = false;
+  bool offerPublished = false;
+  String? offerSdp;
+  Timer? iceFlush;
   int viewerIceApplied = 0;
+  int icePublished = 0;
 }
 
 class _PresenceFallback extends StatelessWidget {

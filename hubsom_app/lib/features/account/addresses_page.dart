@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
-import '../../core/services/local_store.dart';
+import '../../core/services/user_address_store.dart';
+import '../../core/theme/hubsom_colors.dart';
 import '../../models/user.dart';
 import '../../widgets/gps_pin_card.dart';
 
@@ -19,18 +17,48 @@ class AddressesPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Addresses')),
       body: addresses.isEmpty
-          ? const Center(child: Text('No saved addresses'))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'No delivery address yet',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Allow location to save your delivery address.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () => _addAddress(context, ref),
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Allow location'),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : ListView.builder(
               itemCount: addresses.length,
               itemBuilder: (_, i) {
                 final a = addresses[i];
-                final gps = a.location;
                 return ListTile(
-                  title: Text('${a.label} · ${a.line1}'),
+                  leading: const Icon(
+                    Icons.place_outlined,
+                    color: HubsomColors.forest,
+                  ),
+                  title: Text(
+                    a.displayLine.isEmpty ? a.label : a.displayLine,
+                  ),
                   subtitle: Text(
-                    '${a.city}, ${a.region}'
-                    '${a.phone != null ? ' · ${a.phone}' : ''}'
-                    '${gps != null ? ' · GPS ${gps.latitude.toStringAsFixed(4)}, ${gps.longitude.toStringAsFixed(4)}' : ''}',
+                    [
+                      a.label,
+                      if (a.phone != null && a.phone!.isNotEmpty) a.phone!,
+                    ].join(' · '),
                   ),
                   trailing: a.isDefault == true
                       ? const Chip(label: Text('Default'))
@@ -38,115 +66,96 @@ class AddressesPage extends ConsumerWidget {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addAddress(context, ref),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.my_location),
+        label: const Text('Use GPS'),
       ),
     );
   }
 
   Future<void> _addAddress(BuildContext context, WidgetRef ref) async {
-    final line1 = TextEditingController();
-    final city = TextEditingController(text: AppConstants.defaultCity);
-    final region = TextEditingController(text: AppConstants.defaultRegion);
-    GeoLocation? pin;
+    UserAddress? draft;
     var busy = false;
     String? error;
 
-    final saved = await showDialog<Map<String, dynamic>>(
+    final saved = await showModalBottomSheet<UserAddress>(
       context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Add delivery address'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: line1,
-                      decoration: const InputDecoration(labelText: 'Street / area'),
-                    ),
-                    TextField(
-                      controller: city,
-                      decoration: const InputDecoration(labelText: 'City'),
-                    ),
-                    TextField(
-                      controller: region,
-                      decoration: const InputDecoration(labelText: 'Region'),
-                    ),
-                    const SizedBox(height: 12),
-                    GpsPinCard(
-                      title: 'Address GPS',
-                      subtitle: 'Allow location so riders can navigate here.',
-                      pin: pin,
-                      busy: busy,
-                      error: error,
-                      onUseLocation: () async {
-                        setLocal(() {
-                          busy = true;
-                          error = null;
-                        });
-                        try {
-                          pin = await ref.read(locationServiceProvider).current();
-                        } catch (e) {
-                          error = '$e';
-                        } finally {
-                          setLocal(() => busy = false);
-                        }
-                      },
-                    ),
-                  ],
-                ),
+            Future<void> allow() async {
+              setLocal(() {
+                busy = true;
+                error = null;
+              });
+              try {
+                final pin = await ref.read(locationServiceProvider).current();
+                draft = await UserAddressStore.fromAllowedGps(pin);
+              } catch (e) {
+                error = '$e';
+              } finally {
+                setLocal(() => busy = false);
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                16 + MediaQuery.viewInsetsOf(ctx).bottom,
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (pin == null) {
-                      setLocal(() => error = 'Allow location before saving.');
-                      return;
-                    }
-                    Navigator.pop(ctx, {
-                      'label': 'Home',
-                      'line1': line1.text.trim().isEmpty
-                          ? 'Current location'
-                          : line1.text.trim(),
-                      'city': city.text.trim(),
-                      'region': region.text.trim(),
-                      'location': pin!.toJson(),
-                    });
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Delivery address',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  GpsPinCard(
+                    title: 'Your address',
+                    pin: draft?.location,
+                    address: draft?.displayLine,
+                    busy: busy,
+                    error: error,
+                    onUseLocation: allow,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () {
+                      if (draft == null) {
+                        setLocal(
+                          () => error = 'Allow location to save this address.',
+                        );
+                        return;
+                      }
+                      Navigator.pop(ctx, draft);
+                    },
+                    child: const Text('Save address'),
+                  ),
+                ],
+              ),
             );
           },
         );
       },
     );
-    line1.dispose();
-    city.dispose();
-    region.dispose();
     if (saved == null) return;
-    final payload = {
-      ...saved,
-      'id': 'addr_${DateTime.now().millisecondsSinceEpoch}',
-    };
-    try {
-      await ref.read(apiClientProvider).post('/api/account/addresses', data: payload);
-    } catch (_) {}
     final user = ref.read(authStateProvider).valueOrNull;
-    if (user != null) {
-      final next = user.copyWith(
-        addresses: [...user.addresses, UserAddress.fromJson(payload)],
-      );
-      await LocalStore.setUserJson(jsonEncode(next.toJson()));
-      ref.read(authStateProvider.notifier).applyLocalUser(next);
-    }
+    if (user == null) return;
+    final pin = saved.location;
+    if (pin == null) return;
+    final next = await UserAddressStore.saveAllowedGps(
+      user: user,
+      pin: pin,
+    );
+    ref.read(authStateProvider.notifier).applyLocalUser(next);
   }
 }

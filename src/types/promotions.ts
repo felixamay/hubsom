@@ -5,7 +5,8 @@ export type PromoPlacement =
   | "landing" // home / landing page
   | "marketplace"
   | "category"
-  | "product";
+  | "product"
+  | "offers"; // dashboard offers for users who bought matching items
 
 /** @deprecated use "landing" — kept for older seed records */
 export type LegacyPromoPlacement = "home";

@@ -191,7 +191,10 @@ class _HuberHubNowPageState extends ConsumerState<HuberHubNowPage> {
                   ],
                   const SizedBox(height: 12),
                   Text('Pickup · ${offer.pickupLabel}, ${offer.pickupCity}'),
-                  Text('Customer · ${offer.recipientName}'),
+                  Text(
+                    'Customer · ${offer.recipientName}'
+                    '${offer.recipientPhone.isNotEmpty ? ' · ${offer.recipientPhone}' : ''}',
+                  ),
                   Text('Drop-off · ${offer.dropoffLine1}, ${offer.dropoffCity}'),
                   Text('Packages · ${offer.itemCount} · ${offer.weightLbs.round()} lbs'),
                   Text('Payout · ${formatGhs(offer.offeredFeeGhs ?? 0)}'),

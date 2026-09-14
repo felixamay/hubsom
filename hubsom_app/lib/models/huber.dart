@@ -257,6 +257,7 @@ class HuberOffer extends Equatable {
     this.pickupLabel = 'Seller pickup',
     this.pickupCity = 'Accra',
     this.recipientName = '',
+    this.recipientPhone = '',
     this.dropoffLine1 = '',
     this.dropoffCity = 'Accra',
     this.itemCount = 1,
@@ -282,6 +283,7 @@ class HuberOffer extends Equatable {
   final String pickupLabel;
   final String pickupCity;
   final String recipientName;
+  final String recipientPhone;
   final String dropoffLine1;
   final String dropoffCity;
   final int itemCount;
@@ -331,6 +333,7 @@ class HuberOffer extends Equatable {
         pickupLabel: json['pickupLabel'] as String? ?? 'Seller pickup',
         pickupCity: json['pickupCity'] as String? ?? 'Accra',
         recipientName: json['recipientName'] as String? ?? '',
+        recipientPhone: json['recipientPhone'] as String? ?? '',
         dropoffLine1: json['dropoffLine1'] as String? ?? '',
         dropoffCity: json['dropoffCity'] as String? ?? 'Accra',
         itemCount: (json['itemCount'] as num?)?.toInt() ?? 1,
@@ -357,6 +360,7 @@ class HuberOffer extends Equatable {
         pickupLabel: pickupLabel,
         pickupCity: pickupCity,
         recipientName: recipientName,
+        recipientPhone: recipientPhone,
         dropoffLine1: dropoffLine1,
         dropoffCity: dropoffCity,
         itemCount: itemCount,
@@ -383,6 +387,7 @@ class HuberOffer extends Equatable {
         'pickupLabel': pickupLabel,
         'pickupCity': pickupCity,
         'recipientName': recipientName,
+        'recipientPhone': recipientPhone,
         'dropoffLine1': dropoffLine1,
         'dropoffCity': dropoffCity,
         'itemCount': itemCount,
@@ -409,6 +414,7 @@ class HuberDelivery extends Equatable {
     required this.sellerName,
     required this.pickupAddress,
     required this.customerName,
+    this.customerPhone = '',
     required this.dropoffAddress,
     required this.feeGhs,
     this.pickupLatitude,
@@ -427,6 +433,7 @@ class HuberDelivery extends Equatable {
   final String sellerName;
   final String pickupAddress;
   final String customerName;
+  final String customerPhone;
   final String dropoffAddress;
   final double feeGhs;
   final double? pickupLatitude;
@@ -457,6 +464,7 @@ class HuberDelivery extends Equatable {
         sellerName: json['sellerName'] as String? ?? 'Hubsom seller',
         pickupAddress: json['pickupAddress'] as String? ?? '',
         customerName: json['customerName'] as String? ?? '',
+        customerPhone: json['customerPhone'] as String? ?? '',
         dropoffAddress: json['dropoffAddress'] as String? ?? '',
         feeGhs: (json['feeGhs'] as num?)?.toDouble() ?? 0,
         pickupLatitude: (json['pickupLatitude'] as num?)?.toDouble(),
@@ -476,6 +484,7 @@ class HuberDelivery extends Equatable {
         sellerName: sellerName,
         pickupAddress: pickupAddress,
         customerName: customerName,
+        customerPhone: customerPhone,
         dropoffAddress: dropoffAddress,
         feeGhs: feeGhs,
         pickupLatitude: pickupLatitude,
@@ -495,6 +504,7 @@ class HuberDelivery extends Equatable {
         'sellerName': sellerName,
         'pickupAddress': pickupAddress,
         'customerName': customerName,
+        'customerPhone': customerPhone,
         'dropoffAddress': dropoffAddress,
         'feeGhs': feeGhs,
         if (pickupLatitude != null) 'pickupLatitude': pickupLatitude,

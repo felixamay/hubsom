@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/providers/core_providers.dart';
+import '../core/services/shipment_fee.dart';
 import '../core/theme/hubsom_colors.dart';
 import '../core/utils/money.dart';
 import '../models/product.dart';
@@ -68,7 +69,9 @@ class ProductCard extends ConsumerWidget {
                         ),
                       ),
                       child: Text(
-                        formatGhs(product.effectivePrice),
+                        product.hasShipmentFee
+                            ? '${formatGhs(product.effectivePrice)} · ${ShipmentFee.listingLabel(product)}'
+                            : formatGhs(product.effectivePrice),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
