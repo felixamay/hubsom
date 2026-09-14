@@ -456,11 +456,10 @@ class SellerRepository {
         } catch (_) {}
       }
       if (remote.isEmpty) return local;
-      final byId = <String, Product>{
-        for (final p in remote) p.id: p,
-        for (final p in local) p.id: p,
-      };
-      return byId.values.toList();
+      for (final p in remote) {
+        await LocalCommerceStore.upsertProduct(p);
+      }
+      return remote;
     } catch (_) {
       return local;
     }

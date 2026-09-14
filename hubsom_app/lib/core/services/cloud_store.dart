@@ -9,11 +9,11 @@ import 'firebase_bootstrap.dart';
 import 'local_store.dart';
 import 'shop_video_merge.dart';
 
-/// Firestore-backed Hubsom data so accounts work on any browser/device.
+/// Firestore-backed Hubsom data so accounts, catalogs, live shows and videos
+/// work the same on every browser.
 ///
-/// Uses the FlutterFire SDK when it is ready, and always falls back to the
-/// public Firestore REST API. Sign-up must succeed against this database —
-/// the on-device vault is only a cache.
+/// The on-device cache (LocalStore) is filled from these collections after
+/// each cloud read. It is not the source of truth.
 class CloudStore {
   CloudStore._();
 
@@ -41,6 +41,9 @@ class CloudStore {
   static const directMessages = 'directMessages';
   static const notifications = 'notifications';
   static const withdrawals = 'withdrawals';
+  static const sellerFollowers = 'sellerFollowers';
+  static const carts = 'carts';
+  static const giftLedger = 'giftLedger';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -556,6 +559,25 @@ class CloudStore {
         }
       }
     }));
+    await _hydrateFollowers();
+  }
+
+  /// Follow graph is a map `{sellerId: [follower, ...]}`, not a list of docs.
+  static Future<void> _hydrateFollowers() async {
+    try {
+      final rows = await listDocs(sellerFollowers);
+      if (rows.isEmpty) return;
+      final map = <String, dynamic>{};
+      for (final row in rows) {
+        final id = '${row['id'] ?? row['sellerId'] ?? ''}';
+        if (id.isEmpty) continue;
+        map[id] = row['followers'] ?? const [];
+      }
+      if (map.isEmpty) return;
+      await LocalStore.setString('localSellerFollowers', jsonEncode(map));
+    } catch (e) {
+      if (kDebugMode) debugPrint('CloudStore.hydrateLocalCache followers: $e');
+    }
   }
 
   static Map<String, dynamic> encodeFields(Map<String, dynamic> data) {

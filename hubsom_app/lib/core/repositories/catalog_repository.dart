@@ -50,6 +50,27 @@ class CatalogRepository {
     int? limit,
     int? offset,
   }) async {
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.products)
+          .timeout(const Duration(seconds: 8));
+      if (rows.isNotEmpty) {
+        final products = <Product>[];
+        for (final row in rows) {
+          try {
+            products.add(Product.fromJson(row));
+          } catch (_) {}
+        }
+        if (products.isNotEmpty) {
+          await LocalCommerceStore.replaceProducts(products);
+          return LocalCommerceStore.listProducts(
+            category: category,
+            q: q,
+            sellerId: sellerId,
+          );
+        }
+      }
+    } catch (_) {}
+
     final local = LocalCommerceStore.listProducts(
       category: category,
       q: q,
@@ -94,10 +115,7 @@ class CatalogRepository {
       }
       if (products.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
-      await LocalStore.cacheJson(
-        'products',
-        products.map((p) => p.toJson()).toList(),
-      );
+      await LocalCommerceStore.replaceProducts(products);
       return products.where((p) => !p.isAuctionLot).toList();
     } on DioException {
       return local.where((p) => !p.isAuctionLot).toList();
@@ -107,6 +125,15 @@ class CatalogRepository {
   }
 
   Future<Product?> getProduct(String id) async {
+    try {
+      final row = await CloudStore.getDoc(CloudStore.products, id)
+          .timeout(const Duration(seconds: 8));
+      if (row != null && row.isNotEmpty) {
+        final product = Product.fromJson(row);
+        await LocalCommerceStore.upsertProduct(product);
+        return product;
+      }
+    } catch (_) {}
     final local = LocalCommerceStore.getProduct(id);
     if (local != null) return local;
     final products = await listProducts();
@@ -118,6 +145,23 @@ class CatalogRepository {
   }
 
   Future<List<Seller>> listSellers() async {
+    try {
+      final rows = await CloudStore.listDocs(CloudStore.sellers)
+          .timeout(const Duration(seconds: 8));
+      if (rows.isNotEmpty) {
+        final remote = <Seller>[];
+        for (final row in rows) {
+          try {
+            remote.add(Seller.fromJson(row));
+          } catch (_) {}
+        }
+        if (remote.isNotEmpty) {
+          await LocalCommerceStore.replaceSellers(remote);
+          return _withLiveFollowerCounts(remote);
+        }
+      }
+    } catch (_) {}
+
     final local = LocalCommerceStore.listSellers();
     try {
       final res =
@@ -133,20 +177,30 @@ class CatalogRepository {
       final remote = list
           .map((e) => Seller.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      // Prefer local rows when present so follower counts / photos stick.
-      final byId = <String, Seller>{
-        for (final s in remote) s.id: s,
-      };
-      for (final s in local) {
-        byId[s.id] = s;
-      }
-      return _withLiveFollowerCounts(byId.values.toList());
+      await LocalCommerceStore.replaceSellers(remote);
+      return _withLiveFollowerCounts(remote);
     } catch (_) {
       return _withLiveFollowerCounts(local);
     }
   }
 
   Future<Seller?> getSeller(String idOrSlug) async {
+    try {
+      final row = await CloudStore.getDoc(CloudStore.sellers, idOrSlug)
+          .timeout(const Duration(seconds: 8));
+      if (row != null && row.isNotEmpty) {
+        final seller = Seller.fromJson(row);
+        final sellers = LocalCommerceStore.listSellers();
+        final idx = sellers.indexWhere((s) => s.id == seller.id);
+        if (idx >= 0) {
+          sellers[idx] = seller;
+        } else {
+          sellers.insert(0, seller);
+        }
+        await LocalCommerceStore.replaceSellers(sellers);
+        return _withLiveFollowerCount(seller);
+      }
+    } catch (_) {}
     final local = LocalCommerceStore.getSeller(idOrSlug);
     if (local != null) return _withLiveFollowerCount(local);
     final sellers = await listSellers();

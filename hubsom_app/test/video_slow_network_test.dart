@@ -177,6 +177,46 @@ void main() {
     expect(parsed.hasPublishedMedia, isFalse);
   });
 
+  test('cloud catalog is what every browser lists, not this device cache', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'only-chrome',
+          'authorId': 'u1',
+          'createdAt': '2026-09-06T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/old.mp4',
+        },
+      ],
+      incoming: [
+        {
+          'id': 'from-firebase',
+          'authorId': 'u2',
+          'createdAt': '2026-09-13T00:00:00Z',
+          'videoUrl': 'https://cdn.hubsom.test/new.mp4',
+          'thumbnailUrl': 'https://cdn.hubsom.test/new.jpg',
+        },
+      ],
+    );
+    expect(merged, hasLength(1));
+    expect(merged.first['id'], 'from-firebase');
+  });
+
+  test('an in-progress local upload is kept until Firebase has the clip', () {
+    final merged = mergeShopVideoDocs(
+      local: [
+        {
+          'id': 'uploading',
+          'authorId': 'u1',
+          'createdAt': '2026-09-13T00:00:00Z',
+          'videoUrl': 'hubsom-blob://pending',
+        },
+      ],
+      incoming: const [],
+    );
+    expect(merged, hasLength(1));
+    expect(merged.first['id'], 'uploading');
+  });
+
   test('inline data thumbnails travel to other phones in the cloud doc', () {
     final data = 'data:image/jpeg;base64,${'A' * 64}';
     final clip = _clip(thumbnailUrl: data);
