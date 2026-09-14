@@ -25,7 +25,7 @@ class MainShell extends ConsumerWidget {
     ),
     (
       path: '/sell',
-      label: 'Sellers Dashboard',
+      label: 'Sell',
       icon: Icons.storefront_outlined,
       selected: Icons.storefront
     ),
