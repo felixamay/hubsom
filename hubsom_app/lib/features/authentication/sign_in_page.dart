@@ -101,8 +101,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
-          child: Form(
-            key: _formKey,
+          child: AutofillGroup(
+            child: Form(
+              key: _formKey,
             child: ListView(
               padding: const EdgeInsets.all(24),
               children: [
@@ -186,6 +187,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   child: const Text('Create Hail Rider account'),
                 ),
               ],
+            ),
             ),
           ),
         ),

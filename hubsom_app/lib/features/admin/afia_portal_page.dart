@@ -130,7 +130,11 @@ class _AfiaLoginPage extends StatelessWidget {
                         controller: email,
                         enabled: !busy,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: 'Email'),
+                        autofillHints: const [],
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                        ),
                         onSubmitted: (_) => onUnlock(),
                       ),
                       const SizedBox(height: 12),
@@ -138,7 +142,10 @@ class _AfiaLoginPage extends StatelessWidget {
                         controller: password,
                         obscureText: true,
                         enabled: !busy,
-                        decoration: const InputDecoration(labelText: 'Password'),
+                        autofillHints: const [],
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                        ),
                         onSubmitted: (_) => onUnlock(),
                       ),
                       if (error != null) ...[

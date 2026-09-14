@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../core/services/admin_treasury_store.dart';
 import '../../core/services/payment_account_store.dart';
@@ -136,7 +135,7 @@ class _AdminPayoutsPageState extends State<AdminPayoutsPage> {
         ),
         const SizedBox(height: 6),
         Text(
-          'The admin payment account (${AfiaAccess.ownerEmail}) is the only '
+          'The Hubsom Admin payment account is the only '
           'account that receives product payments. Pay sellers into their '
           'withdraw accounts at ${HubsomCommission.sellerPercentLabel} after a '
           '${HubsomCommission.percentLabel} commission.',
