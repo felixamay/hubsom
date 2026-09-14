@@ -27,6 +27,7 @@ import '../services/local_purchase_offer_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
 import '../services/shop_video_cloud.dart';
+import '../services/shop_video_upload_progress.dart';
 import '../services/video_for_slow_network.dart';
 
 /// Cloud reads on the Home / feed path must never hold the UI on a slow link;
@@ -383,7 +384,45 @@ class CatalogRepository {
         );
       } catch (_) {}
     }
+    await _migrateShopVideosToStorage(list);
     await _backfillShopVideoThumbs(list);
+  }
+
+  /// Once the project has a Storage bucket, lift my own clips out of the
+  /// Firestore-chunk fallback so they stream from the CDN (seeking, Safari)
+  /// and stop eating Firestore quota.
+  Future<void> _migrateShopVideosToStorage(List<ShopVideo> list) async {
+    final user = _currentUser();
+    if (user == null) return;
+    if (!await CloudMedia.available()) return;
+    final stale = list
+        .where((v) => v.authorId == user.id)
+        .where((v) => CloudVideoMedia.isFirestoreRef(v.videoUrl))
+        .where((v) => !_publishing.contains(v.id))
+        .take(2)
+        .toList();
+    for (final video in stale) {
+      if (!_publishing.add(video.id)) continue;
+      try {
+        final stored = await ProductDemoVideoStore.load(video.id);
+        if (stored == null) continue;
+        final url = await CloudVideoMedia.migrateToStorage(
+          videoId: video.id,
+          bytes: stored.bytes,
+          mimeType: stored.mimeType,
+        );
+        if (url == null || url.isEmpty) continue;
+        await LocalCommerceStore.updateShopVideo(
+          video.copyWith(videoUrl: url),
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('CatalogRepository._migrateShopVideosToStorage: $e');
+        }
+      } finally {
+        _publishing.remove(video.id);
+      }
+    }
   }
 
   /// Uploader's device: make sure every clip of mine has a still other
@@ -549,6 +588,7 @@ class CatalogRepository {
     TimelinePost? timelinePost,
   }) async {
     if (!_publishing.add(videoId)) return;
+    ShopVideoUploadProgress.start(videoId);
     try {
       final draft = LocalCommerceStore.getShopVideo(videoId);
       if (draft == null) return;
@@ -566,6 +606,7 @@ class CatalogRepository {
         videoId: videoId,
         bytes: bytes,
         mimeType: mimeType,
+        onProgress: (f) => ShopVideoUploadProgress.report(videoId, f),
       ).timeout(const Duration(minutes: 20), onTimeout: () => null);
       if (remoteUrl == null || remoteUrl.isEmpty) return;
 
@@ -587,6 +628,7 @@ class CatalogRepository {
       }
     } finally {
       _publishing.remove(videoId);
+      ShopVideoUploadProgress.finish(videoId);
     }
   }
 

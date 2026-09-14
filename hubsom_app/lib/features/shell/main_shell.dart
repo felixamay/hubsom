@@ -25,7 +25,7 @@ class MainShell extends ConsumerWidget {
     ),
     (
       path: '/sell',
-      label: 'Sell',
+      label: 'Sellers Dashboard',
       icon: Icons.storefront_outlined,
       selected: Icons.storefront
     ),
@@ -49,7 +49,7 @@ class MainShell extends ConsumerWidget {
     ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('auctions', Icons.gavel, 'Auctions'),
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
-    ('sell', Icons.add_business_outlined, 'Sell'),
+    ('sell', Icons.add_business_outlined, 'Sellers Dashboard'),
     ('dashboard', Icons.insights_outlined, 'Dashboard'),
     ('contact', Icons.mail_outline, 'Contact us'),
   ];

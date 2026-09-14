@@ -29,71 +29,122 @@ class LiveViewerVideo extends StatefulWidget {
 }
 
 class _LiveViewerVideoState extends State<LiveViewerVideo> {
+  /// Give the host this long to answer before asking for a fresh offer. Covers
+  /// a host tab that reloaded and no longer knows about this viewer.
+  static const _connectTimeout = Duration(seconds: 20);
+
+  /// How often to tell the host we are still watching. Must stay well inside
+  /// the host's stale-viewer window.
+  static const _heartbeatEvery = Duration(seconds: 15);
+
   late final String _viewType;
+  web.HTMLVideoElement? _videoEl; // direct ref so shadow-DOM getElementById is not needed
   web.RTCPeerConnection? _pc;
+  web.MediaStream? _remote;
+
+  /// Fallback stream for browsers whose track events carry no stream.
+  web.MediaStream? _assembled;
+  StreamSubscription<LiveWebrtcSignal?>? _watch;
   Timer? _poll;
+  Timer? _upkeep;
+  Timer? _attachRetry;
+  Timer? _iceFlush;
   bool _ready = false;
-  bool _connecting = true;
-  bool _needsUnmute = false;
+  bool _muted = false;
+  bool _handling = false;
+  bool _answerPublished = false;
   String? _status;
   int _hostIceApplied = 0;
+  int _icePublished = 0;
   String? _acceptedOfferSdp;
+  DateTime _attemptStartedAt = DateTime.now();
+  DateTime _lastHeartbeat = DateTime.now();
   final List<String> _localIce = [];
-  bool _iceDirty = false;
 
   @override
   void initState() {
     super.initState();
-    _viewType =
-        'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
+    _viewType = 'hubsom-live-viewer-${DateTime.now().microsecondsSinceEpoch}';
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final video = web.HTMLVideoElement()
         ..autoplay = true
-        ..setAttribute('playsinline', 'true')
+        ..muted = true // Autoplay policies on Safari/Chrome require muted to
+        //   start; the viewer unmutes via the sound button.
+        ..setAttribute('playsinline', '')
+        ..setAttribute('webkit-playsinline', '')
+        ..setAttribute('autoplay', '')
+        ..setAttribute('muted', '')
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
         ..style.backgroundColor = '#0b1f17';
       video.id = _viewType;
+      _videoEl = video; // capture direct reference — getElementById won't
+      //   reach this element inside CanvasKit's shadow root
       return video;
     });
+    _muted = true; // Match the element's initial muted state.
+    _status = 'Connecting to seller…';
     unawaited(_bootstrap());
-    _poll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_tick());
+
+    // Listeners deliver the host's offer as soon as it is written. Polling is
+    // only a fallback for when Firestore cannot push, and can be slow because
+    // it is no longer on the critical path.
+    if (LiveWebrtcSignalStore.canWatch) {
+      _watch = LiveWebrtcSignalStore.watchOne(
+        widget.streamId,
+        widget.viewerId,
+      ).listen((signal) => unawaited(_handle(signal)));
+    } else {
+      _poll = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_pollOnce());
+      });
+    }
+
+    _upkeep = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_upkeepTick());
     });
   }
 
   Future<void> _bootstrap() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await LiveWebrtcSignalStore.upsert(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-        streamId: widget.streamId,
-        viewerId: widget.viewerId,
-        state: 'waiting',
-        updatedAt: now,
-      ),
-    );
-    if (mounted) {
-      setState(() {
-        _connecting = true;
-        _status = 'Connecting to seller…';
-      });
-    }
-    await _tick();
+    await _announce();
+    if (!LiveWebrtcSignalStore.canWatch) await _pollOnce();
   }
 
-  Future<void> _tick() async {
-    if (!mounted) return;
+  /// Tell the host a viewer is here and wants an offer.
+  Future<void> _announce() async {
+    _attemptStartedAt = DateTime.now();
+    _lastHeartbeat = DateTime.now();
     try {
-      final signal = await LiveWebrtcSignalStore.get(
-        widget.streamId,
-        widget.viewerId,
+      await LiveWebrtcSignalStore.announceViewer(
+        streamId: widget.streamId,
+        viewerId: widget.viewerId,
       );
-      if (signal == null || signal.state == 'closed') {
-        if (signal?.state == 'closed') {
-          await _resetPeer(rejoin: true);
-        }
+    } catch (_) {
+      // Upkeep retries.
+    }
+  }
+
+  Future<void> _pollOnce() async {
+    try {
+      await _handle(
+        await LiveWebrtcSignalStore.get(widget.streamId, widget.viewerId),
+      );
+    } catch (_) {
+      // Keep going; live room still works without video.
+    }
+  }
+
+  Future<void> _handle(LiveWebrtcSignal? signal) async {
+    if (!mounted || _handling) return;
+    _handling = true;
+    try {
+      if (signal == null) {
+        await _announce();
+        return;
+      }
+      if (signal.state == 'closed') {
+        await _resetPeer(rejoin: true);
         return;
       }
 
@@ -104,31 +155,74 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
 
       final pc = _pc;
       if (pc != null && signal.hostIce.length > _hostIceApplied) {
-        await applyRemoteIce(
+        _hostIceApplied = await applyRemoteIce(
           pc,
           signal.hostIce,
           appliedCount: _hostIceApplied,
         );
-        _hostIceApplied = signal.hostIce.length;
-      }
-
-      if (_iceDirty && _localIce.isNotEmpty) {
-        _iceDirty = false;
-        final latest = await LiveWebrtcSignalStore.get(
-          widget.streamId,
-          widget.viewerId,
-        );
-        if (latest != null && latest.state != 'closed') {
-          await LiveWebrtcSignalStore.upsert(
-            latest.copyWith(
-              viewerIce: List<String>.from(_localIce),
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-        }
       }
     } catch (_) {
-      // Keep polling; live room still works without video.
+      // Upkeep recovers.
+    } finally {
+      _handling = false;
+    }
+  }
+
+  /// Heartbeat, stall detection and dead-connection recovery. None of this is
+  /// on the path to first frame, so it runs on a slow timer.
+  Future<void> _upkeepTick() async {
+    if (!mounted) return;
+    try {
+      final pc = _pc;
+      if (pc != null &&
+          (isDeadPeerState(pc.connectionState) ||
+              isDeadPeerState(pc.iceConnectionState))) {
+        await _resetPeer(rejoin: true);
+        return;
+      }
+
+      if (DateTime.now().difference(_lastHeartbeat) > _heartbeatEvery) {
+        _lastHeartbeat = DateTime.now();
+        await LiveWebrtcSignalStore.viewerHeartbeat(
+          streamId: widget.streamId,
+          viewerId: widget.viewerId,
+        );
+      }
+
+      if (!_ready &&
+          DateTime.now().difference(_attemptStartedAt) > _connectTimeout) {
+        await _resetPeer(rejoin: true);
+      }
+    } catch (_) {
+      // Try again next tick.
+    }
+  }
+
+  /// Send candidates as they are gathered rather than on a tick boundary.
+  ///
+  /// A short debounce batches the burst that arrives right after the answer
+  /// into one write without holding the first candidate back.
+  void _scheduleIceFlush() {
+    if (!_answerPublished) return;
+    _iceFlush?.cancel();
+    _iceFlush = Timer(const Duration(milliseconds: 60), () {
+      unawaited(_flushIce());
+    });
+  }
+
+  Future<void> _flushIce() async {
+    if (!_answerPublished || _localIce.length <= _icePublished) return;
+    final pending = _localIce.sublist(_icePublished);
+    _icePublished = _localIce.length;
+    try {
+      await LiveWebrtcSignalStore.appendIce(
+        streamId: widget.streamId,
+        viewerId: widget.viewerId,
+        viewer: pending,
+      );
+    } catch (_) {
+      // Re-send on the next gathered candidate.
+      _icePublished -= pending.length;
     }
   }
 
@@ -137,28 +231,25 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     final pc = web.RTCPeerConnection(liveRtcConfig());
     _pc = pc;
     _hostIceApplied = 0;
+    _icePublished = 0;
     _localIce.clear();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
+    _assembled = null;
+    _attemptStartedAt = DateTime.now();
 
     pc.ontrack = ((web.Event event) {
       final te = event as web.RTCTrackEvent;
       final streams = te.streams.toDart;
-      web.MediaStream? remote;
       if (streams.isNotEmpty) {
-        remote = streams.first;
-      } else {
-        final stream = web.MediaStream();
-        stream.addTrack(te.track);
-        remote = stream;
+        _showRemote(streams.first);
+        return;
       }
-      _attach(remote);
-      if (mounted) {
-        setState(() {
-          _ready = true;
-          _connecting = false;
-          _status = null;
-        });
-      }
+      // Some browsers report no stream on the event. Collect the tracks into
+      // one stream rather than letting the video track replace the audio one.
+      final assembled = _assembled ??= web.MediaStream();
+      assembled.addTrack(te.track);
+      _showRemote(assembled);
     }).toJS;
 
     pc.onicecandidate = ((web.Event event) {
@@ -168,14 +259,19 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       final encoded = encodeIceCandidate(c);
       if (encoded.isEmpty) return;
       _localIce.add(encoded);
-      _iceDirty = true;
+      _scheduleIceFlush();
     }).toJS;
 
-    final offer = web.RTCSessionDescriptionInit(
-      type: signal.offerType ?? 'offer',
-      sdp: signal.offerSdp ?? '',
-    );
-    await pc.setRemoteDescription(offer).toDart;
+    await pc
+        .setRemoteDescription(
+          web.RTCSessionDescriptionInit(
+            type: signal.offerType?.isNotEmpty == true
+                ? signal.offerType!
+                : 'offer',
+            sdp: signal.offerSdp ?? '',
+          ),
+        )
+        .toDart;
     final answer = await pc.createAnswer().toDart;
     if (answer == null) return;
     await pc
@@ -188,50 +284,71 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         .toDart;
 
     _acceptedOfferSdp = signal.offerSdp;
-    await LiveWebrtcSignalStore.upsert(
-      signal.copyWith(
+    await LiveWebrtcSignalStore.upsertViewerSide(
+      LiveWebrtcSignal(
+        id: signal.id,
+        streamId: signal.streamId,
+        viewerId: signal.viewerId,
         state: 'answered',
         answerSdp: answer.sdp,
         answerType: answer.type,
-        viewerIce: List<String>.from(_localIce),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    if (mounted) {
+    // Candidates were held back until now: the host's offer write resets both
+    // ICE lists, so anything sent earlier would have been wiped.
+    _answerPublished = true;
+    unawaited(_flushIce());
+    if (mounted && !_ready) {
+      setState(() => _status = 'Almost there…');
+    }
+  }
+
+  /// Remember the stream *and* keep trying to hand it to the <video> element.
+  void _showRemote(web.MediaStream stream) {
+    _remote = stream;
+    if (mounted && !_ready) {
       setState(() {
-        _connecting = true;
-        _status = 'Almost there…';
+        _ready = true;
+        _status = null;
       });
     }
+    _attach();
   }
 
-  void _attach(web.MediaStream stream) {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      video.srcObject = stream;
-      video.muted = false;
-      video.play().toDart.then(
-        (_) {
-          if (mounted) setState(() => _needsUnmute = false);
-        },
-        onError: (_) {
-          video.muted = true;
-          video.play().toDart;
-          if (mounted) setState(() => _needsUnmute = true);
-        },
-      );
+  void _attach() {
+    final stream = _remote;
+    final video = _videoEl;
+    if (stream == null) return;
+    if (video == null) {
+      // Element not created yet — retry once the platform view fires.
+      _attachRetry?.cancel();
+      _attachRetry = Timer(const Duration(milliseconds: 120), () {
+        if (mounted) _attach();
+      });
+      return;
     }
+    attachStreamToElement(video: video, stream: stream, muted: _muted);
+    _attachRetry?.cancel();
+    _attachRetry = null;
+    _syncMuteAffordance(video);
   }
 
-  void _unmute() {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      video.muted = false;
-      video.play().toDart;
-    }
-    if (mounted) setState(() => _needsUnmute = false);
+  void _syncMuteAffordance(web.HTMLVideoElement video) {
+    // Autoplay policies may mute the element; reflect that in the control.
+    Future<void>.delayed(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      if (video.muted != _muted) setState(() => _muted = video.muted);
+    });
+  }
+
+  void _toggleSound() {
+    final next = !_muted;
+    setState(() => _muted = next);
+    final video = _videoEl;
+    final stream = _remote;
+    if (video == null || stream == null) return;
+    attachStreamToElement(video: video, stream: stream, muted: next);
   }
 
   Future<void> _disposePc() async {
@@ -247,32 +364,32 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   Future<void> _resetPeer({required bool rejoin}) async {
     await _disposePc();
     _acceptedOfferSdp = null;
+    _answerPublished = false;
     _hostIceApplied = 0;
+    _icePublished = 0;
     _localIce.clear();
-    _iceDirty = false;
+    _remote = null;
+    _assembled = null;
+    _attachRetry?.cancel();
+    _attachRetry = null;
+    _iceFlush?.cancel();
+    _iceFlush = null;
     if (mounted) {
       setState(() {
         _ready = false;
-        _connecting = true;
         _status = 'Reconnecting…';
       });
     }
-    if (rejoin) {
-      await LiveWebrtcSignalStore.upsert(
-        LiveWebrtcSignal(
-          id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-          streamId: widget.streamId,
-          viewerId: widget.viewerId,
-          state: 'waiting',
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
+    if (rejoin) await _announce();
   }
 
   @override
   void dispose() {
+    unawaited(_watch?.cancel());
     _poll?.cancel();
+    _upkeep?.cancel();
+    _attachRetry?.cancel();
+    _iceFlush?.cancel();
     unawaited(_disposePc());
     unawaited(
       LiveWebrtcSignalStore.close(widget.streamId, widget.viewerId),
@@ -285,19 +402,21 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (_ready)
-          HtmlElementView(
-            viewType: _viewType,
-            onPlatformViewCreated: (_) {
-              // Stream may already be attached via ontrack.
-            },
-          )
-        else
+        // Always mounted: `ontrack` can only hand the stream to an element that
+        // already exists, so the video surface cannot wait on a connection.
+        HtmlElementView(
+          viewType: _viewType,
+          onPlatformViewCreated: (_) {
+            // Element is now in the DOM (or shadow DOM). Retry any pending
+            // attach; _videoEl was already set in the factory.
+            _attach();
+          },
+        ),
+        if (!_ready)
           _PresenceFallback(
             hostName: widget.hostName,
             pulse: widget.pulse,
-            subtitle: _status ??
-                (_connecting ? 'Connecting to seller…' : 'Waiting for seller video'),
+            subtitle: _status ?? 'Connecting to seller…',
           ),
         if (_ready)
           Positioned(
@@ -318,18 +437,23 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
               ),
             ),
           ),
-        if (_ready && _needsUnmute)
+        // Always offered once video is up: browsers often start muted, and a
+        // viewer sitting near the seller needs to be able to kill the audio.
+        if (_ready)
           Positioned(
             right: 16,
             bottom: 24,
             child: TextButton.icon(
-              onPressed: _unmute,
+              onPressed: _toggleSound,
               style: TextButton.styleFrom(
                 backgroundColor: Colors.black54,
                 foregroundColor: Colors.white,
               ),
-              icon: const Icon(Icons.volume_up, size: 18),
-              label: const Text('Tap for sound'),
+              icon: Icon(
+                _muted ? Icons.volume_off : Icons.volume_up,
+                size: 18,
+              ),
+              label: Text(_muted ? 'Tap for sound' : 'Mute'),
             ),
           ),
       ],

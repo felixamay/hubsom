@@ -35,6 +35,11 @@ class CloudVideoMedia {
   static String fsRefFor(String videoId) => '$fsScheme$videoId';
 
   /// Upload bytes; returns an https Storage URL or a `hubsom-fs://` ref.
+  ///
+  /// Google Cloud Storage is tried first because clips served from it stream
+  /// with range requests (seeking, Safari). [CloudMedia] returns null straight
+  /// away when the project has no bucket, so nothing is wasted before the
+  /// Firestore-chunk fallback runs.
   static Future<String?> publish({
     required String videoId,
     required Uint8List bytes,
@@ -49,7 +54,8 @@ class CloudVideoMedia {
         videoId: videoId,
         bytes: bytes,
         mimeType: mimeType,
-      ).timeout(const Duration(seconds: 45), onTimeout: () => null);
+        onProgress: onProgress,
+      );
     } catch (_) {
       storageUrl = null;
     }
@@ -66,6 +72,27 @@ class CloudVideoMedia {
     );
     if (!ok) return null;
     return fsRefFor(videoId);
+  }
+
+  /// Move a clip that lives in Firestore chunks onto Google Cloud Storage.
+  ///
+  /// Returns the new https URL, or null when Storage is still unavailable.
+  /// The chunks are dropped afterwards so the Firestore quota is reclaimed.
+  static Future<String?> migrateToStorage({
+    required String videoId,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    if (videoId.isEmpty || bytes.isEmpty) return null;
+    if (!await CloudMedia.available()) return null;
+    final url = await CloudMedia.uploadShopVideo(
+      videoId: videoId,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    if (url == null || url.isEmpty) return null;
+    await deletePublished(videoId: videoId);
+    return url;
   }
 
   /// True when the meta doc says every chunk is already in Firestore.

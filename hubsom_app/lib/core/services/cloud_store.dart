@@ -439,6 +439,24 @@ class CloudStore {
     }
   }
 
+  /// True when Firestore can push collection changes instead of being polled.
+  static bool get canWatch => useNetwork && _db != null;
+
+  /// Emits every time [collection] changes server-side.
+  ///
+  /// Callers use this to refresh instead of waiting out a poll interval, which
+  /// is what made a seller going live take so long to show up for users.
+  static Stream<void> watchCollection(String collection) {
+    if (!canWatch) return const Stream.empty();
+    final sdk = _db;
+    if (sdk == null) return const Stream.empty();
+    return sdk
+        .collection(collection)
+        .snapshots()
+        .map<void>((_) {})
+        .handleError((_) {});
+  }
+
   static Future<List<Map<String, dynamic>>> listDocs(String collection) async {
     if (!useNetwork) return const [];
     final sdk = _db;

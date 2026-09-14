@@ -75,6 +75,32 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         if (mounted) setState(() {});
       });
     }
+    // Always refresh to the device's current GPS if permission was already
+    // granted. This ensures the address sent to riders reflects where the
+    // customer actually is now, not where they were last time they checked out.
+    _refreshGpsSilently(user);
+  }
+
+  /// Silently updates the delivery pin to the current GPS without showing any
+  /// busy indicator or prompting for permission. Called automatically on open.
+  Future<void> _refreshGpsSilently(HubsomUser user) async {
+    final pin = await ref.read(locationServiceProvider).silentCurrent();
+    if (pin == null || !mounted) return;
+    HubsomUser? next;
+    try {
+      next = await UserAddressStore.saveAllowedGps(
+        user: user,
+        pin: pin,
+        phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+      );
+      ref.read(authStateProvider.notifier).applyLocalUser(next);
+    } catch (_) {}
+    if (!mounted) return;
+    await _applyPin(
+      pin,
+      address: next == null ? null : UserAddressStore.defaultAddress(next),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _useGps() async {

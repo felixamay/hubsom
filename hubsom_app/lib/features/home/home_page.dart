@@ -43,6 +43,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productsProvider((category: null, q: null)));
+    // Keeps "Live now" current without the user reloading the page.
+    ref.watch(liveStreamsPulseProvider);
     final streamsAsync = ref.watch(streamsProvider);
     final promosAsync = ref.watch(promotionsProvider('landing'));
     final videosAsync = ref.watch(shopVideosProvider);
