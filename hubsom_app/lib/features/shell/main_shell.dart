@@ -42,18 +42,16 @@ class MainShell extends ConsumerWidget {
     ),
   ];
 
-  /// Browse-only links guests may see. Sell is signed-in only.
+  /// Browse links everyone may see. Sell is visible to guests; AuthGate locks it.
   static const guestBrowseItems = <(String value, IconData icon, String label)>[
     ('live', Icons.videocam_outlined, 'Live'),
     ('marketplace', Icons.storefront_outlined, 'Marketplace'),
     ('auctions', Icons.gavel, 'Auctions'),
     ('flash', Icons.bolt_outlined, 'Flash Sales'),
-  ];
-
-  static const signedInBrowseItems = <(String value, IconData icon, String label)>[
-    ...guestBrowseItems,
     ('sell', Icons.add_business_outlined, 'Sell'),
   ];
+
+  static const signedInBrowseItems = guestBrowseItems;
 
   static const accountMenuItems = <(String value, IconData icon, String label)>[
     ('account', Icons.person_outline, 'Account'),
@@ -74,10 +72,12 @@ class MainShell extends ConsumerWidget {
     required bool signedIn,
   }) {
     if (signedIn) return shellIndex;
+    // Guests see Home / Categories / Sell / Timeline (no Dashboard).
     return switch (shellIndex) {
       0 => 0,
       1 => 1,
-      3 => 2,
+      2 => 2,
+      3 => 3,
       _ => 0,
     };
   }
@@ -95,7 +95,8 @@ class MainShell extends ConsumerWidget {
     final shellIndex = switch (visibleIndex) {
       0 => 0,
       1 => 1,
-      2 => 3,
+      2 => 2,
+      3 => 3,
       _ => 0,
     };
     _onTap(context, ref, shellIndex);
@@ -243,23 +244,7 @@ class MainShell extends ConsumerWidget {
     final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     final wide = ResponsiveScaffold.isWide(context);
     final menu = _buildMenu(signedIn: signedIn);
-    final footerTabs = signedIn
-        ? _tabs
-        : const [
-            (path: '/', label: 'Home', icon: Icons.home_outlined, selected: Icons.home),
-            (
-              path: '/categories',
-              label: 'Categories',
-              icon: Icons.grid_view_outlined,
-              selected: Icons.grid_view
-            ),
-            (
-              path: '/timeline',
-              label: 'Timeline',
-              icon: Icons.dynamic_feed_outlined,
-              selected: Icons.dynamic_feed
-            ),
-          ];
+    final footerTabs = signedIn ? _tabs : _tabs.sublist(0, 4);
     final selectedFooter = _visibleFooterIndex(
       shellIndex: navigationShell.currentIndex,
       signedIn: signedIn,

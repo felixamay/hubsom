@@ -3,12 +3,12 @@ import 'package:hubsom_app/core/auth/auth_routes.dart';
 import 'package:hubsom_app/features/shell/main_shell.dart';
 
 void main() {
-  test('guest menu hides account, wallet, gifts, and sell', () {
+  test('guest menu shows sell but hides account, wallet, and gifts', () {
     final guest = MainShell.menuDestinations(signedIn: false);
     final values = guest.map((e) => e.$1).toSet();
     expect(values.contains('live'), isTrue);
     expect(values.contains('marketplace'), isTrue);
-    expect(values.contains('sell'), isFalse);
+    expect(values.contains('sell'), isTrue);
     expect(values.contains('wallet'), isFalse);
     expect(values.contains('gifts'), isFalse);
     expect(values.contains('account'), isFalse);
@@ -39,6 +39,10 @@ void main() {
     expect(AuthRoutes.isPublic('/messages'), isFalse);
     expect(AuthRoutes.isPublic('/dashboard'), isFalse);
     expect(AuthRoutes.isPublic('/sell'), isFalse);
+    expect(
+      MainShell.menuDestinations(signedIn: false).any((e) => e.$1 == 'sell'),
+      isTrue,
+    );
     expect(AuthRoutes.isPublic('/videos/upload'), isFalse);
     expect(AuthRoutes.isPublic('/seller/go-live'), isFalse);
     expect(AuthRoutes.isPublic('/sell/go-live'), isFalse);

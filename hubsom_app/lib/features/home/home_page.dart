@@ -49,7 +49,6 @@ class HomePage extends ConsumerWidget {
     final promosAsync = ref.watch(promotionsProvider('landing'));
     final videosAsync = ref.watch(shopVideosProvider);
     final sellersAsync = ref.watch(sellersProvider);
-    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
 
     final products = productsAsync.when(
       data: (list) => list.whereType<Product>().toList(),
@@ -126,11 +125,10 @@ class HomePage extends ConsumerWidget {
                         onPressed: () => context.push('/live'),
                         child: const Text('Watch live'),
                       ),
-                      if (signedIn)
-                        OutlinedButton(
-                          onPressed: () => context.push('/sell'),
-                          child: const Text('Sell on Hubsom'),
-                        ),
+                      OutlinedButton(
+                        onPressed: () => context.push('/sell'),
+                        child: const Text('Sell on Hubsom'),
+                      ),
                     ],
                   ),
                 ],
