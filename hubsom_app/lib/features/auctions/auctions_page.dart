@@ -46,6 +46,7 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
   @override
   Widget build(BuildContext context) {
     final streamsAsync = ref.watch(streamsProvider);
+    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(
       appBar: AppBar(title: const Text('Live auctions')),
       body: streamsAsync.when(
@@ -76,11 +77,13 @@ class _AuctionsPageState extends ConsumerState<AuctionsPage> {
                       'When a seller goes live with bidding, the auction shows here.',
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => context.push('/seller/go-live'),
-                      child: const Text('Go live & auction'),
-                    ),
+                    if (signedIn) ...[
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => context.push('/seller/go-live'),
+                        child: const Text('Go live & auction'),
+                      ),
+                    ],
                   ],
                 ),
               ),

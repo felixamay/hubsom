@@ -85,23 +85,25 @@ class _StorePageState extends ConsumerState<StorePage> {
     final initial = seller.name.isNotEmpty
         ? seller.name.substring(0, 1).toUpperCase()
         : 'S';
+    final signedIn = ref.watch(authStateProvider).valueOrNull != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(seller.name),
         actions: [
-          IconButton(
-            tooltip: 'Message',
-            onPressed: () {
-              if (!ensureSignedIn(context, ref, message: 'Sign in to message')) {
-                return;
-              }
-              final peerId = (seller.ownerUserId?.isNotEmpty == true)
-                  ? seller.ownerUserId!
-                  : seller.id;
-              context.push('/messages/$peerId');
-            },
-            icon: const Icon(Icons.chat_bubble_outline),
-          ),
+          if (signedIn)
+            IconButton(
+              tooltip: 'Message',
+              onPressed: () {
+                if (!ensureSignedIn(context, ref, message: 'Sign in to message')) {
+                  return;
+                }
+                final peerId = (seller.ownerUserId?.isNotEmpty == true)
+                    ? seller.ownerUserId!
+                    : seller.id;
+                context.push('/messages/$peerId');
+              },
+              icon: const Icon(Icons.chat_bubble_outline),
+            ),
           TextButton(
             onPressed: _followBusy ? null : _toggleFollow,
             child: Text(_following ? 'Following' : 'Follow account'),

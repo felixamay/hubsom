@@ -126,8 +126,8 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 const SizedBox(height: 12),
                 Text(
                   _isHuber
-                      ? 'Create your Huber driver account to accept deliveries.'
-                      : 'One Hubsom account for shopping, selling, and Huber driving.',
+                      ? 'Create your Hail Rider account to accept deliveries.'
+                      : 'One Hubsom account for shopping, selling, and Hail Rider deliveries.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
@@ -172,7 +172,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                     DropdownMenuItem(value: 'buyer', child: Text('Buyer')),
                     DropdownMenuItem(value: 'seller', child: Text('Seller')),
                     DropdownMenuItem(value: 'both', child: Text('Buyer & seller')),
-                    DropdownMenuItem(value: 'huber', child: Text('Huber driver')),
+                    DropdownMenuItem(value: 'huber', child: Text('Hail Rider')),
                   ],
                   onChanged: (v) => setState(() => _role = v ?? 'buyer'),
                   decoration: const InputDecoration(labelText: 'Account type'),
@@ -180,7 +180,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 if (_isHuber) ...[
                   const SizedBox(height: 16),
                   Text(
-                    'Huber driver details',
+                    'Hail Rider details',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -192,7 +192,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                     keyboardType: TextInputType.phone,
                     validator: (v) =>
                         _isHuber && (v == null || v.trim().isEmpty)
-                            ? 'Phone required for Huber'
+                            ? 'Phone required for Hail Rider'
                             : null,
                   ),
                   const SizedBox(height: 12),

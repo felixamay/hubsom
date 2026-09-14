@@ -50,7 +50,7 @@ class AuthRepository {
     _validateCredentials(normalized, password, name: name);
     if (AuthRoutes.isHuberRole(role) &&
         (huber == null || huber.phone.trim().isEmpty)) {
-      throw AuthException('Phone number is required for a Huber driver account');
+      throw AuthException('Phone number is required for a Hail Rider account');
     }
 
     final cloudExisting = await CloudStore.getAccount(normalized);
@@ -355,7 +355,7 @@ class AuthRepository {
     }
     if (AuthRoutes.isHuberRole(role) &&
         (huber == null || huber.phone.trim().isEmpty)) {
-      throw AuthException('Phone number is required for a Huber driver account');
+      throw AuthException('Phone number is required for a Hail Rider account');
     }
     final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
     final isHuber = AuthRoutes.isHuberRole(role);

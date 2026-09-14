@@ -77,10 +77,10 @@ class AuthGate extends ConsumerWidget {
 
         if (requireHuber && !user.isHuber && user.role != 'admin') {
           return _LockedScaffold(
-            title: 'Huber driver access required',
+            title: 'Hail Rider access required',
             message:
-                'This area is for Huber riders. Create a Huber driver account to receive Hubsom delivery offers.',
-            primaryLabel: 'Create Huber account',
+                'This area is for Hail Riders. Create a Hail Rider account to receive Hubsom delivery offers.',
+            primaryLabel: 'Create Hail Rider account',
             onPrimary: () => context.go('/auth/sign-up?role=huber&callbackUrl=%2Fhuber'),
             secondaryLabel: 'Account',
             onSecondary: () => context.go('/account'),
