@@ -66,10 +66,14 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   // Flutter CanvasKit embeds HtmlElementView inside a shadow root. Safari
   // refuses to paint <video> elements in shadow roots regardless of CSS
   // compositing hints. On Safari we therefore create a second <video> element
-  // directly in document.body at z-index 1 so it shows through Flutter's
-  // transparent canvas. The HtmlElementView slot becomes an invisible
-  // placeholder that keeps the Flutter layout intact.
+  // directly in document.body *underneath* the Flutter view so it shows
+  // through Flutter's transparent canvas while chat, buttons and the
+  // tap-to-play overlay stay on top. The HtmlElementView slot becomes an
+  // invisible placeholder that keeps the Flutter layout intact.
   web.HTMLVideoElement? _safariBodyEl;
+
+  /// Connection diagnostics shown while no video frames are being painted.
+  String? _diag;
 
   void _initSafariBodyVideo() {
     final v = web.HTMLVideoElement()
@@ -82,12 +86,11 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       ..style.setProperty('top', '0')
       ..style.setProperty('left', '0')
       ..style.setProperty('width', '100%')
-      ..style.setProperty('height', '100vh')
+      ..style.setProperty('height', '100%')
       ..style.setProperty('object-fit', 'cover')
-      ..style.setProperty('z-index', '1')
       ..style.setProperty('background-color', '#0b1f17')
       ..style.setProperty('display', 'none'); // hidden until stream arrives
-    web.document.body?.append(v);
+    mountBehindFlutter(v);
     _safariBodyEl = v;
     _videoEl = v; // All WebRTC attachment code goes through _videoEl
   }
@@ -228,7 +231,29 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
           DateTime.now().difference(_attemptStartedAt) > _connectTimeout) {
         await _resetPeer(rejoin: true);
       }
+      _refreshDiag();
     } catch (_) {}
+  }
+
+  /// Surfaces peer/video state so a blank stage can be reported precisely.
+  /// Hidden automatically once real frames are painting.
+  void _refreshDiag() {
+    if (!mounted) return;
+    final pc = _pc;
+    final video = _videoEl;
+    String? next;
+    if (pc != null) {
+      final painting = video != null && video.videoWidth > 0;
+      if (!painting) {
+        final size = video == null
+            ? 'no element'
+            : '${video.videoWidth}x${video.videoHeight} rs${video.readyState}'
+                '${video.paused ? ' paused' : ''}';
+        next = 'peer ${pc.connectionState} · ice ${pc.iceConnectionState} · '
+            'video $size';
+      }
+    }
+    if (next != _diag) setState(() => _diag = next);
   }
 
   void _scheduleIceFlush() {
@@ -471,7 +496,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       children: [
         // Always mounted: `ontrack` hands the stream to this element before
         // the connection is visible. On Safari this is a transparent <div>;
-        // the real video is in document.body at z-index 1.
+        // the real video is in document.body underneath the Flutter view.
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
@@ -483,6 +508,22 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
             hostName: widget.hostName,
             pulse: widget.pulse,
             subtitle: _status ?? 'Connecting to seller…',
+          ),
+        if (_diag != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 72,
+            child: IgnorePointer(
+              child: Text(
+                _diag!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                ),
+              ),
+            ),
           ),
         if (_ready && !_playBlocked)
           Positioned(

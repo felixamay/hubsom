@@ -56,13 +56,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
       ..style.setProperty('top', '0')
       ..style.setProperty('left', '0')
       ..style.setProperty('width', '100%')
-      ..style.setProperty('height', '100vh')
+      ..style.setProperty('height', '100%')
       ..style.setProperty('object-fit', 'cover')
-      ..style.setProperty('z-index', '1')
       ..style.setProperty('background-color', '#0b1f17')
       ..style.setProperty('display', 'none');
     silenceElement(v);
-    web.document.body?.append(v);
+    mountBehindFlutter(v);
     _safariBodyEl = v;
     _videoEl = v;
   }
