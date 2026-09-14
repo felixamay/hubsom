@@ -34,6 +34,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   static const _viewerStaleAfter = Duration(seconds: 45);
 
   late final String _viewType;
+  web.HTMLVideoElement? _videoEl; // direct ref avoids getElementById in shadow DOM
   web.MediaStream? _media;
   String? _error;
   bool _ready = false;
@@ -58,6 +59,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         ..style.backgroundColor = '#0b1f17';
       silenceElement(video);
       video.id = _viewType;
+      _videoEl = video; // capture direct ref — CanvasKit shadow root hides it
       return video;
     });
     if (widget.enabled) {
@@ -335,14 +337,12 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   }
 
   void _attach(web.MediaStream stream) {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      // Re-asserted on every attach: the preview must never be audible.
-      silenceElement(video);
-      video.srcObject = stream;
-      video.play().toDart;
-    }
+    final video = _videoEl;
+    if (video == null) return;
+    // Re-asserted on every attach: the preview must never be audible.
+    silenceElement(video);
+    video.srcObject = stream;
+    video.play().toDart;
   }
 
   void _stopTracks(web.MediaStream stream) {
@@ -404,12 +404,9 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         HtmlElementView(
           viewType: _viewType,
           onPlatformViewCreated: (_) {
+            // _videoEl is already set by the factory; just attach any ready stream.
             final stream = _media;
-            if (stream != null) {
-              Future<void>.delayed(const Duration(milliseconds: 50), () {
-                _attach(stream);
-              });
-            }
+            if (stream != null) _attach(stream);
           },
         ),
         Positioned(

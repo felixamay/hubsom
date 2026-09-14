@@ -38,6 +38,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   static const _heartbeatEvery = Duration(seconds: 15);
 
   late final String _viewType;
+  web.HTMLVideoElement? _videoEl; // direct ref so shadow-DOM getElementById is not needed
   web.RTCPeerConnection? _pc;
   web.MediaStream? _remote;
 
@@ -78,6 +79,8 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         ..style.objectFit = 'cover'
         ..style.backgroundColor = '#0b1f17';
       video.id = _viewType;
+      _videoEl = video; // capture direct reference — getElementById won't
+      //   reach this element inside CanvasKit's shadow root
       return video;
     });
     _muted = true; // Match the element's initial muted state.
@@ -315,31 +318,24 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
 
   void _attach() {
     final stream = _remote;
+    final video = _videoEl;
     if (stream == null) return;
-    final attached = attachStreamToView(
-      viewType: _viewType,
-      stream: stream,
-      muted: _muted,
-    );
-    if (attached) {
+    if (video == null) {
+      // Element not created yet — retry once the platform view fires.
       _attachRetry?.cancel();
-      _attachRetry = null;
-      _syncMuteAffordance();
+      _attachRetry = Timer(const Duration(milliseconds: 120), () {
+        if (mounted) _attach();
+      });
       return;
     }
-    // The platform view may not be in the DOM yet — keep trying briefly.
+    attachStreamToElement(video: video, stream: stream, muted: _muted);
     _attachRetry?.cancel();
-    _attachRetry = Timer(const Duration(milliseconds: 120), () {
-      if (mounted) _attach();
-    });
+    _attachRetry = null;
+    _syncMuteAffordance(video);
   }
 
-  void _syncMuteAffordance() {
-    final el = web.document.getElementById(_viewType);
-    if (el == null || !el.isA<web.HTMLVideoElement>()) return;
-    final video = el as web.HTMLVideoElement;
-    // Autoplay policies mute the element when sound was not allowed; reflect
-    // that in the control instead of silently playing with no audio.
+  void _syncMuteAffordance(web.HTMLVideoElement video) {
+    // Autoplay policies may mute the element; reflect that in the control.
     Future<void>.delayed(const Duration(milliseconds: 400), () {
       if (!mounted) return;
       if (video.muted != _muted) setState(() => _muted = video.muted);
@@ -349,13 +345,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
   void _toggleSound() {
     final next = !_muted;
     setState(() => _muted = next);
+    final video = _videoEl;
     final stream = _remote;
-    if (stream == null) return;
-    attachStreamToView(
-      viewType: _viewType,
-      stream: stream,
-      muted: next,
-    );
+    if (video == null || stream == null) return;
+    attachStreamToElement(video: video, stream: stream, muted: next);
   }
 
   Future<void> _disposePc() async {
@@ -413,7 +406,11 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
         // already exists, so the video surface cannot wait on a connection.
         HtmlElementView(
           viewType: _viewType,
-          onPlatformViewCreated: (_) => _attach(),
+          onPlatformViewCreated: (_) {
+            // Element is now in the DOM (or shadow DOM). Retry any pending
+            // attach; _videoEl was already set in the factory.
+            _attach();
+          },
         ),
         if (!_ready)
           _PresenceFallback(

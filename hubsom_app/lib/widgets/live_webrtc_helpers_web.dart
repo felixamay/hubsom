@@ -121,18 +121,16 @@ Future<int> applyRemoteIce(
 bool isDeadPeerState(String? state) =>
     state == 'failed' || state == 'closed' || state == 'disconnected';
 
-/// Attach [stream] to the <video> element created for [viewType].
+/// Attach [stream] to [video].
 ///
-/// The element only exists once Flutter has mounted the platform view, so
-/// callers retry until it appears rather than dropping the stream on the floor.
-bool attachStreamToView({
-  required String viewType,
+/// Returns immediately — the caller is responsible for ensuring the element
+/// is in the DOM before calling (retry via onPlatformViewCreated or a short
+/// timer if needed).
+void attachStreamToElement({
+  required web.HTMLVideoElement video,
   required web.MediaStream stream,
   bool muted = false,
 }) {
-  final el = web.document.getElementById(viewType);
-  if (el == null || !el.isA<web.HTMLVideoElement>()) return false;
-  final video = el as web.HTMLVideoElement;
   // Re-assert playsinline so Safari never opens full-screen unexpectedly.
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
@@ -148,5 +146,23 @@ bool attachStreamToView({
       video.play().toDart.then((_) {}, onError: (_) {});
     },
   );
+}
+
+/// Attach [stream] to the <video> element created for [viewType].
+///
+/// The element only exists once Flutter has mounted the platform view, so
+/// callers retry until it appears rather than dropping the stream on the floor.
+///
+/// PREFER [attachStreamToElement] when a direct element reference is available
+/// (CanvasKit renders platform views inside a shadow root that
+/// [web.document.getElementById] cannot reach).
+bool attachStreamToView({
+  required String viewType,
+  required web.MediaStream stream,
+  bool muted = false,
+}) {
+  final el = web.document.getElementById(viewType);
+  if (el == null || !el.isA<web.HTMLVideoElement>()) return false;
+  attachStreamToElement(video: el as web.HTMLVideoElement, stream: stream, muted: muted);
   return true;
 }
