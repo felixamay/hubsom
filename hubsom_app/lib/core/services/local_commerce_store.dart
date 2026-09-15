@@ -25,8 +25,8 @@ import 'storage_media.dart';
 ///
 /// Shared catalogs (products, sellers, live shows, videos, follows) live in
 /// Firestore. This store is a thin cache so the UI can render offline and so
-/// a write can land before the cloud round-trip finishes. Reads from
-/// repositories prefer the cloud and then replace these lists.
+/// a write can land before the cloud round-trip finishes. Cloud rows overlay
+/// matching ids; local-only rows stay until Firestore has them.
 class LocalCommerceStore {
   LocalCommerceStore._();
 
@@ -257,13 +257,47 @@ class LocalCommerceStore {
     return null;
   }
 
-  /// Replace the cached catalog with the Firestore list.
+  /// Apply a Firestore catalog snapshot without dropping local-only rows.
+  ///
+  /// Cloud rows win on id so every browser sees the shared listing. A product
+  /// that exists only on this device is kept: publishing writes locally first
+  /// and the Firestore upsert often fails (three data-URL photos exceed the
+  /// 1MB document cap), and Home used to wipe that listing on the next fetch.
+  static List<Product> mergeCloudProducts(
+    List<Product> local,
+    List<Product> cloud,
+  ) {
+    final byId = <String, Product>{
+      for (final p in local) p.id: p,
+    };
+    for (final p in cloud) {
+      byId[p.id] = p;
+    }
+    return byId.values.toList();
+  }
+
+  static List<Seller> mergeCloudSellers(
+    List<Seller> local,
+    List<Seller> cloud,
+  ) {
+    final byId = <String, Seller>{
+      for (final s in local) s.id: s,
+    };
+    for (final s in cloud) {
+      byId[s.id] = s;
+    }
+    return byId.values.toList();
+  }
+
+  /// Merge the Firestore catalog into the on-device cache.
   static Future<void> replaceProducts(List<Product> products) async {
-    await _writeList(_productsKey, products.map((p) => p.toJson()).toList());
+    final merged = mergeCloudProducts(_allProducts(), products);
+    await _writeList(_productsKey, merged.map((p) => p.toJson()).toList());
   }
 
   static Future<void> replaceSellers(List<Seller> sellers) async {
-    await _writeList(_sellersKey, sellers.map((s) => s.toJson()).toList());
+    final merged = mergeCloudSellers(listSellers(), sellers);
+    await _writeList(_sellersKey, merged.map((s) => s.toJson()).toList());
   }
 
   static Future<void> replaceStreams(List<LiveStream> streams) async {

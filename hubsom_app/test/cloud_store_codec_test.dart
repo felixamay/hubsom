@@ -32,4 +32,21 @@ void main() {
       'ama@hubsom.test',
     );
   });
+
+  test('hydrate overlay keeps local-only docs the cloud list omitted', () {
+    final merged = CloudStore.mergeDocsById(
+      local: [
+        {'id': 'prod-local', 'name': 'Just published'},
+        {'id': 'prod-shared', 'name': 'Stale name'},
+      ],
+      incoming: [
+        {'id': 'prod-shared', 'name': 'Cloud name'},
+        {'id': 'prod-new', 'name': 'From another browser'},
+      ],
+    );
+    final byId = {for (final row in merged) '${row['id']}': row};
+    expect(byId['prod-local']?['name'], 'Just published');
+    expect(byId['prod-shared']?['name'], 'Cloud name');
+    expect(byId['prod-new']?['name'], 'From another browser');
+  });
 }

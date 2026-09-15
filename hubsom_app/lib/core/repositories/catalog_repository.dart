@@ -61,6 +61,8 @@ class CatalogRepository {
           } catch (_) {}
         }
         if (products.isNotEmpty) {
+          // Merge, do not clobber: a just-published local listing must survive
+          // when Firestore omitted it (too-large photos, lag, or a failed write).
           await LocalCommerceStore.replaceProducts(products);
           return LocalCommerceStore.listProducts(
             category: category,
@@ -116,7 +118,11 @@ class CatalogRepository {
       if (products.isEmpty) return local.where((p) => !p.isAuctionLot).toList();
 
       await LocalCommerceStore.replaceProducts(products);
-      return products.where((p) => !p.isAuctionLot).toList();
+      return LocalCommerceStore.listProducts(
+        category: category,
+        q: q,
+        sellerId: sellerId,
+      );
     } on DioException {
       return local.where((p) => !p.isAuctionLot).toList();
     } catch (_) {
@@ -157,7 +163,7 @@ class CatalogRepository {
         }
         if (remote.isNotEmpty) {
           await LocalCommerceStore.replaceSellers(remote);
-          return _withLiveFollowerCounts(remote);
+          return _withLiveFollowerCounts(LocalCommerceStore.listSellers());
         }
       }
     } catch (_) {}
@@ -178,7 +184,7 @@ class CatalogRepository {
           .map((e) => Seller.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
       await LocalCommerceStore.replaceSellers(remote);
-      return _withLiveFollowerCounts(remote);
+      return _withLiveFollowerCounts(LocalCommerceStore.listSellers());
     } catch (_) {
       return _withLiveFollowerCounts(local);
     }

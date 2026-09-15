@@ -459,7 +459,10 @@ class SellerRepository {
       for (final p in remote) {
         await LocalCommerceStore.upsertProduct(p);
       }
-      return remote;
+      return LocalCommerceStore.listProducts(
+        sellerId: seller.id,
+        includeAuctionLots: true,
+      );
     } catch (_) {
       return local;
     }
