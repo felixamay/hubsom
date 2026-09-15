@@ -8,8 +8,10 @@ import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
+import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/core/services/product_photo_compress.dart';
+import 'package:hubsom_app/models/product.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,5 +75,59 @@ void main() {
 
     final session = LocalStore.userJson!;
     expect(session.contains('seller-u1'), isTrue);
+  });
+
+  test('a cloud catalog fetch does not delete a listing that failed to sync',
+      () async {
+    final repo = SellerRepository(ApiClient());
+    final tiny = _dataUrl(_jpeg(width: 64, height: 64));
+    final created = await repo.createProduct({
+      'name': 'Kente cloth',
+      'description': 'Handwoven kente',
+      'category': 'fashion',
+      'priceGhs': 200,
+      'stock': 2,
+      'images': [tiny, tiny, tiny],
+    });
+    final localId = '${created['id']}';
+
+    const cloud = Product(
+      id: 'prod-cloud',
+      slug: 'cloud-bag',
+      name: 'Cloud bag',
+      description: 'Already in Firestore',
+      category: 'fashion',
+      priceGhs: 80,
+      images: ['https://cdn.hubsom.test/a.jpg'],
+      sellerId: 'seller-other',
+      stock: 4,
+    );
+
+    final merged = LocalCommerceStore.mergeCloudProducts(
+      LocalCommerceStore.listProducts(includeAuctionLots: true),
+      [cloud],
+    );
+    expect(merged.any((p) => p.id == localId), isTrue);
+    expect(merged.any((p) => p.id == 'prod-cloud'), isTrue);
+
+    await LocalCommerceStore.replaceProducts([cloud]);
+    expect(LocalCommerceStore.getProduct(localId), isNotNull);
+    expect(LocalCommerceStore.getProduct('prod-cloud')?.name, 'Cloud bag');
+
+    const updatedCloud = Product(
+      id: 'prod-cloud',
+      slug: 'cloud-bag',
+      name: 'Cloud bag v2',
+      description: 'Updated in Firestore',
+      category: 'fashion',
+      priceGhs: 90,
+      images: ['https://cdn.hubsom.test/a.jpg'],
+      sellerId: 'seller-other',
+      stock: 1,
+    );
+    await LocalCommerceStore.replaceProducts([updatedCloud]);
+    expect(LocalCommerceStore.getProduct(localId), isNotNull);
+    expect(LocalCommerceStore.getProduct('prod-cloud')?.name, 'Cloud bag v2');
+    expect(LocalCommerceStore.getProduct('prod-cloud')?.stock, 1);
   });
 }

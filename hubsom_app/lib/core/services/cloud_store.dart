@@ -502,6 +502,38 @@ class CloudStore {
     }
   }
 
+  /// Overlay cloud documents onto the on-device list. Matching ids take the
+  /// cloud row; local-only ids are kept so a failed/pending upsert is not lost.
+  static List<Map<String, dynamic>> mergeDocsById({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    return byId.values.toList();
+  }
+
+  static List<Map<String, dynamic>> _readCacheList(String? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final e in decoded)
+          if (e is Map) Map<String, dynamic>.from(e),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   static Future<void> hydrateLocalCache() async {
     if (!useNetwork) return;
     final mapping = <String, String>{
@@ -531,28 +563,22 @@ class CloudStore {
       try {
         final rows = await listDocs(entry.value);
         if (rows.isEmpty) return;
+        final raw = LocalStore.getString(entry.key);
+        final local = _readCacheList(raw);
         if (entry.key == 'localShopVideos') {
-          final raw = LocalStore.getString(entry.key);
-          final local = <Map<String, dynamic>>[];
-          if (raw != null && raw.isNotEmpty) {
-            try {
-              final decoded = jsonDecode(raw);
-              if (decoded is List) {
-                for (final e in decoded) {
-                  if (e is Map) {
-                    local.add(Map<String, dynamic>.from(e));
-                  }
-                }
-              }
-            } catch (_) {}
-          }
           await LocalStore.setString(
             entry.key,
             jsonEncode(mergeShopVideoDocs(local: local, incoming: rows)),
           );
           return;
         }
-        await LocalStore.setString(entry.key, jsonEncode(rows));
+        // Never replace the whole cache with a partial cloud list. A listing
+        // (or live show, order, …) written on this device must survive until
+        // Firestore actually has the document.
+        await LocalStore.setString(
+          entry.key,
+          jsonEncode(mergeDocsById(local: local, incoming: rows)),
+        );
       } catch (e) {
         if (kDebugMode) {
           debugPrint('CloudStore.hydrateLocalCache ${entry.value}: $e');
