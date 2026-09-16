@@ -44,10 +44,36 @@ const _buyer = HubsomUser(
   role: 'buyer',
 );
 
+const _accraPin = GeoLocation(
+  latitude: 5.6037,
+  longitude: -0.1870,
+  source: 'gps',
+);
+
 const _kumasiPin = GeoLocation(
   latitude: 6.6885,
   longitude: -1.6244,
   source: 'gps',
+);
+
+const _accraHome = UserAddress(
+  id: 'addr-home',
+  label: 'Home',
+  line1: 'East Legon, Accra',
+  city: 'Accra',
+  region: 'Greater Accra',
+  phone: '0240000000',
+  isDefault: true,
+  location: _accraPin,
+);
+
+const _buyerHome = HubsomUser(
+  id: 'buyer-gps',
+  email: 'buyer@hubsom.test',
+  name: 'Ama Buyer',
+  role: 'buyer',
+  phone: '0240000000',
+  addresses: [_accraHome],
 );
 
 const _dallasPin = GeoLocation(
@@ -70,7 +96,7 @@ void main() {
 
   setUp(() {
     CloudStore.useNetwork = false;
-    PlaceLookup.lookup = null;
+    PlaceLookup.lookup = (pin) async => PlaceLookup.fromLocal(pin);
   });
 
   tearDown(() {
@@ -149,6 +175,34 @@ void main() {
     expect(address.displayLine, 'Dallas, Texas');
     expect(address.city, 'Dallas');
     expect(address.line1, isNot(contains(_dallasPin.coordinateLabel)));
+  });
+
+  test('explicit GPS save replaces the previous default address', () async {
+    PlaceLookup.lookup = (pin) async => PlaceLookup.fromLocal(pin);
+    final accra = await UserAddressStore.saveAllowedGps(
+      user: _buyer,
+      pin: _accraPin,
+    );
+    expect(UserAddressStore.defaultAddress(accra)!.city, 'Accra');
+
+    final kumasi = await UserAddressStore.saveAllowedGps(
+      user: accra,
+      pin: _kumasiPin,
+    );
+    expect(UserAddressStore.defaultAddress(kumasi)!.city, 'Kumasi');
+    expect(UserAddressStore.defaultAddress(kumasi)!.location?.latitude, 6.6885);
+  });
+
+  test('loading a saved Home does not consume a later GPS pin', () async {
+    await LocalStore.setUserJson(jsonEncode(_buyerHome.toJson()));
+    final stored = HubsomUser.fromJson(
+      jsonDecode(LocalStore.userJson!) as Map<String, dynamic>,
+    );
+    final loaded = UserAddressStore.defaultAddress(stored)!;
+    expect(loaded.city, 'Accra');
+    expect(loaded.line1, 'East Legon, Accra');
+    expect(loaded.location?.latitude, 5.6037);
+    expect(loaded.city, isNot('Kumasi'));
   });
 
   testWidgets('addresses page saves the place name the GPS resolved',
