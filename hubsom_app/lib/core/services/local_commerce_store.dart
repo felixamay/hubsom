@@ -697,6 +697,11 @@ class LocalCommerceStore {
     Map<String, int>? productQuantities,
     bool end = false,
   }) async {
+    if (end) {
+      // Book a winner before status becomes 'closed'. Otherwise needsFinalize
+      // is false and the sale is never written.
+      await _settleOpenAuctionLot(id, autoRelist: false);
+    }
     final streams = listStreams();
     final idx = streams.indexWhere((s) => s.id == id);
     if (idx < 0) return null;
@@ -818,20 +823,7 @@ class LocalCommerceStore {
     }
 
     // Close the previous lot without ending the show.
-    if (current != null && current.orderId == null && current.status != 'sold') {
-      if (current.isOpen) {
-        await updateStream(
-          streamId,
-          auction: current.copyWith(
-            endsAt: DateTime.now()
-                .toUtc()
-                .subtract(const Duration(seconds: 1))
-                .toIso8601String(),
-          ),
-        );
-      }
-      await finalizeAuction(streamId, autoRelist: false);
-    }
+    await _settleOpenAuctionLot(streamId, autoRelist: false);
 
     final liveAfterSwitch = getStream(streamId) ?? stream;
     var offered = liveAfterSwitch.offeredQty(
@@ -993,6 +985,30 @@ class LocalCommerceStore {
       text: '🔥 Bid ${amountGhs.toStringAsFixed(0)} GHS — leading now',
     );
     return next;
+  }
+
+  /// Expire the current lot if it is still running, then create a winner order.
+  ///
+  /// Switching products mid-show and ending the live both use this so a high
+  /// bid is not discarded just because the host moved on.
+  static Future<void> _settleOpenAuctionLot(
+    String streamId, {
+    required bool autoRelist,
+  }) async {
+    final current = getStream(streamId)?.auction;
+    if (current == null || current.orderId != null || current.isSold) return;
+    if (current.isOpen) {
+      await updateStream(
+        streamId,
+        auction: current.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        ),
+      );
+    }
+    await finalizeAuction(streamId, autoRelist: autoRelist);
   }
 
   /// When the auction clock hits zero with a winner, create a seller order once.
