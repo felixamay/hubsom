@@ -552,4 +552,59 @@ void main() {
       isFalse,
     );
   });
+
+  test('ending live books a winner instead of discarding the lot', () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+
+    final ended = await LocalCommerceStore.updateStream(stream.id, end: true);
+    expect(ended, isNotNull);
+    expect(ended!.isLive, isFalse);
+    expect(ended.auction?.orderId, 'ord_auc_${auction.id}');
+    expect(ended.auction?.highestBidder, 'Kojo Bidder');
+
+    final orders = LocalHuberStore.listOrders();
+    expect(orders.map((o) => o.id), contains('ord_auc_${auction.id}'));
+    final order = orders.firstWhere((o) => o.id == 'ord_auc_${auction.id}');
+    expect(order.userId, 'buyer-1');
+    expect(order.subtotalGhs, 150);
+    expect(order.status, 'paid');
+    // Show is over — do not open a follow-up lot.
+    expect(ended.auction?.id, auction.id);
+  });
+
+  test('ending live while the clock is running still books the high bidder',
+      () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    expect(LocalCommerceStore.getStream(stream.id)!.auction!.isOpen, isTrue);
+
+    final ended = await LocalCommerceStore.updateStream(stream.id, end: true);
+    expect(ended, isNotNull);
+    expect(ended!.isLive, isFalse);
+    expect(ended.auction?.orderId, 'ord_auc_${auction.id}');
+    expect(
+      LocalHuberStore.listOrders().map((o) => o.id),
+      contains('ord_auc_${auction.id}'),
+    );
+  });
 }

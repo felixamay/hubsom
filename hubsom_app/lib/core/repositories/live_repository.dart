@@ -221,14 +221,10 @@ class LiveRepository {
 
   Future<LiveStream> endStream(String id) async {
     try {
-      final res = await _api.post('/api/streams/$id/end');
-      final data = ApiResponse.asMap(res.data);
-      final streamMap = data?['stream'] as Map? ?? data;
-      if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
-      }
+      await _api.post('/api/streams/$id/end');
     } catch (_) {
-      // fall through
+      // Local engine books the winner and ends the show; the API copy is
+      // best-effort and does not create the auction order.
     }
     final ended = await LocalCommerceStore.updateStream(id, end: true);
     if (ended == null) throw StateError('Stream not found');
