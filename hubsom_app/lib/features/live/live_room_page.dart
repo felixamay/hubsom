@@ -968,16 +968,15 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       return;
     }
     try {
-      final updated = await ref
-          .read(liveRepositoryProvider)
-          .reserveLiveUnit(widget.streamId, product.id);
+      // Do not consume the live bag here. A viewer who taps Buy and then
+      // leaves without paying used to lock that unit for the rest of the show.
+      // Checkout decrements once the order is actually placed.
       await ref.read(cartProvider.notifier).addProduct(
             product,
             source: 'live',
-            streamId: stream?.id,
+            streamId: stream?.id ?? widget.streamId,
           );
       if (!mounted) return;
-      setState(() => stream = updated);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${product.name} added to cart'),
