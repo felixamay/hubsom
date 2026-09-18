@@ -273,6 +273,8 @@ class LiveRepository {
     return updated;
   }
 
+  /// Used by checkout when a live cart line is paid. Prefer not calling this
+  /// from Add to cart — that left abandoned carts holding unsold units.
   Future<LiveStream> reserveLiveUnit(String streamId, String productId) async {
     final updated = await LocalCommerceStore.decrementLiveQuantity(
       streamId: streamId,

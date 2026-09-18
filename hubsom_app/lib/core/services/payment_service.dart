@@ -11,6 +11,7 @@ import '../config/app_config.dart';
 import 'admin_treasury_store.dart';
 import 'api_client.dart';
 import 'api_response.dart';
+import 'cloud_store.dart';
 import 'local_commerce_store.dart';
 import 'local_huber_store.dart';
 import 'local_message_store.dart';
@@ -95,18 +96,32 @@ class PaymentService {
     final merchandise = lines.fold<double>(0, (s, e) => s + e.lineTotalGhs);
     final shipmentFee =
         lines.fold<double>(0, (s, e) => s + e.shipmentLineTotal);
+    final liveStreamId = (streamId != null && streamId.trim().isNotEmpty)
+        ? streamId.trim()
+        : items
+            .map((e) => '${e['streamId'] ?? ''}'.trim())
+            .firstWhere((id) => id.isNotEmpty, orElse: () => '');
+    // Take units from the live bag only once payment is happening. Adding to
+    // cart used to decrement immediately, so closing the room without paying
+    // left the show sold out and no order.
+    await _consumeLiveBag(items);
     final orderId =
         'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}';
-    if (paymentMethods.contains('wallet')) {
-      final payer = user;
-      if (payer == null) {
-        throw StateError('Sign in to pay from your payment account');
+    try {
+      if (paymentMethods.contains('wallet')) {
+        final payer = user;
+        if (payer == null) {
+          throw StateError('Sign in to pay from your payment account');
+        }
+        await PaymentAccountStore.spendFromWithdrawAccount(
+          user: payer,
+          amountGhs: merchandise + shipmentFee,
+          ref: orderId,
+        );
       }
-      await PaymentAccountStore.spendFromWithdrawAccount(
-        user: payer,
-        amountGhs: merchandise + shipmentFee,
-        ref: orderId,
-      );
+    } catch (e) {
+      await _releaseLiveBag(items);
+      rethrow;
     }
     final order = Order(
       id: orderId,
@@ -117,7 +132,7 @@ class PaymentService {
       userId: user?.id,
       buyerName: dest.recipientName,
       buyerEmail: user?.email,
-      streamId: streamId,
+      streamId: liveStreamId.isEmpty ? streamId : liveStreamId,
       oneTap: oneTap,
       lines: lines,
       shipping: dest,
@@ -136,6 +151,57 @@ class PaymentService {
     await AdminTreasuryStore.recordPaidOrder(order);
     await _sendShipmentToBuyer(order: order, quotes: quotes);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  /// Decrement the live bag for paid cart lines. Roll back if any line is
+  /// already sold out so a partial checkout cannot keep units.
+  Future<void> _consumeLiveBag(List<Map<String, dynamic>> items) async {
+    final consumed = <({String streamId, String productId, int by})>[];
+    try {
+      for (final e in items) {
+        final liveId = '${e['streamId'] ?? ''}'.trim();
+        final productId = '${e['productId'] ?? ''}'.trim();
+        final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+        if (liveId.isEmpty || productId.isEmpty || qty < 1) continue;
+        final updated = await LocalCommerceStore.decrementLiveQuantity(
+          streamId: liveId,
+          productId: productId,
+          by: qty,
+        );
+        consumed.add((streamId: liveId, productId: productId, by: qty));
+        try {
+          await CloudStore.upsertDocs(CloudStore.streams, [updated.toJson()]);
+        } catch (_) {}
+      }
+    } catch (err) {
+      for (final row in consumed.reversed) {
+        await _releaseOne(row.streamId, row.productId, row.by);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _releaseLiveBag(List<Map<String, dynamic>> items) async {
+    for (final e in items.reversed) {
+      final liveId = '${e['streamId'] ?? ''}'.trim();
+      final productId = '${e['productId'] ?? ''}'.trim();
+      final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+      if (liveId.isEmpty || productId.isEmpty || qty < 1) continue;
+      await _releaseOne(liveId, productId, qty);
+    }
+  }
+
+  Future<void> _releaseOne(String streamId, String productId, int by) async {
+    try {
+      final restored = await LocalCommerceStore.releaseLiveQuantity(
+        streamId: streamId,
+        productId: productId,
+        by: by,
+      );
+      if (restored != null) {
+        await CloudStore.upsertDocs(CloudStore.streams, [restored.toJson()]);
+      }
+    } catch (_) {}
   }
 
   Future<void> _holdWithAdmin(Map<String, dynamic> data) async {

@@ -771,14 +771,17 @@ class LocalCommerceStore {
     );
   }
 
-  /// Consume one (or more) live units when a viewer buys from the show.
+  /// Consume live-bag units when a live cart line is actually paid.
+  ///
+  /// Allowed after the show ends so a viewer who already has the item in
+  /// checkout is not blocked by the host tapping End live.
   static Future<LiveStream> decrementLiveQuantity({
     required String streamId,
     required String productId,
     int by = 1,
   }) async {
     final stream = getStream(streamId);
-    if (stream == null || !stream.isLive) {
+    if (stream == null) {
       throw StateError('Live show not found');
     }
     final catalogStock = getProduct(productId)?.stock ?? 0;
@@ -791,6 +794,21 @@ class LocalCommerceStore {
     final updated = await updateStream(streamId, productQuantities: next);
     if (updated == null) throw StateError('Live show not found');
     return updated;
+  }
+
+  /// Put reserved live-bag units back (checkout failed after a decrement).
+  static Future<LiveStream?> releaseLiveQuantity({
+    required String streamId,
+    required String productId,
+    int by = 1,
+  }) async {
+    if (by < 1) return getStream(streamId);
+    final stream = getStream(streamId);
+    if (stream == null) return null;
+    final current = stream.offeredQty(productId, fallback: 0);
+    final next = Map<String, int>.from(stream.productQuantities);
+    next[productId] = current + by;
+    return updateStream(streamId, productQuantities: next);
   }
 
   /// Start (or switch to) an auction on a catalog product without ending the live.
