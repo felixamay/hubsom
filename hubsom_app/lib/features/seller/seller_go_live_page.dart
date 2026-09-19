@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/owncast_media.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/product.dart';
 import '../../widgets/hubsom_image.dart';
+import '../../widgets/owncast_rtmp_card.dart';
 
 class SellerGoLivePage extends ConsumerStatefulWidget {
   const SellerGoLivePage({super.key});
@@ -146,8 +148,23 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Pick products, optionally open an auction, then go live. Viewers can chat, react, bid, and buy.',
+                  'Pick products, optionally open an auction, then go live. Viewers watch Owncast HLS, chat, react, bid, and buy.',
                 ),
+                const SizedBox(height: 12),
+                if (!OwncastMedia.isConfigured)
+                  const OwncastRtmpCard(streamId: '')
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: HubsomColors.mint,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Owncast is connected at ${OwncastMedia.baseUrl}. After you start, copy the RTMP URL and this show\'s stream key from the live room (OBS / Larix). Viewers play HLS automatically.',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _title,

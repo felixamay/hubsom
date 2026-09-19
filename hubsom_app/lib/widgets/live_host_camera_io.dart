@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/hubsom_colors.dart';
+import 'owncast_rtmp_card.dart';
 
-/// Mobile/desktop presence panel (full Agora video view can be wired later).
+/// Mobile/desktop host stage: local presence + Owncast RTMP ingest card.
 class LiveHostCamera extends StatelessWidget {
   const LiveHostCamera({
     super.key,
@@ -21,38 +22,54 @@ class LiveHostCamera extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF0B1F17),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          CircleAvatar(
-            radius: 48,
-            backgroundColor: HubsomColors.forest,
-            child: Text(
-              hostName.isNotEmpty ? hostName.substring(0, 1).toUpperCase() : 'H',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 40,
-                fontWeight: FontWeight.w900,
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 48,
+                backgroundColor: HubsomColors.forest,
+                child: Text(
+                  hostName.isNotEmpty
+                      ? hostName.substring(0, 1).toUpperCase()
+                      : 'H',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
+              const SizedBox(height: 14),
+              Text(
+                hostName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 24,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                enabled
+                    ? (micOn
+                        ? 'You are live · send RTMP from OBS / Larix'
+                        : 'You are live · muted')
+                    : 'Camera off · you are still live',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+          if (streamId != null && streamId!.isNotEmpty)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 12,
+              child: OwncastRtmpCard(streamId: streamId!, compact: true),
             ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            hostName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 24,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            enabled
-                ? (micOn ? 'You are live' : 'You are live · muted')
-                : 'Camera off · you are still live',
-            style: const TextStyle(color: Colors.white70),
-          ),
         ],
       ),
     );

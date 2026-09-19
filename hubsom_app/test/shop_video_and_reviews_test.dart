@@ -92,6 +92,7 @@ void main() {
       caption: 'Check this mug',
     );
     expect(video.productIds, contains(product.id));
+    expect(video.videoUrl, isNull);
     expect(ProductDemoVideoStore.hasVideo(video.id), isTrue);
     expect(await catalog.listShopVideos(), isNotEmpty);
   });

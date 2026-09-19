@@ -1,0 +1,52 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - owncast
+      - nginx-rtmp
+      - media
+
+  owncast:
+    image: owncast/owncast:latest
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+    volumes:
+      - owncast-data:/app/data
+    environment:
+      OWNCAST_STREAM_KEY: ${OWNCAST_STREAM_KEY:-hubsom}
+
+  nginx-rtmp:
+    image: alfg/nginx-rtmp
+    restart: unless-stopped
+    ports:
+      - "1936:1935"
+    volumes:
+      - ./nginx-rtmp.conf:/etc/nginx/nginx.conf:ro
+      - hls-data:/tmp/hls
+
+  media:
+    build: ./media-api
+    restart: unless-stopped
+    environment:
+      MEDIA_TOKEN: ${HUBSOM_MEDIA_TOKEN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+    volumes:
+      - media-data:/data/media
+
+volumes:
+  caddy-data:
+  caddy-config:
+  owncast-data:
+  hls-data:
+  media-data:

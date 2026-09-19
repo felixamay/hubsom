@@ -196,7 +196,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       });
 
       if (join) {
-        // Non-blocking: web uses a stub so this must never freeze the UI.
+        // Agora is unused. Live video is Owncast HLS / local host preview.
+        // Keep the stub so an App ID in env never blocks the room.
         // ignore: unawaited_futures
         _joinAgora(s);
       }

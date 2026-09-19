@@ -1,0 +1,23 @@
+{$DOMAIN:localhost} {
+	header {
+		Access-Control-Allow-Origin *
+		Access-Control-Allow-Methods "GET, POST, OPTIONS, HEAD"
+		Access-Control-Allow-Headers *
+		Access-Control-Max-Age 86400
+	}
+
+	@options method OPTIONS
+	respond @options 204
+
+	handle /media* {
+		reverse_proxy media:8080
+	}
+
+	handle /hls/* {
+		reverse_proxy nginx-rtmp:80
+	}
+
+	handle {
+		reverse_proxy owncast:8080
+	}
+}

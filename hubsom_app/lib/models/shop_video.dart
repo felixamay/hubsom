@@ -9,6 +9,7 @@ class ShopVideo extends Equatable {
     this.caption = '',
     this.productIds = const [],
     this.mimeType = 'video/mp4',
+    this.videoUrl,
     required this.createdAt,
   });
 
@@ -18,6 +19,8 @@ class ShopVideo extends Equatable {
   final String caption;
   final List<String> productIds;
   final String mimeType;
+  /// Public VPS / Owncast media URL. Empty means play from local storage.
+  final String? videoUrl;
   final String createdAt;
 
   factory ShopVideo.fromJson(Map<String, dynamic> json) => ShopVideo(
@@ -27,6 +30,7 @@ class ShopVideo extends Equatable {
         caption: json['caption'] as String? ?? '',
         productIds: (json['productIds'] as List?)?.cast<String>() ?? const [],
         mimeType: json['mimeType'] as String? ?? 'video/mp4',
+        videoUrl: json['videoUrl'] as String?,
         createdAt: json['createdAt'] as String? ?? '',
       );
 
@@ -37,9 +41,21 @@ class ShopVideo extends Equatable {
         'caption': caption,
         'productIds': productIds,
         'mimeType': mimeType,
+        if (videoUrl != null && videoUrl!.isNotEmpty) 'videoUrl': videoUrl,
         'createdAt': createdAt,
       };
 
+  ShopVideo copyWith({String? videoUrl}) => ShopVideo(
+        id: id,
+        authorId: authorId,
+        authorName: authorName,
+        caption: caption,
+        productIds: productIds,
+        mimeType: mimeType,
+        videoUrl: videoUrl ?? this.videoUrl,
+        createdAt: createdAt,
+      );
+
   @override
-  List<Object?> get props => [id, authorId, productIds, createdAt];
+  List<Object?> get props => [id, authorId, productIds, videoUrl, createdAt];
 }
