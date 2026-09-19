@@ -224,4 +224,74 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('shop units merged onto a live line do not drain the live bag', () async {
+    final live = await goLive(qty: 2);
+    final product = LocalCommerceStore.getProduct(live.productId)!;
+
+    await cart.addProduct(
+      product,
+      source: 'live',
+      streamId: live.stream.id,
+    );
+    await cart.addProduct(product, source: 'buy-now');
+    await cart.setQuantity(product.id, 3);
+
+    expect(cart.count, 3);
+    expect(cart.state.single.liveQuantity, 1);
+
+    await payments.checkout(
+      items: cart.state.map((e) => e.toJson()).toList(),
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+    expect(
+      LocalCommerceStore.getStream(live.stream.id)!.offeredQty(live.productId),
+      1,
+    );
+    expect(
+      LocalHuberStore.listOrders()
+          .where((o) => o.lines.any((l) => l.productId == live.productId)),
+      hasLength(1),
+    );
+    expect(
+      LocalHuberStore.listOrders()
+          .firstWhere((o) => o.lines.any((l) => l.productId == live.productId))
+          .lines
+          .single
+          .quantity,
+      3,
+    );
+  });
+
+  test('a second live add is refused when the bag only has one unit', () async {
+    final live = await goLive(qty: 1);
+    final product = LocalCommerceStore.getProduct(live.productId)!;
+
+    await cart.addProduct(
+      product,
+      source: 'live',
+      streamId: live.stream.id,
+    );
+    await expectLater(
+      cart.addProduct(
+        product,
+        source: 'live',
+        streamId: live.stream.id,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('sold out on this live'),
+        ),
+      ),
+    );
+    expect(cart.count, 1);
+    expect(cart.state.single.liveQuantity, 1);
+    expect(
+      LocalCommerceStore.getStream(live.stream.id)!.offeredQty(live.productId),
+      1,
+    );
+  });
 }
