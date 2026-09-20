@@ -43,6 +43,7 @@ void main() {
     expect(cart.count, 2);
     expect(cart.state.first.source, 'buy-now');
     expect(cart.state.first.streamId, 'live-1');
+    expect(cart.state.first.liveQuantity, 1);
     expect(cart.state.first.shipmentFeeGhs, 8);
     expect(cart.shipmentTotal, 16);
     expect(cart.payableTotal, 96);
@@ -75,5 +76,6 @@ void main() {
     final merged = CartController();
     expect(merged.state.length, 1);
     expect(merged.count, 3);
+    expect(merged.state.single.liveQuantity, 0);
   });
 }

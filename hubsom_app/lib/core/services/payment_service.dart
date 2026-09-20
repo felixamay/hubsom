@@ -161,7 +161,7 @@ class PaymentService {
       for (final e in items) {
         final liveId = '${e['streamId'] ?? ''}'.trim();
         final productId = '${e['productId'] ?? ''}'.trim();
-        final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+        final qty = _liveConsumeQty(e);
         if (liveId.isEmpty || productId.isEmpty || qty < 1) continue;
         final updated = await LocalCommerceStore.decrementLiveQuantity(
           streamId: liveId,
@@ -185,10 +185,21 @@ class PaymentService {
     for (final e in items.reversed) {
       final liveId = '${e['streamId'] ?? ''}'.trim();
       final productId = '${e['productId'] ?? ''}'.trim();
-      final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+      final qty = _liveConsumeQty(e);
       if (liveId.isEmpty || productId.isEmpty || qty < 1) continue;
       await _releaseOne(liveId, productId, qty);
     }
+  }
+
+  /// Shop units merged onto a live line must not drain the bag.
+  static int _liveConsumeQty(Map<String, dynamic> item) {
+    final liveId = '${item['streamId'] ?? ''}'.trim();
+    if (liveId.isEmpty) return 0;
+    if (item.containsKey('liveQuantity')) {
+      final claimed = (item['liveQuantity'] as num?)?.toInt() ?? 0;
+      return claimed < 0 ? 0 : claimed;
+    }
+    return (item['quantity'] as num?)?.toInt() ?? 1;
   }
 
   Future<void> _releaseOne(String streamId, String productId, int by) async {

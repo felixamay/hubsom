@@ -181,4 +181,42 @@ void main() {
     await PaymentAccountStore.processWithdrawal(submitted.request.id);
     expect(WithdrawalStore.forUser(_seller.id).single.isProcessed, isTrue);
   });
+
+  test('a spend only syncs that payment account, not other cached balances',
+      () async {
+    const ama = HubsomUser(
+      id: 'u-ama',
+      email: 'ama@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+      walletBalanceGhs: 80.0,
+    );
+    const kojo = HubsomUser(
+      id: 'u-kojo',
+      email: 'kojo@hubsom.test',
+      name: 'Kojo',
+      role: 'buyer',
+      walletBalanceGhs: 40.0,
+    );
+
+    await PaymentAccountStore.withdrawAccountFor(ama);
+    await PaymentAccountStore.withdrawAccountFor(kojo);
+    expect(PaymentAccountStore.cachedForUser(ama)?.balanceGhs, 80);
+    expect(PaymentAccountStore.cachedForUser(kojo)?.balanceGhs, 40);
+
+    await PaymentAccountStore.spendFromWithdrawAccount(
+      user: kojo,
+      amountGhs: 10,
+      ref: 'ord_k1',
+    );
+
+    expect(PaymentAccountStore.lastSyncedCloudRows, hasLength(1));
+    expect(
+      PaymentAccountStore.lastSyncedCloudRows.single['id'],
+      PaymentAccount.userIdFor(kojo.id),
+    );
+    expect(PaymentAccountStore.lastSyncedCloudRows.single['balanceGhs'], 30);
+    expect(PaymentAccountStore.cachedForUser(ama)?.balanceGhs, 80);
+    expect(PaymentAccountStore.cachedForUser(kojo)?.balanceGhs, 30);
+  });
 }

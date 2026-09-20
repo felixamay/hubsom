@@ -279,6 +279,7 @@ class CartController extends StateNotifier<List<CartItem>> {
           quantity: existing.quantity + item.quantity,
           source: item.source,
           streamId: item.streamId ?? existing.streamId,
+          liveQuantity: existing.liveQuantity + item.liveQuantity,
           name: item.name.isNotEmpty ? item.name : existing.name,
           priceGhs: item.priceGhs,
           shipmentFeeGhs: item.shipmentFeeGhs,
@@ -303,11 +304,30 @@ class CartController extends StateNotifier<List<CartItem>> {
     final resolvedSource = product.hasActiveFlashSale && source == 'buy-now'
         ? 'flash-sale'
         : source;
+    final liveId = streamId?.trim();
+    final fromLive = liveId != null && liveId.isNotEmpty;
+    if (fromLive) {
+      final stream = LocalCommerceStore.getStream(liveId);
+      if (stream != null) {
+        final offered = stream.offeredQty(product.id);
+        final already = state
+            .where((e) => e.productId == product.id)
+            .fold<int>(0, (s, e) => s + e.liveQuantity);
+        if (already + qty > offered) {
+          throw StateError(
+            offered < 1 || already >= offered
+                ? '${product.name} is sold out on this live'
+                : 'Only $offered left on this live',
+          );
+        }
+      }
+    }
     final item = CartItem(
       productId: product.id,
       quantity: qty,
       source: resolvedSource,
-      streamId: streamId,
+      streamId: fromLive ? liveId : streamId,
+      liveQuantity: fromLive ? qty : 0,
       name: product.name,
       priceGhs: product.effectivePrice,
       shipmentFeeGhs: product.minShipmentFeeGhs,
@@ -328,6 +348,7 @@ class CartController extends StateNotifier<List<CartItem>> {
         quantity: existing.quantity + item.quantity,
         source: item.source,
         streamId: item.streamId ?? existing.streamId,
+        liveQuantity: existing.liveQuantity + item.liveQuantity,
         name: item.name.isNotEmpty ? item.name : existing.name,
         priceGhs: item.priceGhs,
         shipmentFeeGhs: item.shipmentFeeGhs,
@@ -383,7 +404,15 @@ class CartController extends StateNotifier<List<CartItem>> {
     } else {
       state = [
         for (final e in state)
-          if (e.productId == productId) e.copyWith(quantity: qty) else e,
+          if (e.productId == productId)
+            e.copyWith(
+              quantity: qty,
+              // Cart +/- is shop-style. Extra units must not claim the live
+              // bag; shrinking the line also releases the live claim.
+              liveQuantity: e.liveQuantity > qty ? qty : e.liveQuantity,
+            )
+          else
+            e,
       ];
     }
     await _persist();
