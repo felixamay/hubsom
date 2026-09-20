@@ -14,6 +14,10 @@ import 'withdrawal_store.dart';
 abstract final class PaymentAccountStore {
   static const _key = 'paymentAccounts';
 
+  /// Last payment-account documents this process tried to write to Firestore.
+  /// Tests use this to prove a spend does not rewrite other users' balances.
+  static List<Map<String, dynamic>> lastSyncedCloudRows = const [];
+
   static PaymentAccount adminCached() {
     final existing = _byId()[PaymentAccount.adminId];
     return existing ??
@@ -232,8 +236,15 @@ abstract final class PaymentAccountStore {
     final byId = _byId()..[account.id] = account;
     final rows = byId.values.map((e) => e.toJson()).toList();
     await LocalStore.setString(_key, jsonEncode(rows));
+    // Hydrate caches every payment account on this device. Writing that whole
+    // snapshot back would restore stale balances for everyone else — a later
+    // wallet spend here could undo another user's withdrawal.
+    lastSyncedCloudRows = [account.toJson()];
     try {
-      await CloudStore.upsertDocs(CloudStore.paymentAccounts, rows);
+      await CloudStore.upsertDocs(
+        CloudStore.paymentAccounts,
+        lastSyncedCloudRows,
+      );
     } catch (_) {}
   }
 
