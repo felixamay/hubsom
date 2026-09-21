@@ -12,6 +12,7 @@ import 'package:hubsom_app/core/auth/passkey_models.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
 import 'package:hubsom_app/core/providers/core_providers.dart';
 import 'package:hubsom_app/core/repositories/auth_repository.dart';
+import 'package:hubsom_app/core/services/admin_account_store.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
@@ -88,6 +89,7 @@ void main() {
 
   setUp(() {
     CloudStore.useNetwork = false;
+    CloudStore.debugAccounts.clear();
   });
 
   test('signed-in user can add a passkey and sign in with it', () async {
@@ -120,6 +122,97 @@ void main() {
     final viaPasskey = await repo.signInWithPasskey();
     expect(viaPasskey.email, 'ama@hubsom.test');
     expect(viaPasskey.name, 'Ama');
+  });
+
+  test('passkey sign-in rejects a locally suspended account', () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-pk-suspend',
+      email: 'suspended@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'suspended@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+    final fake = FakePasskeyBridge();
+    final repo = AuthRepository(ApiClient(), passkeys: fake);
+    await repo.signIn(email: 'suspended@hubsom.test', password: password);
+    await repo.registerPasskey();
+    await repo.signOut();
+
+    await AdminAccountStore.setSuspended('suspended@hubsom.test', true);
+
+    expect(
+      () => repo.signIn(email: 'suspended@hubsom.test', password: password),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('suspended'),
+        ),
+      ),
+    );
+    expect(
+      () => repo.signInWithPasskey(),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('suspended'),
+        ),
+      ),
+    );
+    expect(repo.currentUser(), isNull);
+  });
+
+  test('passkey sign-in rejects cloud suspension even if this device is stale',
+      () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-pk-stale',
+      email: 'stale@hubsom.test',
+      name: 'Kojo',
+      role: 'buyer',
+    );
+    await LocalStore.saveCredentialVault({
+      'stale@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+    final fake = FakePasskeyBridge();
+    final repo = AuthRepository(ApiClient(), passkeys: fake);
+    await repo.signIn(email: 'stale@hubsom.test', password: password);
+    await repo.registerPasskey();
+    await repo.signOut();
+
+    CloudStore.debugAccounts['stale@hubsom.test'] = {
+      'salt': salt,
+      'hash': _hash(password, salt),
+      'email': 'stale@hubsom.test',
+      'suspended': true,
+      'userJson': user.copyWith(suspended: true).toJson(),
+    };
+
+    expect(
+      () => repo.signInWithPasskey(),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('suspended'),
+        ),
+      ),
+    );
+    expect(repo.currentUser(), isNull);
   });
 
   test('cancelled passkey does not sign the user in', () async {

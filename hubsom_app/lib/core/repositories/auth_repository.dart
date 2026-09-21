@@ -748,16 +748,23 @@ class AuthRepository {
   Future<HubsomUser> _completePasskeySignIn(String email) async {
     final vault = LocalStore.loadCredentialVault();
     var entry = vault[email];
-    if (entry is! Map) {
-      try {
-        final remote = await CloudStore.getAccount(email);
-        if (remote != null) {
-          vault[email] = remote;
-          await LocalStore.saveCredentialVault(vault);
-          entry = remote;
+    try {
+      final remote = await CloudStore.getAccount(email);
+      if (remote != null) {
+        final merged = <String, dynamic>{
+          if (entry is Map) ...Map<String, dynamic>.from(entry),
+          ...remote,
+        };
+        if (remote['passkeys'] == null &&
+            entry is Map &&
+            entry['passkeys'] != null) {
+          merged['passkeys'] = entry['passkeys'];
         }
-      } catch (_) {}
-    }
+        vault[email] = merged;
+        await LocalStore.saveCredentialVault(vault);
+        entry = merged;
+      }
+    } catch (_) {}
     if (entry is! Map) {
       throw AuthException(
         'No Hubsom account is linked to that passkey. Sign in with your password, then add a passkey in Settings.',
@@ -768,14 +775,8 @@ class AuthRepository {
       throw AuthException('Could not sign in. Please create your account again.');
     }
     var user = HubsomUser.fromJson(Map<String, dynamic>.from(userJson));
+    _rejectSuspended(user, entry);
     user = await _persist(user, _issueLocalToken(user));
-    await _backfillCloudAccount(
-      email: email,
-      salt: '${entry['salt'] ?? ''}',
-      hash: '${entry['hash'] ?? ''}',
-      user: user,
-      passkeys: _passkeysFrom(entry),
-    );
     if (AuthRoutes.isHuberRole(user.role)) {
       await LocalHuberStore.ensureProfileForUser(user);
     }
