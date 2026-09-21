@@ -45,6 +45,10 @@ class CloudStore {
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
 
+  /// Test-only account documents returned by [getAccount] without the network.
+  @visibleForTesting
+  static final Map<String, Map<String, dynamic>> debugAccounts = {};
+
   static final Dio _rest = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 12),
@@ -112,9 +116,11 @@ class CloudStore {
   /// The FlutterFire SDK is not used for auth: it can succeed against IndexedDB
   /// without the server, which made new browsers look like they had no account.
   static Future<Map<String, dynamic>?> getAccount(String email) async {
-    if (!useNetwork) return null;
     final id = accountDocId(email);
     if (id.isEmpty || !id.contains('@')) return null;
+    final debug = debugAccounts[id];
+    if (debug != null) return Map<String, dynamic>.from(debug);
+    if (!useNetwork) return null;
 
     Object? lastError;
     for (final pathId in <String>[Uri.encodeComponent(id), id]) {
