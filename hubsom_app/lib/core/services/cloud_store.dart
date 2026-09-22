@@ -41,6 +41,8 @@ class CloudStore {
   static const directMessages = 'directMessages';
   static const notifications = 'notifications';
   static const withdrawals = 'withdrawals';
+  static const giftLedger = 'giftLedger';
+  static const giftHostEarnings = 'giftHostEarnings';
 
   /// Tests set this to false so they do not write to production Firestore.
   static bool useNetwork = true;
@@ -529,6 +531,7 @@ class CloudStore {
       'adminIntakes': adminIntakes,
       'paymentAccounts': paymentAccounts,
       'withdrawals': withdrawals,
+      'localGiftLedger': giftLedger,
     };
     await Future.wait(mapping.entries.map((entry) async {
       try {
@@ -555,6 +558,13 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'localGiftLedger') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(mergeDocsById(localKey: entry.key, incoming: rows)),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -562,6 +572,35 @@ class CloudStore {
         }
       }
     }));
+  }
+
+  /// Union local + cloud rows by `id` so a partial snapshot cannot drop
+  /// unsynced gift sends the host still needs to get paid.
+  static List<Map<String, dynamic>> mergeDocsById({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    final raw = LocalStore.getString(localKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final e in decoded) {
+            if (e is! Map) continue;
+            final row = Map<String, dynamic>.from(e);
+            final id = '${row['id'] ?? ''}';
+            if (id.isNotEmpty) byId[id] = row;
+          }
+        }
+      } catch (_) {}
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      byId.putIfAbsent(id, () => row);
+    }
+    return byId.values.toList();
   }
 
   static Map<String, dynamic> encodeFields(Map<String, dynamic> data) {

@@ -85,7 +85,45 @@ class GiftStore {
     final sellerId = user.sellerId ?? '';
     final stored = sellerId.isEmpty ? 0.0 : hostEarnings(sellerId);
     final fromUser = user.giftEarningsGhs;
-    return fromUser > stored ? fromUser : stored;
+    final received = sellerId.isEmpty
+        ? 0.0
+        : receivedFor(sellerId).fold<double>(
+            0,
+            (sum, e) =>
+                sum + (e.hostShareGhs ?? GiftCatalog.hostShareGhs(e.points)),
+          );
+    final withdrawn = listLedger()
+        .where((e) => e.kind == 'withdraw' && e.userId == user.id)
+        .fold<double>(0, (sum, e) => sum + (e.priceGhs ?? 0));
+    final fromLedger = received - withdrawn;
+    final pending = [fromUser, stored, fromLedger]
+        .reduce((a, b) => a > b ? a : b);
+    return pending < 0 ? 0 : pending;
+  }
+
+  /// Pull gift sends and host balances written on other devices.
+  static Future<void> pullCloud({String? sellerId}) async {
+    if (!CloudStore.useNetwork) return;
+    try {
+      final remote = await CloudStore.listDocs(CloudStore.giftLedger);
+      if (remote.isNotEmpty) {
+        final merged = CloudStore.mergeDocsById(
+          localKey: _ledgerKey,
+          incoming: remote,
+        );
+        await LocalStore.setString(_ledgerKey, jsonEncode(merged));
+      }
+    } catch (_) {}
+    final id = sellerId?.trim() ?? '';
+    if (id.isEmpty) return;
+    try {
+      final row = await CloudStore.getDoc(CloudStore.giftHostEarnings, id);
+      final cloud = (row?['balanceGhs'] as num?)?.toDouble() ?? 0;
+      if (cloud <= hostEarnings(id)) return;
+      final map = _hostEarnings();
+      map[id] = cloud;
+      await LocalStore.setString(_hostEarningsKey, jsonEncode(map));
+    } catch (_) {}
   }
 
   static Future<HubsomUser> withdrawEarnings(HubsomUser user) async {
@@ -103,6 +141,7 @@ class GiftStore {
       final map = _hostEarnings();
       map[sellerId] = 0;
       await _saveHostEarnings(map);
+      await _writeHostEarningsCloud(sellerId, 0);
     }
     final rows = List<GiftLedgerEntry>.from(listLedger());
     rows.insert(
@@ -127,7 +166,7 @@ class GiftStore {
     );
     try {
       await CloudStore.upsertDocs(
-        'giftLedger',
+        CloudStore.giftLedger,
         rows.take(80).map((e) => e.toJson()).toList(),
       );
     } catch (_) {}
@@ -146,6 +185,41 @@ class GiftStore {
 
   static Future<void> _saveHostEarnings(Map<String, double> map) async {
     await LocalStore.setString(_hostEarningsKey, jsonEncode(map));
+  }
+
+  static Future<void> _writeHostEarningsCloud(
+    String sellerId,
+    double balanceGhs,
+  ) async {
+    if (sellerId.isEmpty || !CloudStore.useNetwork) return;
+    try {
+      await CloudStore.upsertDocs(CloudStore.giftHostEarnings, [
+        {
+          'id': sellerId,
+          'sellerId': sellerId,
+          'balanceGhs': balanceGhs,
+        },
+      ]);
+    } catch (_) {}
+  }
+
+  static Future<void> _addHostEarnings(String sellerId, double share) async {
+    var current = hostEarnings(sellerId);
+    if (CloudStore.useNetwork) {
+      try {
+        final row = await CloudStore.getDoc(
+          CloudStore.giftHostEarnings,
+          sellerId,
+        );
+        final cloud = (row?['balanceGhs'] as num?)?.toDouble() ?? 0;
+        if (cloud > current) current = cloud;
+      } catch (_) {}
+    }
+    final next = current + share;
+    final map = _hostEarnings();
+    map[sellerId] = next;
+    await _saveHostEarnings(map);
+    await _writeHostEarningsCloud(sellerId, next);
   }
 
   static double hostEarnings(String sellerId) => _hostEarnings()[sellerId] ?? 0;
@@ -231,9 +305,7 @@ class GiftStore {
 
     final share = GiftCatalog.hostShareGhs(gift.costPoints);
     if (!selfGift) {
-      final earnings = _hostEarnings();
-      earnings[stream.sellerId] = (earnings[stream.sellerId] ?? 0) + share;
-      await _saveHostEarnings(earnings);
+      await _addHostEarnings(stream.sellerId, share);
       await _creditHostUser(stream.sellerId, share);
     }
 

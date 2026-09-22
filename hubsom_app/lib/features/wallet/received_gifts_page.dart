@@ -17,6 +17,18 @@ class ReceivedGiftsPage extends ConsumerStatefulWidget {
 class _ReceivedGiftsPageState extends ConsumerState<ReceivedGiftsPage> {
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pull());
+  }
+
+  Future<void> _pull() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    await GiftStore.pullCloud(sellerId: user?.sellerId);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _withdraw() async {
     final user = ref.read(authStateProvider).valueOrNull;
     if (user == null) return;
