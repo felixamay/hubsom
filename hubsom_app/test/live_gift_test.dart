@@ -206,6 +206,74 @@ void main() {
     );
   });
 
+  test('host on another device is paid from the synced gift ledger', () async {
+    final stream = await goLive();
+    // Viewer phone: host credentials are not in this vault.
+    await LocalStore.setString('localGiftLedger', '[]');
+    await LocalStore.setString('localGiftHostEarnings', '{}');
+    await LocalStore.saveCredentialVault({});
+    await LocalStore.setUserJson(jsonEncode(viewer.toJson()));
+    await _putVault(viewer);
+    await repo.buyGiftPoints(packId: 'p100', paymentMethod: 'paystack');
+    await repo.sendGift(streamId: stream.id, giftId: 'heart');
+
+    // Seller phone after giftLedger hydrate: send rows exist, local
+    // host-earnings map and giftEarningsGhs do not.
+    await LocalStore.setString('localGiftHostEarnings', '{}');
+    final hostOnly = HubsomUser(
+      id: seller.id,
+      email: seller.email,
+      name: seller.name,
+      role: 'seller',
+      sellerId: stream.sellerId,
+    );
+
+    expect(GiftStore.hostEarnings(stream.sellerId), 0);
+    expect(hostOnly.giftEarningsGhs, 0);
+    expect(
+      GiftStore.pendingEarningsGhs(hostOnly),
+      GiftCatalog.hostShareGhs(10),
+    );
+    expect(GiftStore.receivedFor(stream.sellerId), hasLength(1));
+
+    final withdrawn = await GiftStore.withdrawEarnings(hostOnly);
+    expect(withdrawn.giftEarningsGhs, 0);
+    expect(withdrawn.walletBalanceGhs, GiftCatalog.hostShareGhs(10));
+    expect(GiftStore.pendingEarningsGhs(withdrawn), 0);
+  });
+
+  test('mergeDocsById keeps local gift sends a partial cloud list omitted', () async {
+    await LocalStore.setString(
+      'localGiftLedger',
+      jsonEncode([
+        {
+          'id': 'gft_local',
+          'userId': 'viewer-1',
+          'kind': 'send',
+          'points': 10,
+          'hostSellerId': 'sel-1',
+          'hostShareGhs': 0.8,
+          'createdAt': '2026-09-22T00:00:00Z',
+        },
+      ]),
+    );
+    final merged = CloudStore.mergeDocsById(
+      localKey: 'localGiftLedger',
+      incoming: [
+        {
+          'id': 'gft_cloud',
+          'userId': 'viewer-2',
+          'kind': 'send',
+          'points': 25,
+          'hostSellerId': 'sel-1',
+          'hostShareGhs': 2.0,
+          'createdAt': '2026-09-22T01:00:00Z',
+        },
+      ],
+    );
+    expect(merged.map((e) => e['id']), containsAll(['gft_local', 'gft_cloud']));
+  });
+
   test('gifts are blocked after the show ends', () async {
     final stream = await goLive();
     await LocalCommerceStore.updateStream(stream.id, end: true);

@@ -25,6 +25,18 @@ class _WalletPageState extends ConsumerState<WalletPage> {
   bool _busy = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pullGifts());
+  }
+
+  Future<void> _pullGifts() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    await GiftStore.pullCloud(sellerId: user?.sellerId);
+    if (mounted) setState(() {});
+  }
+
   static const _rails = <(String, String)>[
     ('mtn-momo', 'MTN MoMo'),
     ('telecel-cash', 'Telecel Cash'),
