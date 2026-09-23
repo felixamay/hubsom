@@ -252,8 +252,7 @@ class AuthRepository {
       await LocalStore.saveCredentialVault(vault);
       try {
         await CloudStore.putAccount(updated.email.toLowerCase(), {
-          'salt': entry['salt'],
-          'hash': entry['hash'],
+          ...Map<String, dynamic>.from(entry),
           'userJson': updated.toJson(),
           'email': updated.email.toLowerCase(),
         });
@@ -340,8 +339,7 @@ class AuthRepository {
     if (entry is Map) {
       try {
         await CloudStore.putAccount(updated.email.toLowerCase(), {
-          'salt': entry['salt'],
-          'hash': entry['hash'],
+          ...Map<String, dynamic>.from(entry),
           'userJson': updated.toJson(),
           'email': updated.email.toLowerCase(),
         });
@@ -648,6 +646,7 @@ class AuthRepository {
     required String hash,
     required HubsomUser user,
     List<PasskeyRecord> passkeys = const [],
+    bool writePasskeys = false,
   }) async {
     try {
       await CloudStore.putAccount(email, {
@@ -657,7 +656,10 @@ class AuthRepository {
         'email': email,
         'name': user.name,
         'role': user.role,
-        if (passkeys.isNotEmpty)
+        // Always write when the caller is saving the passkey list (including
+        // an empty one after the last key is removed). Generic backfills omit
+        // the field so an updateMask PATCH cannot wipe keys stored elsewhere.
+        if (writePasskeys || passkeys.isNotEmpty)
           'passkeys': passkeys.map((p) => p.toJson()).toList(),
       });
     } catch (_) {}
@@ -742,6 +744,7 @@ class AuthRepository {
       hash: '${entry['hash'] ?? ''}',
       user: user,
       passkeys: passkeys,
+      writePasskeys: true,
     );
   }
 

@@ -1043,8 +1043,7 @@ class CatalogRepository {
       await LocalStore.saveCredentialVault(vault);
       try {
         await CloudStore.putAccount(key, {
-          'salt': entry['salt'],
-          'hash': entry['hash'],
+          ...Map<String, dynamic>.from(entry),
           'userJson': user.toJson(),
           'email': key,
         });
