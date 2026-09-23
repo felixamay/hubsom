@@ -124,8 +124,7 @@ class SellerRepository {
       await LocalStore.saveCredentialVault(vault);
       try {
         await CloudStore.putAccount(patched.email.toLowerCase(), {
-          'salt': entry['salt'],
-          'hash': entry['hash'],
+          ...Map<String, dynamic>.from(entry),
           'userJson': patched.toJson(),
           'email': patched.email.toLowerCase(),
         });

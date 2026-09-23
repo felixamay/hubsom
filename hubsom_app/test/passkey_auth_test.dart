@@ -15,6 +15,7 @@ import 'package:hubsom_app/core/repositories/auth_repository.dart';
 import 'package:hubsom_app/core/services/admin_account_store.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
+import 'package:hubsom_app/core/services/gift_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/features/authentication/sign_in_page.dart';
 import 'package:hubsom_app/features/settings/settings_page.dart';
@@ -122,6 +123,42 @@ void main() {
     final viaPasskey = await repo.signInWithPasskey();
     expect(viaPasskey.email, 'ama@hubsom.test');
     expect(viaPasskey.name, 'Ama');
+  });
+
+  test('gift persist keeps passkeys on the vault account record', () async {
+    const salt = 'test-salt';
+    const password = 'password1';
+    final user = HubsomUser(
+      id: 'local-pk-gift',
+      email: 'gift@hubsom.test',
+      name: 'Ama',
+      role: 'buyer',
+      walletBalanceGhs: 50,
+    );
+    await LocalStore.saveCredentialVault({
+      'gift@hubsom.test': {
+        'salt': salt,
+        'hash': _hash(password, salt),
+        'userJson': user.toJson(),
+      },
+    });
+    final fake = FakePasskeyBridge();
+    final repo = AuthRepository(ApiClient(), passkeys: fake);
+    await repo.signIn(email: 'gift@hubsom.test', password: password);
+    await repo.registerPasskey();
+    expect(repo.listPasskeys(), hasLength(1));
+
+    await GiftStore.persistUser(
+      user.copyWith(giftPoints: 100, walletBalanceGhs: 40),
+    );
+
+    final vault = LocalStore.loadCredentialVault()['gift@hubsom.test'];
+    expect(vault, isA<Map>());
+    final keys = vault!['passkeys'];
+    expect(keys, isA<List>());
+    expect((keys as List), isNotEmpty);
+    expect(vault['salt'], salt);
+    expect(vault['hash'], _hash(password, salt));
   });
 
   test('passkey sign-in rejects a locally suspended account', () async {

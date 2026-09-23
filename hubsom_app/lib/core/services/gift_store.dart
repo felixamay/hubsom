@@ -43,8 +43,7 @@ class GiftStore {
       await LocalStore.saveCredentialVault(vault);
       try {
         await CloudStore.putAccount(email, {
-          'salt': entry['salt'],
-          'hash': entry['hash'],
+          ...Map<String, dynamic>.from(entry),
           'userJson': user.toJson(),
           'email': email,
         });

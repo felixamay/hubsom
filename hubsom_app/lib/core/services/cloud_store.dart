@@ -236,10 +236,17 @@ class CloudStore {
         );
       }
     } else {
+      // Gift / follow / profile writes often send only salt+hash+userJson.
+      // A REST PATCH without updateMask replaces the document and deletes
+      // omitted fields — passkeys and admin suspension among them.
+      final fields = encodeFields(payload);
       final res = await _rest.patch<dynamic>(
         '$_root/$accounts/${Uri.encodeComponent(id)}',
-        queryParameters: {'key': _apiKey},
-        data: {'fields': encodeFields(payload)},
+        queryParameters: accountPatchQuery(
+          apiKey: _apiKey,
+          fields: fields,
+        ),
+        data: {'fields': fields},
       );
       if (res.statusCode == null ||
           res.statusCode! < 200 ||
@@ -601,6 +608,18 @@ class CloudStore {
       byId.putIfAbsent(id, () => row);
     }
     return byId.values.toList();
+  }
+
+  /// REST PATCH query so omitted account fields (passkeys, suspended) stay.
+  @visibleForTesting
+  static Map<String, dynamic> accountPatchQuery({
+    required String apiKey,
+    required Map<String, dynamic> fields,
+  }) {
+    return {
+      'key': apiKey,
+      'updateMask.fieldPaths': fields.keys.toList(),
+    };
   }
 
   static Map<String, dynamic> encodeFields(Map<String, dynamic> data) {
