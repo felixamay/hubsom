@@ -515,6 +515,67 @@ void main() {
     expect(again.offeredQty(product.id), 1);
   });
 
+  test('sold-out live bag cannot be restocked beyond catalog stock', () async {
+    final product = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Only one',
+      description: 'Single unit',
+      category: 'fashion',
+      priceGhs: 90,
+      stock: 1,
+      images: const ['a', 'b', 'c'],
+    );
+    final stream = await LocalCommerceStore.createStream(
+      user: seller,
+      title: 'One unit show',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [product.id],
+      productQuantities: {product.id: 1},
+      pinnedProductId: product.id,
+      auctionProductId: product.id,
+      startingBidGhs: 40,
+      askingPriceGhs: 40,
+    );
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 50,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+    expect(await LocalCommerceStore.finalizeAuction(stream.id), isNotNull);
+    expect(LocalCommerceStore.getStream(stream.id)!.offeredQty(product.id), 0);
+
+    expect(
+      () => LocalCommerceStore.startAuctionOnLive(
+        streamId: stream.id,
+        user: seller,
+        productId: product.id,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('sold out'),
+        ),
+      ),
+    );
+    expect(LocalCommerceStore.getStream(stream.id)!.offeredQty(product.id), 0);
+    expect(
+      LocalHuberStore.listOrders()
+          .where((o) => o.lines.any((l) => l.productId == product.id))
+          .length,
+      1,
+    );
+  });
+
   test('unmet ask does not auto-relist the next unit', () async {
     final stream = await goLive();
     final productId = stream.auction!.productId;
