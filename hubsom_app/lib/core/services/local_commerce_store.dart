@@ -849,6 +849,12 @@ class LocalCommerceStore {
       fallback: product.stock,
     );
     if (offered < 1) {
+      // Hosts may pull the next catalog unit onto the live bag after a sale,
+      // but never invent stock beyond what is still unsold.
+      final remaining = product.stock - _committedQty(productId);
+      if (remaining < 1) {
+        throw StateError('${product.name} is sold out on this live');
+      }
       final qtys = Map<String, int>.from(liveAfterSwitch.productQuantities);
       qtys[productId] = 1;
       await updateStream(streamId, productQuantities: qtys);
@@ -858,7 +864,11 @@ class LocalCommerceStore {
     final productIds = <String>{...live.productIds, productId}.toList();
     final qtys = Map<String, int>.from(live.productQuantities);
     if (!qtys.containsKey(productId)) {
-      qtys[productId] = product.stock < 1 ? 1 : product.stock;
+      final remaining = product.stock - _committedQty(productId);
+      if (remaining < 1) {
+        throw StateError('${product.name} is sold out on this live');
+      }
+      qtys[productId] = remaining;
     }
     final start =
         (startingBidGhs != null && startingBidGhs > 0)
@@ -1152,6 +1162,26 @@ class LocalCommerceStore {
       await _relistSameProductAuction(streamId, sold: auction);
     }
     return order;
+  }
+
+  /// Paid (or otherwise committed) units of [productId] across local orders.
+  static int _committedQty(String productId) {
+    var sold = 0;
+    for (final order in LocalHuberStore.listOrders()) {
+      switch (order.status.toLowerCase()) {
+        case 'cancelled':
+        case 'canceled':
+        case 'refunded':
+        case 'failed':
+          continue;
+      }
+      for (final line in order.lines) {
+        if (line.productId == productId) {
+          sold += line.quantity;
+        }
+      }
+    }
+    return sold;
   }
 
   static Future<void> _consumeLiveQuantity({
