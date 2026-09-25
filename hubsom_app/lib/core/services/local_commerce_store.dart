@@ -851,7 +851,7 @@ class LocalCommerceStore {
     if (offered < 1) {
       // Hosts may pull the next catalog unit onto the live bag after a sale,
       // but never invent stock beyond what is still unsold.
-      final remaining = product.stock - _committedQty(productId);
+      final remaining = product.stock - committedQty(productId);
       if (remaining < 1) {
         throw StateError('${product.name} is sold out on this live');
       }
@@ -864,7 +864,7 @@ class LocalCommerceStore {
     final productIds = <String>{...live.productIds, productId}.toList();
     final qtys = Map<String, int>.from(live.productQuantities);
     if (!qtys.containsKey(productId)) {
-      final remaining = product.stock - _committedQty(productId);
+      final remaining = product.stock - committedQty(productId);
       if (remaining < 1) {
         throw StateError('${product.name} is sold out on this live');
       }
@@ -1091,6 +1091,16 @@ class LocalCommerceStore {
       }
     }
 
+    // Shop checkout can sell the last catalog unit while this lot is still
+    // open. Do not invent a second paid order for stock that is already gone.
+    if (availableCatalogQty(auction.productId) < 1) {
+      await updateStream(
+        streamId,
+        auction: auction.copyWith(status: 'closed'),
+      );
+      return null;
+    }
+
     final price = auction.currentBidGhs;
     final order = Order(
       id: orderId,
@@ -1165,7 +1175,7 @@ class LocalCommerceStore {
   }
 
   /// Paid (or otherwise committed) units of [productId] across local orders.
-  static int _committedQty(String productId) {
+  static int committedQty(String productId) {
     var sold = 0;
     for (final order in LocalHuberStore.listOrders()) {
       switch (order.status.toLowerCase()) {
@@ -1182,6 +1192,50 @@ class LocalCommerceStore {
       }
     }
     return sold;
+  }
+
+  /// Units currently offered on a live bag. Shop checkout must leave these
+  /// alone so a running auction cannot be sold out from under the winner.
+  static int liveReservedQty(String productId) {
+    var reserved = 0;
+    for (final stream in listStreams()) {
+      if (!stream.isLive) continue;
+      reserved += stream.offeredQty(productId, fallback: 0);
+    }
+    return reserved;
+  }
+
+  /// Listing stock minus committed orders, optionally minus the live bag.
+  static int availableCatalogQty(
+    String productId, {
+    bool reserveLiveBag = false,
+  }) {
+    final product = getProduct(productId);
+    if (product == null) return 0x7fffffff;
+    var left = product.stock - committedQty(productId);
+    if (reserveLiveBag) left -= liveReservedQty(productId);
+    return left < 0 ? 0 : left;
+  }
+
+  /// Reject a sale that would oversell catalog inventory.
+  static void assertCatalogAvailable(
+    String productId,
+    int needed, {
+    bool reserveLiveBag = false,
+  }) {
+    if (needed < 1) return;
+    final product = getProduct(productId);
+    if (product == null) return;
+    final left = availableCatalogQty(
+      productId,
+      reserveLiveBag: reserveLiveBag,
+    );
+    if (needed <= left) return;
+    throw StateError(
+      left < 1
+          ? '${product.name} is sold out'
+          : '${product.name} only has $left left in stock',
+    );
   }
 
   static Future<void> _consumeLiveQuantity({
