@@ -101,6 +101,11 @@ class PaymentService {
         : items
             .map((e) => '${e['streamId'] ?? ''}'.trim())
             .firstWhere((id) => id.isNotEmpty, orElse: () => '');
+    // Catalog stock is the listing total. Paid orders already count against
+    // it (same rule as live Tap to sell). Without this gate a shop checkout
+    // could write another paid order for a unit that was already gone, or
+    // sell the unit sitting on a live bag while the auction is still open.
+    _assertCatalogStock(items);
     // Take units from the live bag only once payment is happening. Adding to
     // cart used to decrement immediately, so closing the room without paying
     // left the show sold out and no order.
@@ -151,6 +156,30 @@ class PaymentService {
     await AdminTreasuryStore.recordPaidOrder(order);
     await _sendShipmentToBuyer(order: order, quotes: quotes);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  void _assertCatalogStock(List<Map<String, dynamic>> items) {
+    final needed = <String, int>{};
+    final shopNeeded = <String, int>{};
+    for (final e in items) {
+      final productId = '${e['productId'] ?? ''}'.trim();
+      final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+      if (productId.isEmpty || qty < 1) continue;
+      needed[productId] = (needed[productId] ?? 0) + qty;
+      if ('${e['streamId'] ?? ''}'.trim().isEmpty) {
+        shopNeeded[productId] = (shopNeeded[productId] ?? 0) + qty;
+      }
+    }
+    for (final entry in needed.entries) {
+      LocalCommerceStore.assertCatalogAvailable(entry.key, entry.value);
+    }
+    for (final entry in shopNeeded.entries) {
+      LocalCommerceStore.assertCatalogAvailable(
+        entry.key,
+        entry.value,
+        reserveLiveBag: true,
+      );
+    }
   }
 
   /// Decrement the live bag for paid cart lines. Roll back if any line is
