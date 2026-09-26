@@ -412,6 +412,7 @@ void main() {
       status: 'open',
     );
     expect(open.isOpen, isTrue);
+    expect(open.isUnsettledLot, isTrue);
     expect(open.nextMinBidGhs, 55);
 
     final ended = open.copyWith(
@@ -422,6 +423,11 @@ void main() {
     );
     expect(ended.isOpen, isFalse);
     expect(ended.needsFinalize, isFalse); // no highest bidder
+    expect(ended.isUnsettledLot, isTrue);
+
+    final sold = open.copyWith(status: 'sold', orderId: 'ord_1');
+    expect(sold.isUnsettledLot, isFalse);
+    expect(open.copyWith(status: 'closed').isUnsettledLot, isFalse);
   });
 
 

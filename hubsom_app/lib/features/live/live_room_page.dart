@@ -845,7 +845,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   bool _isCurrentAuctionLot(Product product) {
     final a = stream?.auction;
     if (a == null || a.productId != product.id) return false;
-    return a.isOpen || a.awaitingExtend;
+    return a.isUnsettledLot;
   }
 
   Future<void> _auctionProductOnLive(Product product) async {
@@ -959,6 +959,12 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
 
   Future<void> _buy(Product product) async {
     if (!ensureSignedIn(context, ref, message: 'Sign in to buy from live')) {
+      return;
+    }
+    if (_isCurrentAuctionLot(product)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} is on auction — bid live')),
+      );
       return;
     }
     if (_offeredQty(product) <= 0) {
@@ -1639,7 +1645,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                                             fontSize: 12,
                                           ),
                                         )
-                                      : (p.isAuctionLot
+                                      : (onAuction || p.isAuctionLot
                                           ? const Text(
                                               'Bid live',
                                               style: TextStyle(
