@@ -106,6 +106,9 @@ class LiveAuction extends Equatable {
       status != 'closed' &&
       !askMet;
 
+  /// Still reserved for bidding, extend, or finalize — not sold or closed.
+  bool get isUnsettledLot => !isSold && status != 'closed';
+
   Duration? get timeLeft {
     try {
       final end = DateTime.parse(endsAt).toUtc();

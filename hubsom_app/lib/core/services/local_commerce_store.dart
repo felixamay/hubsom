@@ -784,6 +784,12 @@ class LocalCommerceStore {
     if (stream == null) {
       throw StateError('Live show not found');
     }
+    final auction = stream.auction;
+    if (auction != null &&
+        auction.productId == productId &&
+        auction.isUnsettledLot) {
+      throw StateError('This item is on auction — bid live instead of buying');
+    }
     final catalogStock = getProduct(productId)?.stock ?? 0;
     final current = stream.offeredQty(productId, fallback: catalogStock);
     if (current < by) {
