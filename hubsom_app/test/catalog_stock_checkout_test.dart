@@ -246,4 +246,167 @@ void main() {
       'closed',
     );
   });
+
+  test('go-live cannot put already-sold catalog units on the live bag',
+      () async {
+    final productId = await listOne(stock: 2);
+
+    final sold = await payments.checkout(
+      items: [shopLine(productId)],
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+    expect(sold['ok'], isTrue);
+    expect(LocalCommerceStore.availableCatalogQty(productId), 1);
+
+    await expectLater(
+      LocalCommerceStore.createStream(
+        user: _seller,
+        title: 'Night live',
+        cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+        productIds: [productId],
+        productQuantities: {productId: 2},
+        pinnedProductId: productId,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('only has 1 left in stock'),
+        ),
+      ),
+    );
+    expect(LocalCommerceStore.listStreams(), isEmpty);
+  });
+
+  test('go-live without a quantity uses remaining catalog, not listing stock',
+      () async {
+    final productId = await listOne(stock: 2);
+    await payments.checkout(
+      items: [shopLine(productId)],
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+
+    final stream = await LocalCommerceStore.createStream(
+      user: _seller,
+      title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [productId],
+      pinnedProductId: productId,
+    );
+    expect(stream.productQuantities[productId], 1);
+    expect(stream.offeredQty(productId, fallback: 2), 1);
+  });
+
+  test('adding a product mid-live cannot exceed remaining catalog', () async {
+    final firstId = await listOne(stock: 1);
+    final extraId = await listOne(stock: 2);
+    await payments.checkout(
+      items: [shopLine(extraId)],
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+
+    final stream = await LocalCommerceStore.createStream(
+      user: _seller,
+      title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [firstId],
+      productQuantities: {firstId: 1},
+      pinnedProductId: firstId,
+    );
+
+    await expectLater(
+      LocalCommerceStore.addProductsToStream(
+        streamId: stream.id,
+        user: _seller,
+        productIds: [extraId],
+        quantities: {extraId: 2},
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('only has 1 left in stock'),
+        ),
+      ),
+    );
+    expect(
+      LocalCommerceStore.getStream(stream.id)!.productIds,
+      isNot(contains(extraId)),
+    );
+  });
+
+  test('auto-relist does not open a lot after catalog is gone', () async {
+    final productId = await listOne(stock: 2);
+    final stream = await LocalCommerceStore.createStream(
+      user: _seller,
+      title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [productId],
+      productQuantities: {productId: 2},
+      pinnedProductId: productId,
+      auctionProductId: productId,
+      startingBidGhs: 20,
+      askingPriceGhs: 20,
+      auctionDurationSeconds: 30,
+    );
+    final firstLotId = stream.auction!.id;
+
+    // A shop path wrote a paid order while the bag still showed 2.
+    // One catalog unit remains for this winner; the leftover bag unit
+    // must not become a second auction.
+    await LocalHuberStore.saveOrder(
+      Order(
+        id: 'ord_shop_first',
+        subtotalGhs: 40,
+        status: 'paid',
+        userId: 'other-buyer',
+        buyerName: 'Ama Shop',
+        lines: [
+          OrderLine(
+            productId: productId,
+            sellerId: stream.sellerId,
+            name: 'Shea butter',
+            quantity: 1,
+            unitPriceGhs: 40,
+            lineTotalGhs: 40,
+            category: 'beauty',
+          ),
+        ],
+        shipping: const OrderShipping(
+          recipientName: 'Ama Shop',
+          phone: '0200000000',
+          line1: 'Osu',
+          city: 'Accra',
+          region: 'Greater Accra',
+        ),
+        paymentMethods: const ['mtn-momo'],
+        createdAt: DateTime.now().toUtc().toIso8601String(),
+      ),
+    );
+
+    await LocalCommerceStore.placeBid(
+      auctionId: firstLotId,
+      amountGhs: 25,
+      bidder: _bidder,
+    );
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNotNull);
+    expect(order!.id, 'ord_auc_$firstLotId');
+    final after = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(after.id, firstLotId);
+    expect(after.status, 'sold');
+    expect(after.isOpen, isFalse);
+    expect(LocalCommerceStore.availableCatalogQty(productId), 0);
+  });
 }

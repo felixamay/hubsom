@@ -567,6 +567,7 @@ class LocalCommerceStore {
     final quantities = <String, int>{};
     for (final id in owned) {
       final product = getProduct(id)!;
+      final max = maxOfferableLiveQty(id);
       final requested = productQuantities?[id];
       if (requested != null) {
         if (requested < 1) {
@@ -577,12 +578,22 @@ class LocalCommerceStore {
             '${product.name} only has ${product.stock} in stock',
           );
         }
+        if (requested > max) {
+          throw StateError(
+            max < 1
+                ? '${product.name} is sold out'
+                : '${product.name} only has $max left in stock',
+          );
+        }
         quantities[id] = requested;
       } else {
         if (product.stock < 1) {
           throw StateError('${product.name} is out of stock');
         }
-        quantities[id] = product.stock;
+        if (max < 1) {
+          throw StateError('${product.name} is sold out');
+        }
+        quantities[id] = max;
       }
     }
 
@@ -754,15 +765,23 @@ class LocalCommerceStore {
     final qtys = Map<String, int>.from(stream.productQuantities);
     for (final id in owned) {
       final product = getProduct(id);
-      final requested = quantities?[id] ?? product?.stock ?? 1;
-      final max = product?.stock ?? requested;
+      final max = maxOfferableLiveQty(id, exceptStreamId: streamId);
+      final requested = quantities?[id] ?? max;
       if (requested < 1) {
         throw StateError('Set a quantity of at least 1 before adding');
       }
-      if (max < 1) {
-        throw StateError('${product?.name ?? 'Product'} is out of stock');
+      if (product != null && product.stock < 1) {
+        throw StateError('${product.name} is out of stock');
       }
-      qtys[id] = requested.clamp(1, max);
+      if (max < 1) {
+        throw StateError('${product?.name ?? 'Product'} is sold out');
+      }
+      if (requested > max) {
+        throw StateError(
+          '${product?.name ?? 'Product'} only has $max left in stock',
+        );
+      }
+      qtys[id] = requested;
     }
     return updateStream(
       streamId,
@@ -857,7 +876,10 @@ class LocalCommerceStore {
     if (offered < 1) {
       // Hosts may pull the next catalog unit onto the live bag after a sale,
       // but never invent stock beyond what is still unsold.
-      final remaining = product.stock - committedQty(productId);
+      final remaining = maxOfferableLiveQty(
+        productId,
+        exceptStreamId: streamId,
+      );
       if (remaining < 1) {
         throw StateError('${product.name} is sold out on this live');
       }
@@ -870,7 +892,10 @@ class LocalCommerceStore {
     final productIds = <String>{...live.productIds, productId}.toList();
     final qtys = Map<String, int>.from(live.productQuantities);
     if (!qtys.containsKey(productId)) {
-      final remaining = product.stock - committedQty(productId);
+      final remaining = maxOfferableLiveQty(
+        productId,
+        exceptStreamId: streamId,
+      );
       if (remaining < 1) {
         throw StateError('${product.name} is sold out on this live');
       }
@@ -1223,6 +1248,19 @@ class LocalCommerceStore {
     return left < 0 ? 0 : left;
   }
 
+  /// Units that can still go on a live bag without overselling catalog stock
+  /// or another live show. [exceptStreamId] is the show being sized so its
+  /// current bag is not subtracted from itself.
+  static int maxOfferableLiveQty(String productId, {String? exceptStreamId}) {
+    var left = availableCatalogQty(productId);
+    for (final stream in listStreams()) {
+      if (!stream.isLive) continue;
+      if (exceptStreamId != null && stream.id == exceptStreamId) continue;
+      left -= stream.offeredQty(productId, fallback: 0);
+    }
+    return left < 0 ? 0 : left;
+  }
+
   /// Reject a sale that would oversell catalog inventory.
   static void assertCatalogAvailable(
     String productId,
@@ -1268,6 +1306,9 @@ class LocalCommerceStore {
     if (stream == null || !stream.isLive) return null;
     final remaining = stream.offeredQty(sold.productId, fallback: 0);
     if (remaining < 1) return null;
+    // A stale bag can still show units after shop sales consumed the
+    // catalog. Do not open a lot the winner cannot be given.
+    if (availableCatalogQty(sold.productId) < 1) return null;
     final product = getProduct(sold.productId);
     if (product == null) return null;
 
