@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/core_providers.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/product_photo_compress.dart';
 import '../../core/services/product_photo_picker.dart';
 import '../../core/theme/hubsom_colors.dart';
@@ -95,17 +96,24 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
   List<Product> get _auctionLots =>
       _products.where((p) => p.isAuctionLot).toList();
 
-  int _defaultQty(Product p) => p.stock < 1 ? 0 : 1;
+  int _remaining(Product p) => LocalCommerceStore.maxOfferableLiveQty(p.id);
+
+  int _defaultQty(Product p) {
+    final left = _remaining(p);
+    return left < 1 ? 0 : 1;
+  }
 
   int _qtyFor(Product p) {
+    final left = _remaining(p);
+    if (left < 1) return 0;
     final q = _qtys[p.id] ?? _defaultQty(p);
-    if (p.stock < 1) return 0;
-    return q.clamp(1, p.stock);
+    return q.clamp(1, left);
   }
 
   void _setQty(Product p, int qty) {
-    if (p.stock < 1) return;
-    setState(() => _qtys[p.id] = qty.clamp(1, p.stock));
+    final left = _remaining(p);
+    if (left < 1) return;
+    setState(() => _qtys[p.id] = qty.clamp(1, left));
   }
 
   Future<void> _pickCover() async {
@@ -172,6 +180,15 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
         setState(
           () => _error =
               '${product.name} only has ${product.stock} in stock',
+        );
+        return;
+      }
+      final left = _remaining(product);
+      if (qty > left) {
+        setState(
+          () => _error = left < 1
+              ? '${product.name} is sold out'
+              : '${product.name} only has $left left in stock',
         );
         return;
       }
@@ -410,7 +427,8 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                     final selected = _selected.contains(p.id);
                     final thumb =
                         p.images.isNotEmpty ? p.images.first : null;
-                    final out = p.stock < 1;
+                    final left = _remaining(p);
+                    final out = left < 1;
                     final qty = _qtyFor(p);
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -434,10 +452,12 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                               title: Text(p.name),
                               subtitle: Text(
                                 out
-                                    ? 'Out of stock — add quantity on the product first'
+                                    ? (p.stock < 1
+                                        ? 'Out of stock — add quantity on the product first'
+                                        : 'Sold out')
                                     : p.isAuctionLot
-                                        ? '${formatGhs(p.effectivePrice)} · ${p.stock} auction lot · hidden from store'
-                                        : '${formatGhs(p.effectivePrice)} · ${p.stock} in store',
+                                        ? '${formatGhs(p.effectivePrice)} · $left left · hidden from store'
+                                        : '${formatGhs(p.effectivePrice)} · $left left in stock',
                               ),
                               onChanged: out
                                   ? null
@@ -487,7 +507,7 @@ class _SellerGoLivePageState extends ConsumerState<SellerGoLivePage> {
                                     ),
                                     IconButton(
                                       tooltip: 'More',
-                                      onPressed: qty >= p.stock
+                                      onPressed: qty >= left
                                           ? null
                                           : () => _setQty(p, qty + 1),
                                       icon: const Icon(Icons.add_circle_outline),

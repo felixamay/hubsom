@@ -737,9 +737,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   Future<int?> _pickLiveQty(Product product) async {
-    if (product.stock < 1) {
+    final max = LocalCommerceStore.maxOfferableLiveQty(
+      product.id,
+      exceptStreamId: widget.streamId,
+    );
+    if (max < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} is out of stock')),
+        SnackBar(content: Text('${product.name} is sold out')),
       );
       return null;
     }
@@ -756,7 +760,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${product.name} · ${product.stock} in stock',
+                    '${product.name} · $max left in stock',
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -775,7 +779,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
                         ),
                       ),
                       IconButton(
-                        onPressed: qty >= product.stock
+                        onPressed: qty >= max
                             ? null
                             : () => setLocal(() => qty += 1),
                         icon: const Icon(Icons.add_circle_outline),
