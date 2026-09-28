@@ -409,4 +409,62 @@ void main() {
     expect(after.isOpen, isFalse);
     expect(LocalCommerceStore.availableCatalogQty(productId), 0);
   });
+
+  test('shop checkout cannot pay for a listing the seller already deleted',
+      () async {
+    final productId = await listOne(stock: 1);
+    await LocalCommerceStore.deleteProduct(productId);
+
+    expect(LocalCommerceStore.availableCatalogQty(productId), 0);
+    await expectLater(
+      payments.checkout(
+        items: [shopLine(productId)],
+        shipping: _shipping,
+        paymentMethods: const ['mtn-momo'],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('no longer for sale'),
+        ),
+      ),
+    );
+    expect(LocalHuberStore.listOrders(), isEmpty);
+  });
+
+  test('deleting a live listing closes the lot and does not invent a winner',
+      () async {
+    final productId = await listOne(stock: 1);
+    final stream = await LocalCommerceStore.createStream(
+      user: _seller,
+      title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [productId],
+      productQuantities: {productId: 1},
+      pinnedProductId: productId,
+      auctionProductId: productId,
+      startingBidGhs: 20,
+      askingPriceGhs: 20,
+      auctionDurationSeconds: 30,
+    );
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 25,
+      bidder: _bidder,
+    );
+
+    await LocalCommerceStore.deleteProduct(productId);
+
+    final afterDelete = LocalCommerceStore.getStream(stream.id)!;
+    expect(afterDelete.productIds, isNot(contains(productId)));
+    expect(afterDelete.productQuantities.containsKey(productId), isFalse);
+    expect(afterDelete.auction?.productId, productId);
+    expect(afterDelete.auction?.status, 'closed');
+    expect(afterDelete.auction?.isUnsettledLot, isFalse);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNull);
+    expect(LocalHuberStore.listOrders(), isEmpty);
+  });
 }

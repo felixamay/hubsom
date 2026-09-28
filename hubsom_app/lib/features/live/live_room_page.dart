@@ -95,7 +95,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   int _offeredQty(Product product) {
     final s = stream;
     if (s == null) return product.stock;
-    return s.offeredQty(product.id, fallback: product.stock);
+    return s.offeredQty(product.id, fallback: 0);
   }
 
   String get _hostName {
