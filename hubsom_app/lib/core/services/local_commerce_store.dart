@@ -321,10 +321,16 @@ class LocalCommerceStore {
       final s = streams[i];
       final hadProduct = s.productIds.contains(productId);
       final wasPinned = s.pinnedProductId == productId;
-      if (!hadProduct && !wasPinned) continue;
+      final auction = s.auction;
+      final auctionOnSku =
+          auction != null && auction.productId == productId && auction.isUnsettledLot;
+      if (!hadProduct && !wasPinned && !auctionOnSku) continue;
+      final qtys = Map<String, int>.from(s.productQuantities)..remove(productId);
       streams[i] = s.copyWith(
         productIds: s.productIds.where((id) => id != productId).toList(),
+        productQuantities: qtys,
         clearPinned: wasPinned,
+        auction: auctionOnSku ? auction.copyWith(status: 'closed') : auction,
       );
       streamsChanged = true;
     }
@@ -809,8 +815,7 @@ class LocalCommerceStore {
         auction.isUnsettledLot) {
       throw StateError('This item is on auction — bid live instead of buying');
     }
-    final catalogStock = getProduct(productId)?.stock ?? 0;
-    final current = stream.offeredQty(productId, fallback: catalogStock);
+    final current = stream.offeredQty(productId, fallback: 0);
     if (current < by) {
       throw StateError('Sold out on this live');
     }
@@ -1242,7 +1247,10 @@ class LocalCommerceStore {
     bool reserveLiveBag = false,
   }) {
     final product = getProduct(productId);
-    if (product == null) return 0x7fffffff;
+    // A missing listing is sold out, not unlimited. Treating null as
+    // MAX_INT let checkout and finalizeAuction write paid orders after
+    // the seller deleted the SKU (or before the catalog hydrated).
+    if (product == null) return 0;
     var left = product.stock - committedQty(productId);
     if (reserveLiveBag) left -= liveReservedQty(productId);
     return left < 0 ? 0 : left;
@@ -1269,7 +1277,9 @@ class LocalCommerceStore {
   }) {
     if (needed < 1) return;
     final product = getProduct(productId);
-    if (product == null) return;
+    if (product == null) {
+      throw StateError('This item is no longer for sale');
+    }
     final left = availableCatalogQty(
       productId,
       reserveLiveBag: reserveLiveBag,
@@ -1288,10 +1298,7 @@ class LocalCommerceStore {
   }) async {
     final stream = getStream(streamId);
     if (stream == null) return;
-    final current = stream.offeredQty(
-      productId,
-      fallback: getProduct(productId)?.stock ?? 0,
-    );
+    final current = stream.offeredQty(productId, fallback: 0);
     final next = Map<String, int>.from(stream.productQuantities);
     next[productId] = current <= 1 ? 0 : current - 1;
     await updateStream(streamId, productQuantities: next);
