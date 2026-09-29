@@ -560,6 +560,16 @@ class LocalHuberStore {
     if (offer.isExpired) throw StateError('This offer has expired');
     if (!offer.isOpen) throw StateError('This offer is no longer open');
 
+    // Another phone can still hold this offer as "sent" after the first
+    // rider accepted. Without this check a second Accept created a second
+    // delivery and both wallets were paid for the same shipment.
+    await _assertShipmentFreeForRider(
+      shipmentId: offer.shipmentId,
+      driverId: driver.id,
+    );
+    final alreadyMine = _deliveryForShipment(offer.shipmentId, driver.id);
+    if (alreadyMine != null) return alreadyMine;
+
     final now = DateTime.now().toUtc().toIso8601String();
     for (var i = 0; i < offers.length; i++) {
       if (offers[i].id == offerId) {
@@ -659,11 +669,59 @@ class LocalHuberStore {
     );
   }
 
+  static HuberDelivery? _deliveryForShipment(String shipmentId, String huberId) {
+    if (shipmentId.isEmpty) return null;
+    for (final d in listDeliveries()) {
+      if (d.shipmentId == shipmentId && d.huberId == huberId) return d;
+    }
+    return null;
+  }
+
+  static Future<void> _assertShipmentFreeForRider({
+    required String shipmentId,
+    required String driverId,
+  }) async {
+    if (shipmentId.isEmpty) return;
+    if (CloudStore.useNetwork) {
+      try {
+        final remote = await CloudStore.getDoc(CloudStore.shipments, shipmentId);
+        if (remote != null && remote.isNotEmpty) {
+          _rejectTakenShipment(Shipment.fromJson(remote), driverId);
+        }
+      } on StateError {
+        rethrow;
+      } catch (_) {}
+    }
+    final shipment = getShipment(shipmentId);
+    if (shipment != null) {
+      _rejectTakenShipment(shipment, driverId);
+    }
+    for (final d in listDeliveries()) {
+      if (d.shipmentId != shipmentId || d.huberId == driverId) continue;
+      if (d.isActive || d.status == 'delivered') {
+        throw StateError('Another rider already took this delivery');
+      }
+    }
+  }
+
+  static void _rejectTakenShipment(Shipment shipment, String driverId) {
+    if (shipment.status == 'cancelled' || shipment.status == 'delivered') {
+      throw StateError('This shipment is no longer available');
+    }
+    final assigned = (shipment.assignedHuberId ?? '').trim();
+    if (assigned.isNotEmpty && assigned != driverId) {
+      throw StateError('Another rider already took this delivery');
+    }
+  }
+
   static Future<HuberDelivery> advanceDelivery(String deliveryId) async {
     final rows = listDeliveries();
     final idx = rows.indexWhere((d) => d.id == deliveryId);
     if (idx < 0) throw StateError('Delivery not found');
     final current = rows[idx];
+    if (current.status == 'delivered' || current.status == 'cancelled') {
+      return current;
+    }
     final nextStatus = switch (current.status) {
       'accepted' => 'en_route_pickup',
       'en_route_pickup' => 'arrived_pickup',
@@ -695,7 +753,7 @@ class LocalHuberStore {
       }
     }
 
-    if (nextStatus == 'delivered') {
+    if (nextStatus == 'delivered' && current.status != 'delivered') {
       final driver = profileById(current.huberId);
       if (driver != null) {
         final completed = driver.completedCount + 1;
