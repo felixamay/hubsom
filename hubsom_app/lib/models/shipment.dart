@@ -129,6 +129,17 @@ class Shipment extends Equatable {
   bool get hasRiderOfferDetails =>
       (offeredFeeGhs ?? 0) > 0 && destination.hasCustomerContact;
 
+  /// Cancelled lots free their orders; delivered/in-flight lots still occupy them.
+  bool get occupiesOrders {
+    switch (status.toLowerCase()) {
+      case 'cancelled':
+      case 'canceled':
+        return false;
+      default:
+        return true;
+    }
+  }
+
   factory Shipment.fromJson(Map<String, dynamic> json) => Shipment(
         id: json['id'] as String,
         sellerId: json['sellerId'] as String? ?? '',
