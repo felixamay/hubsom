@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/local_commerce_store.dart';
+import '../../core/services/local_huber_store.dart';
 import '../../core/services/shipment_fee.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
@@ -559,6 +560,7 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
         onPressed: () async {
           final paid = orders
               .where((o) => o.status == 'paid' || o.status == 'processing')
+              .where((o) => !LocalHuberStore.orderHasActiveShipment(o.id))
               .map((o) => o.id)
               .toList();
           if (paid.isEmpty) {

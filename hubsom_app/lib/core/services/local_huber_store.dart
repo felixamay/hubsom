@@ -330,6 +330,32 @@ class LocalHuberStore {
     );
   }
 
+  /// True when [orderId] is already on a non-cancelled shipment.
+  static bool orderHasActiveShipment(String orderId) {
+    if (orderId.isEmpty) return false;
+    for (final shipment in listShipments()) {
+      if (!shipment.occupiesOrders) continue;
+      if (shipment.orderIds.contains(orderId)) return true;
+    }
+    return false;
+  }
+
+  static void _assertOrdersFreeToConsolidate(Iterable<Order> orders) {
+    for (final order in orders) {
+      switch (order.status.toLowerCase()) {
+        case 'cancelled':
+        case 'canceled':
+        case 'delivered':
+        case 'refunded':
+        case 'failed':
+          throw StateError('This order cannot be added to a shipment');
+      }
+      if (orderHasActiveShipment(order.id)) {
+        throw StateError('This order is already on a shipment');
+      }
+    }
+  }
+
   static Future<Shipment> createShipmentFromOrders({
     required List<String> orderIds,
     required String sellerId,
@@ -337,10 +363,12 @@ class LocalHuberStore {
     double? offeredFeeGhs,
     OrderShipping? destination,
   }) async {
-    final orders = listOrders().where((o) => orderIds.contains(o.id)).toList();
+    final wanted = orderIds.toSet();
+    final orders = listOrders().where((o) => wanted.contains(o.id)).toList();
     if (orders.isEmpty) {
       throw StateError('Select paid orders to consolidate');
     }
+    _assertOrdersFreeToConsolidate(orders);
     final items = <ShipmentItem>[];
     for (final order in orders) {
       for (final line in order.lines) {
@@ -379,7 +407,7 @@ class LocalHuberStore {
         id: 'shp_${_uuid.v4().replaceAll('-', '').substring(0, 10)}',
         sellerId: sellerId,
         createdByUserId: createdByUserId,
-        orderIds: orderIds,
+        orderIds: orders.map((o) => o.id).toList(),
         items: items,
         destination: dest,
         offeredFeeGhs:
