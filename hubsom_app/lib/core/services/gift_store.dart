@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/live_gift.dart';
@@ -94,9 +95,13 @@ class GiftStore {
     final withdrawn = listLedger()
         .where((e) => e.kind == 'withdraw' && e.userId == user.id)
         .fold<double>(0, (sum, e) => sum + (e.priceGhs ?? 0));
-    final fromLedger = received - withdrawn;
-    final pending = [fromUser, stored, fromLedger]
+    // stored / giftEarningsGhs are remaining balances on one device.
+    // received is lifetime gross. Taking max(stored, received - withdrawn)
+    // ignored cash-outs against a stale host-earnings map, so a second
+    // phone paid the same gifts out again.
+    final gross = [fromUser, stored, received]
         .reduce((a, b) => a > b ? a : b);
+    final pending = gross - withdrawn;
     return pending < 0 ? 0 : pending;
   }
 
@@ -117,12 +122,25 @@ class GiftStore {
     if (id.isEmpty) return;
     try {
       final row = await CloudStore.getDoc(CloudStore.giftHostEarnings, id);
-      final cloud = (row?['balanceGhs'] as num?)?.toDouble() ?? 0;
-      if (cloud <= hostEarnings(id)) return;
-      final map = _hostEarnings();
-      map[id] = cloud;
-      await LocalStore.setString(_hostEarningsKey, jsonEncode(map));
+      if (row == null || row.isEmpty) return;
+      await applyCloudHostEarnings(
+        sellerId: id,
+        balanceGhs: (row['balanceGhs'] as num?)?.toDouble() ?? 0,
+      );
     } catch (_) {}
+  }
+
+  /// Cloud remaining balance is authoritative, including 0 after a cash-out.
+  /// Only increasing let a second device keep the pre-withdraw amount.
+  @visibleForTesting
+  static Future<void> applyCloudHostEarnings({
+    required String sellerId,
+    required double balanceGhs,
+  }) async {
+    if (sellerId.isEmpty) return;
+    final map = _hostEarnings();
+    map[sellerId] = balanceGhs < 0 ? 0 : balanceGhs;
+    await LocalStore.setString(_hostEarningsKey, jsonEncode(map));
   }
 
   static Future<HubsomUser> withdrawEarnings(HubsomUser user) async {

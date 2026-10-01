@@ -206,6 +206,61 @@ void main() {
     );
   });
 
+  test('stale host-earnings map cannot cash out gifts already withdrawn', () async {
+    const sellerId = 'sel-stale';
+    const share = 8.0;
+    await LocalStore.setString(
+      'localGiftHostEarnings',
+      jsonEncode({sellerId: share}),
+    );
+    await LocalStore.setString(
+      'localGiftLedger',
+      jsonEncode([
+        {
+          'id': 'gft_heart',
+          'userId': 'viewer-1',
+          'kind': 'send',
+          'points': 10,
+          'hostSellerId': sellerId,
+          'hostShareGhs': share,
+          'createdAt': '2026-10-01T10:00:00Z',
+        },
+        {
+          'id': 'gwd_phone',
+          'userId': seller.id,
+          'kind': 'withdraw',
+          'points': 0,
+          'priceGhs': share,
+          'createdAt': '2026-10-01T11:00:00Z',
+        },
+      ]),
+    );
+    final laptopHost = HubsomUser(
+      id: seller.id,
+      email: seller.email,
+      name: seller.name,
+      role: 'seller',
+      sellerId: sellerId,
+    );
+
+    expect(GiftStore.hostEarnings(sellerId), share);
+    expect(GiftStore.pendingEarningsGhs(laptopHost), 0);
+    await expectLater(
+      GiftStore.withdrawEarnings(laptopHost),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('No gift earnings'),
+        ),
+      ),
+    );
+
+    await GiftStore.applyCloudHostEarnings(sellerId: sellerId, balanceGhs: 0);
+    expect(GiftStore.hostEarnings(sellerId), 0);
+    expect(GiftStore.pendingEarningsGhs(laptopHost), 0);
+  });
+
   test('host on another device is paid from the synced gift ledger', () async {
     final stream = await goLive();
     // Viewer phone: host credentials are not in this vault.
