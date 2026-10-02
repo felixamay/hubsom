@@ -7,6 +7,7 @@ import '../../models/order.dart';
 import '../../models/seller.dart';
 import '../../models/shipment.dart';
 import '../../models/user.dart';
+import 'admin_treasury_store.dart';
 import 'cloud_store.dart';
 import 'ghana_places.dart';
 import 'local_store.dart';
@@ -192,10 +193,32 @@ class LocalHuberStore {
     return null;
   }
 
-  static Future<Order> updateOrderStatus(String orderId, String status) async {
-    final current = getOrder(orderId);
-    if (current == null) throw StateError('Order not found');
-    return saveOrder(current.copyWith(status: status));
+  static bool _isCancelledStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'cancelled':
+      case 'canceled':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static void _assertCancellable(Order current) {
+    switch (current.status.toLowerCase()) {
+      case 'delivered':
+      case 'shipped':
+      case 'out_for_delivery':
+        throw StateError('A shipped order cannot be cancelled');
+    }
+    if (orderHasActiveShipment(current.id)) {
+      throw StateError(
+        'This order is already on a shipment and cannot be cancelled',
+      );
+    }
+  }
+
+  static Future<Order> updateOrderStatus(String orderId, String status) {
+    return updateOrderDetails(orderId, status: status);
   }
 
   static Future<Order> updateOrderDetails(
@@ -205,11 +228,21 @@ class LocalHuberStore {
   }) async {
     final current = getOrder(orderId);
     if (current == null) throw StateError('Order not found');
+    final nextStatus = status ?? current.status;
+    if (_isCancelledStatus(current.status) &&
+        !_isCancelledStatus(nextStatus)) {
+      throw StateError('A cancelled order cannot be reopened');
+    }
+    if (_isCancelledStatus(nextStatus) &&
+        !_isCancelledStatus(current.status)) {
+      _assertCancellable(current);
+      await AdminTreasuryStore.reverseCancelledOrder(current);
+    }
     final nextShipping =
         shipping == null ? current.shipping : resolveDestination(shipping);
     final updated = await saveOrder(
       current.copyWith(
-        status: status ?? current.status,
+        status: nextStatus,
         shipping: nextShipping,
       ),
     );

@@ -90,6 +90,45 @@ abstract final class PaymentAccountStore {
     return next;
   }
 
+  /// Undo [receiveProductPayment] when a paid order is cancelled.
+  static Future<PaymentAccount> reverseProductPayment({
+    required String orderId,
+    required double amountGhs,
+  }) async {
+    final admin = await adminAccount();
+    final ref = 'order_$orderId';
+    if (!admin.creditedRefs.contains(ref)) return admin;
+    final amount = HubsomCommission.roundGhs(amountGhs);
+    final next = admin.copyWith(
+      balanceGhs: HubsomCommission.roundGhs(admin.balanceGhs - amount),
+      creditedRefs: admin.creditedRefs.where((e) => e != ref).toList(),
+    );
+    await _save(next);
+    return next;
+  }
+
+  /// Put a wallet checkout back on the buyer's withdraw account.
+  static Future<PaymentAccount> refundToWithdrawAccount({
+    required HubsomUser user,
+    required double amountGhs,
+    required String orderId,
+  }) async {
+    final account = await withdrawAccountFor(user);
+    final amount = HubsomCommission.roundGhs(amountGhs);
+    if (amount <= 0) return account;
+    final ref = 'refund_$orderId';
+    if (account.creditedRefs.contains(ref)) return account;
+    final next = account.copyWith(
+      balanceGhs: HubsomCommission.roundGhs(account.balanceGhs + amount),
+      creditedRefs: [ref, ...account.creditedRefs],
+    );
+    final profile = user.copyWith(walletBalanceGhs: next.balanceGhs);
+    await _save(next);
+    await AdminAccountStore.save(profile);
+    await _mirrorSession(profile);
+    return next;
+  }
+
   /// Admin pays a seller/user withdraw account. This is not a customer receive.
   static Future<({PaymentAccount admin, PaymentAccount user, HubsomUser userProfile})>
       creditWithdrawPayout({

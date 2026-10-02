@@ -157,6 +157,65 @@ abstract final class AdminTreasuryStore {
     return written;
   }
 
+  /// Undo intake, admin credit, pending payouts, and a wallet charge.
+  ///
+  /// Cancel used to only flip the order status, so stock came back while the
+  /// seller payout and the buyer's wallet debit stayed. A second checkout
+  /// then sold the same unit and admin could still pay the cancelled sale.
+  static Future<void> reverseCancelledOrder(Order order) async {
+    for (final pot in _readPayouts()) {
+      if (pot.orderId == order.id && pot.isPaid) {
+        throw StateError(
+          'This order was already paid out to the seller and cannot be cancelled',
+        );
+      }
+    }
+    await _writePayouts(
+      _readPayouts().where((p) => p.orderId != order.id).toList(),
+    );
+    await _writeIntakes(
+      _readIntakes()
+          .where((e) => !(e.source == 'order' && e.refId == order.id))
+          .toList(),
+    );
+
+    final merchandise =
+        order.lines.fold<double>(0, (s, l) => s + l.lineTotalGhs);
+    final shipment = order.shipmentFeeGhs > 0
+        ? order.shipmentFeeGhs
+        : order.lines.fold<double>(0, (s, l) => s + l.shipmentLineTotal);
+    final collected = merchandise + shipment;
+    await PaymentAccountStore.reverseProductPayment(
+      orderId: order.id,
+      amountGhs: collected,
+    );
+
+    if (!order.paymentMethods.contains('wallet')) return;
+    final buyer = _buyerFor(order);
+    if (buyer == null) return;
+    await PaymentAccountStore.refundToWithdrawAccount(
+      user: buyer,
+      amountGhs: collected,
+      orderId: order.id,
+    );
+  }
+
+  static HubsomUser? _buyerFor(Order order) {
+    final userId = order.userId?.trim() ?? '';
+    final email = AfiaAccess.normalizeEmail(order.buyerEmail ?? '');
+    for (final account in AdminAccountStore.cached()) {
+      if (userId.isNotEmpty && account.user.id == userId) return account.user;
+      if (email.isNotEmpty && account.email == email) return account.user;
+    }
+    if (userId.isEmpty && email.isEmpty) return null;
+    return HubsomUser(
+      id: userId.isEmpty ? email : userId,
+      email: email,
+      name: order.buyerName ?? 'Buyer',
+      role: 'buyer',
+    );
+  }
+
   static String payoutId(String orderId, String sellerKey) =>
       'pot_${orderId}_${sellerKey.isEmpty ? 'unassigned' : sellerKey}';
 
