@@ -572,6 +572,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'paymentAccounts') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergePaymentAccountDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -608,6 +617,84 @@ class CloudStore {
       byId.putIfAbsent(id, () => row);
     }
     return byId.values.toList();
+  }
+
+  /// Keep the spend/payout that actually happened when cloud is behind.
+  ///
+  /// Replacing `paymentAccounts` with the Firestore list let a stale snapshot
+  /// restore a wallet after checkout or withdrawal. The next spend then
+  /// paid with money that was already gone.
+  static List<Map<String, dynamic>> mergePaymentAccountDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergePaymentAccountRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergePaymentAccountRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferFresherPaymentAccount(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferFresherPaymentAccount({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final localAt = _paymentAccountUpdatedAt(local);
+    final incomingAt = _paymentAccountUpdatedAt(incoming);
+    if (localAt != null && incomingAt != null) {
+      if (incomingAt.isAfter(localAt)) return incoming;
+      if (localAt.isAfter(incomingAt)) return local;
+    } else if (incomingAt != null && localAt == null) {
+      return incoming;
+    } else if (localAt != null && incomingAt == null) {
+      return local;
+    }
+    // No clock on either side: keep the local spend so hydrate cannot
+    // resurrect the pre-checkout balance.
+    return local;
+  }
+
+  static DateTime? _paymentAccountUpdatedAt(Map<String, dynamic> row) {
+    final raw = '${row['updatedAt'] ?? ''}'.trim();
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw)?.toUtc();
+  }
+
+  static List<Map<String, dynamic>> _localDocList(String localKey) {
+    final raw = LocalStore.getString(localKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final e in decoded)
+          if (e is Map) Map<String, dynamic>.from(e),
+      ];
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// REST PATCH query so omitted account fields (passkeys, suspended) stay.

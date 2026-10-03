@@ -82,4 +82,65 @@ void main() {
       40,
     );
   });
+
+  test('hydrate keeps a local spend over a stale payment-account snapshot', () {
+    const id = 'pay_user_buyer';
+    final spent = {
+      'id': id,
+      'ownerUserId': 'buyer',
+      'email': 'buyer@hubsom.test',
+      'name': 'Kojo',
+      'kind': 'user_withdraw',
+      'balanceGhs': 20,
+      'creditedRefs': ['spend_ord_1'],
+      'updatedAt': '2026-10-03T11:00:00.000Z',
+    };
+    final staleCloud = {
+      'id': id,
+      'ownerUserId': 'buyer',
+      'email': 'buyer@hubsom.test',
+      'name': 'Kojo',
+      'kind': 'user_withdraw',
+      'balanceGhs': 100,
+      'creditedRefs': <String>[],
+      'updatedAt': '2026-10-03T10:00:00.000Z',
+    };
+    final merged = CloudStore.mergePaymentAccountRows(
+      local: [spent],
+      incoming: [staleCloud],
+    );
+    expect(merged, hasLength(1));
+    expect(merged.single['balanceGhs'], 20);
+    expect(merged.single['creditedRefs'], ['spend_ord_1']);
+  });
+
+  test('hydrate takes a newer cloud payout over a stale local balance', () {
+    const id = 'pay_user_seller';
+    final local = {
+      'id': id,
+      'ownerUserId': 'seller',
+      'email': 'seller@hubsom.test',
+      'name': 'Ama',
+      'kind': 'user_withdraw',
+      'balanceGhs': 0,
+      'creditedRefs': <String>[],
+      'updatedAt': '2026-10-03T10:00:00.000Z',
+    };
+    final paidOut = {
+      'id': id,
+      'ownerUserId': 'seller',
+      'email': 'seller@hubsom.test',
+      'name': 'Ama',
+      'kind': 'user_withdraw',
+      'balanceGhs': 94,
+      'creditedRefs': ['pot_ord_1_s1'],
+      'updatedAt': '2026-10-03T11:00:00.000Z',
+    };
+    final merged = CloudStore.mergePaymentAccountRows(
+      local: [local],
+      incoming: [paidOut],
+    );
+    expect(merged.single['balanceGhs'], 94);
+    expect(merged.single['creditedRefs'], ['pot_ord_1_s1']);
+  });
 }
