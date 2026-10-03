@@ -268,7 +268,10 @@ abstract final class PaymentAccountStore {
   }
 
   static Future<void> _save(PaymentAccount account) async {
-    final byId = _byId()..[account.id] = account;
+    final stamped = account.copyWith(
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final byId = _byId()..[stamped.id] = stamped;
     final rows = byId.values.map((e) => e.toJson()).toList();
     await LocalStore.setString(_key, jsonEncode(rows));
     try {

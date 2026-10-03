@@ -16,6 +16,7 @@ class PaymentAccount extends Equatable {
     this.withdrawRail = '',
     this.withdrawHandle = '',
     this.creditedRefs = const [],
+    this.updatedAt = '',
   });
 
   static const adminId = 'pay_admin';
@@ -32,6 +33,9 @@ class PaymentAccount extends Equatable {
   final String withdrawRail;
   final String withdrawHandle;
   final List<String> creditedRefs;
+  /// Last local/cloud write. Hydrate uses this so a stale snapshot cannot
+  /// restore a balance that this device already spent or paid out.
+  final String updatedAt;
 
   bool get isAdminReceive => kind == adminKind;
   bool get canReceive => isAdminReceive;
@@ -88,6 +92,7 @@ class PaymentAccount extends Equatable {
         withdrawHandle: '${json['withdrawHandle'] ?? ''}',
         creditedRefs: (json['creditedRefs'] as List?)?.map((e) => '$e').toList() ??
             const [],
+        updatedAt: '${json['updatedAt'] ?? ''}',
       );
 
   Map<String, dynamic> toJson() => {
@@ -100,6 +105,7 @@ class PaymentAccount extends Equatable {
         if (withdrawRail.isNotEmpty) 'withdrawRail': withdrawRail,
         if (withdrawHandle.isNotEmpty) 'withdrawHandle': withdrawHandle,
         'creditedRefs': creditedRefs,
+        if (updatedAt.isNotEmpty) 'updatedAt': updatedAt,
       };
 
   PaymentAccount copyWith({
@@ -107,6 +113,7 @@ class PaymentAccount extends Equatable {
     String? withdrawRail,
     String? withdrawHandle,
     List<String>? creditedRefs,
+    String? updatedAt,
   }) =>
       PaymentAccount(
         id: id,
@@ -118,6 +125,7 @@ class PaymentAccount extends Equatable {
         withdrawRail: withdrawRail ?? this.withdrawRail,
         withdrawHandle: withdrawHandle ?? this.withdrawHandle,
         creditedRefs: creditedRefs ?? this.creditedRefs,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
 
   @override

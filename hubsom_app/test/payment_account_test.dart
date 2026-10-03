@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -180,5 +181,42 @@ void main() {
 
     await PaymentAccountStore.processWithdrawal(submitted.request.id);
     expect(WithdrawalStore.forUser(_seller.id).single.isProcessed, isTrue);
+  });
+
+  test('a stale cloud hydrate cannot restore a spent withdraw balance', () async {
+    final user = _seller.copyWith(walletBalanceGhs: 80);
+    await PaymentAccountStore.withdrawAccountFor(user);
+    final beforeSpend = PaymentAccountStore.cachedForUser(user)!.toJson();
+    expect(beforeSpend['balanceGhs'], 80);
+
+    await PaymentAccountStore.spendFromWithdrawAccount(
+      user: user,
+      amountGhs: 50,
+      ref: 'ord_hydrate',
+    );
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 30);
+
+    final merged = CloudStore.mergePaymentAccountDocs(
+      localKey: 'paymentAccounts',
+      incoming: [beforeSpend],
+    );
+    await LocalStore.setString('paymentAccounts', jsonEncode(merged));
+
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 30);
+    await expectLater(
+      PaymentAccountStore.spendFromWithdrawAccount(
+        user: user,
+        amountGhs: 50,
+        ref: 'ord_hydrate_again',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Payment account needs'),
+        ),
+      ),
+    );
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 30);
   });
 }
