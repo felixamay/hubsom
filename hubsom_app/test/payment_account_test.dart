@@ -219,4 +219,46 @@ void main() {
     );
     expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 30);
   });
+
+  test('a stale cloud hydrate cannot drop a pending withdrawal after debit',
+      () async {
+    final user = _seller.copyWith(walletBalanceGhs: 80);
+    await PaymentAccountStore.withdrawAccountFor(user);
+    final older = {
+      'id': 'wd-old',
+      'userId': user.id,
+      'userName': user.name,
+      'userEmail': user.email,
+      'amountGhs': 10,
+      'rail': 'mtn-momo',
+      'handle': '0240000000',
+      'status': 'processed',
+      'createdAt': '2026-10-01T11:00:00.000Z',
+      'processedAt': '2026-10-01T12:00:00.000Z',
+    };
+    await LocalStore.setString(WithdrawalStore.key, jsonEncode([older]));
+
+    final out = await PaymentAccountStore.withdraw(
+      user: user,
+      amountGhs: 40,
+      rail: 'mtn-momo',
+      handle: '0240000000',
+    );
+    expect(out.account.balanceGhs, 40);
+    expect(WithdrawalStore.pending(), hasLength(1));
+    expect(WithdrawalStore.pending().single.id, out.request.id);
+
+    // Same replace hydrateLocalCache used to do: cloud has older rows only.
+    final merged = CloudStore.mergeWithdrawalDocs(
+      localKey: WithdrawalStore.key,
+      incoming: [older],
+    );
+    await LocalStore.setString(WithdrawalStore.key, jsonEncode(merged));
+
+    expect(WithdrawalStore.pending(), hasLength(1));
+    expect(WithdrawalStore.pending().single.id, out.request.id);
+    expect(WithdrawalStore.pending().single.amountGhs, 40);
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 40);
+    expect(WithdrawalStore.byId('wd-old')?.isProcessed, isTrue);
+  });
 }

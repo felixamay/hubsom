@@ -581,6 +581,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'withdrawals') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeWithdrawalDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -617,6 +626,53 @@ class CloudStore {
       byId.putIfAbsent(id, () => row);
     }
     return byId.values.toList();
+  }
+
+  /// Keep a cash-out that already debited the wallet when cloud is behind.
+  ///
+  /// Replacing `withdrawals` with the Firestore list dropped a pending
+  /// request after `PaymentAccountStore.withdraw` had already reduced the
+  /// balance. The money was gone and admin had nothing to process.
+  static List<Map<String, dynamic>> mergeWithdrawalDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeWithdrawalRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeWithdrawalRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      if (current == null) {
+        byId[id] = row;
+        continue;
+      }
+      // Processed wins so an admin mark is not reverted, and a local
+      // pending cash-out is not dropped when the snapshot is stale.
+      if (_withdrawalProcessed(row) && !_withdrawalProcessed(current)) {
+        byId[id] = row;
+      }
+    }
+    return byId.values.toList();
+  }
+
+  static bool _withdrawalProcessed(Map<String, dynamic> row) {
+    return '${row['status'] ?? ''}' == 'processed' ||
+        '${row['processedAt'] ?? ''}'.trim().isNotEmpty;
   }
 
   /// Keep the spend/payout that actually happened when cloud is behind.
