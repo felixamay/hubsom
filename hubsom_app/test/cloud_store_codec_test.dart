@@ -114,6 +114,74 @@ void main() {
     expect(merged.single['creditedRefs'], ['spend_ord_1']);
   });
 
+  test('hydrate keeps a local pending withdrawal a stale snapshot omitted', () {
+    final pending = {
+      'id': 'wd-new',
+      'userId': 'seller',
+      'userName': 'Ama',
+      'userEmail': 'seller@hubsom.test',
+      'amountGhs': 40,
+      'rail': 'mtn-momo',
+      'handle': '0240000000',
+      'status': 'pending',
+      'createdAt': '2026-10-04T11:00:00.000Z',
+    };
+    final older = {
+      'id': 'wd-old',
+      'userId': 'seller',
+      'userName': 'Ama',
+      'userEmail': 'seller@hubsom.test',
+      'amountGhs': 10,
+      'rail': 'mtn-momo',
+      'handle': '0240000000',
+      'status': 'processed',
+      'createdAt': '2026-10-01T11:00:00.000Z',
+      'processedAt': '2026-10-01T12:00:00.000Z',
+    };
+    final merged = CloudStore.mergeWithdrawalRows(
+      local: [pending, older],
+      incoming: [older],
+    );
+    expect(merged.map((e) => e['id']), containsAll(['wd-new', 'wd-old']));
+    expect(
+      merged.firstWhere((e) => e['id'] == 'wd-new')['status'],
+      'pending',
+    );
+  });
+
+  test('hydrate prefers a processed withdrawal over a stale pending copy', () {
+    const id = 'wd-1';
+    final pending = {
+      'id': id,
+      'userId': 'seller',
+      'amountGhs': 40,
+      'status': 'pending',
+      'createdAt': '2026-10-04T11:00:00.000Z',
+    };
+    final processed = {
+      'id': id,
+      'userId': 'seller',
+      'amountGhs': 40,
+      'status': 'processed',
+      'createdAt': '2026-10-04T11:00:00.000Z',
+      'processedAt': '2026-10-04T12:00:00.000Z',
+    };
+    expect(
+      CloudStore.mergeWithdrawalRows(
+        local: [pending],
+        incoming: [processed],
+      ).single['status'],
+      'processed',
+    );
+    expect(
+      CloudStore.mergeWithdrawalRows(
+        local: [processed],
+        incoming: [pending],
+      ).single['status'],
+      'processed',
+    );
+  });
+
   test('hydrate takes a newer cloud payout over a stale local balance', () {
     const id = 'pay_user_seller';
     final local = {
