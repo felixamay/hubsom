@@ -211,4 +211,112 @@ void main() {
     expect(merged.single['balanceGhs'], 94);
     expect(merged.single['creditedRefs'], ['pot_ord_1_s1']);
   });
+
+  test('hydrate keeps a local paid order a stale snapshot omitted', () {
+    final paid = {
+      'id': 'ord_new',
+      'subtotalGhs': 50,
+      'status': 'paid',
+      'userId': 'u-buyer',
+      'lines': [
+        {
+          'productId': 'p1',
+          'name': 'Shea',
+          'quantity': 1,
+          'unitPriceGhs': 50,
+          'lineTotalGhs': 50,
+          'category': 'beauty',
+        },
+      ],
+      'paymentMethods': ['wallet'],
+      'createdAt': '2026-10-05T11:00:00.000Z',
+    };
+    final older = {
+      'id': 'ord_old',
+      'subtotalGhs': 20,
+      'status': 'delivered',
+      'userId': 'u-buyer',
+      'lines': [
+        {
+          'productId': 'p2',
+          'name': 'Soap',
+          'quantity': 1,
+          'unitPriceGhs': 20,
+          'lineTotalGhs': 20,
+          'category': 'beauty',
+        },
+      ],
+      'paymentMethods': ['mtn-momo'],
+      'createdAt': '2026-10-01T11:00:00.000Z',
+    };
+    final merged = CloudStore.mergeOrderRows(
+      local: [paid, older],
+      incoming: [older],
+    );
+    expect(merged.map((e) => e['id']), containsAll(['ord_new', 'ord_old']));
+    expect(
+      merged.firstWhere((e) => e['id'] == 'ord_new')['status'],
+      'paid',
+    );
+  });
+
+  test('hydrate keeps delivered over a stale paid cloud copy', () {
+    const id = 'ord_1';
+    final delivered = {
+      'id': id,
+      'subtotalGhs': 50,
+      'status': 'delivered',
+      'createdAt': '2026-10-05T11:00:00.000Z',
+    };
+    final paid = {
+      'id': id,
+      'subtotalGhs': 50,
+      'status': 'paid',
+      'createdAt': '2026-10-05T11:00:00.000Z',
+    };
+    expect(
+      CloudStore.mergeOrderRows(
+        local: [delivered],
+        incoming: [paid],
+      ).single['status'],
+      'delivered',
+    );
+    expect(
+      CloudStore.mergeOrderRows(
+        local: [paid],
+        incoming: [delivered],
+      ).single['status'],
+      'delivered',
+    );
+  });
+
+  test('hydrate does not resurrect a cancelled order from a stale paid copy', () {
+    const id = 'ord_1';
+    final cancelled = {
+      'id': id,
+      'subtotalGhs': 50,
+      'status': 'cancelled',
+      'createdAt': '2026-10-05T11:00:00.000Z',
+    };
+    final paid = {
+      'id': id,
+      'subtotalGhs': 50,
+      'status': 'paid',
+      'createdAt': '2026-10-05T11:00:00.000Z',
+    };
+    expect(
+      CloudStore.mergeOrderRows(
+        local: [cancelled],
+        incoming: [paid],
+      ).single['status'],
+      'cancelled',
+    );
+    expect(
+      CloudStore.mergeOrderRows(
+        local: [paid],
+        incoming: [cancelled],
+      ).single['status'],
+      'cancelled',
+    );
+  });
 }

@@ -190,4 +190,22 @@ void main() {
     expect(snap.commissionGhs, 6);
     expect(snap.pendingPayoutsGhs, 94);
   });
+
+  test('stale cloud hydrate cannot drop a paid checkout', () async {
+    final order = _paidOrder(id: 'ord_new');
+    await LocalHuberStore.saveOrder(order);
+    await AdminTreasuryStore.recordPaidOrder(order);
+    expect(LocalHuberStore.getOrder(order.id)?.status, 'paid');
+
+    final older = _paidOrder(id: 'ord_old').toJson();
+    final merged = CloudStore.mergeOrderDocs(
+      localKey: 'localOrders',
+      incoming: [older],
+    );
+    await LocalStore.setString('localOrders', jsonEncode(merged));
+
+    expect(LocalHuberStore.getOrder(order.id)?.status, 'paid');
+    expect(LocalHuberStore.getOrder('ord_old')?.status, 'paid');
+    expect(AdminTreasuryStore.snapshot().collectedGhs, 112);
+  });
 }

@@ -590,6 +590,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'localOrders') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeOrderDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -736,6 +745,87 @@ class CloudStore {
     final raw = '${row['updatedAt'] ?? ''}'.trim();
     if (raw.isEmpty) return null;
     return DateTime.tryParse(raw)?.toUtc();
+  }
+
+  /// Keep a paid order that already debited the wallet when cloud is behind.
+  ///
+  /// Replacing `localOrders` with the Firestore list dropped a checkout after
+  /// `PaymentService.checkout` had already saved the order (and spent the
+  /// wallet). The money was gone and the seller never saw the sale.
+  static List<Map<String, dynamic>> mergeOrderDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeOrderRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeOrderRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferOrderRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferOrderRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final localTerminal = _orderTerminal(local);
+    final incomingTerminal = _orderTerminal(incoming);
+    // Do not resurrect a cancelled/refunded sale from a stale paid copy.
+    if (localTerminal && !incomingTerminal) return local;
+    if (incomingTerminal && !localTerminal) return incoming;
+    return _orderFulfillmentRank(incoming) > _orderFulfillmentRank(local)
+        ? incoming
+        : local;
+  }
+
+  static const _terminalOrderStatus = {
+    'cancelled',
+    'canceled',
+    'refunded',
+  };
+
+  static bool _orderTerminal(Map<String, dynamic> row) {
+    return _terminalOrderStatus.contains('${row['status'] ?? ''}'.toLowerCase());
+  }
+
+  static int _orderFulfillmentRank(Map<String, dynamic> row) {
+    switch ('${row['status'] ?? ''}'.toLowerCase()) {
+      case 'delivered':
+        return 5;
+      case 'shipped':
+      case 'out_for_delivery':
+        return 4;
+      case 'processing':
+        return 3;
+      case 'paid':
+        return 2;
+      case 'cancelled':
+      case 'canceled':
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   static List<Map<String, dynamic>> _localDocList(String localKey) {
