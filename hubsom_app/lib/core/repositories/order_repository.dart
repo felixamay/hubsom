@@ -66,8 +66,19 @@ class OrderRepository {
               !o.lines.any((l) => l.sellerId == sellerId)) {
             continue;
           }
-          byId[o.id] = o;
-          await LocalHuberStore.saveOrder(o);
+          final existing = byId[o.id];
+          final next = existing == null
+              ? o
+              : Order.fromJson(
+                  CloudStore.preferOrderRow(
+                    local: existing.toJson(),
+                    incoming: o.toJson(),
+                  ),
+                );
+          byId[o.id] = next;
+          if (existing == null || next.status != existing.status) {
+            await LocalHuberStore.saveOrder(next);
+          }
         } catch (_) {}
       }
     } catch (_) {}
