@@ -599,6 +599,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'localShipments') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeShipmentDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -822,6 +831,101 @@ class CloudStore {
         return 2;
       case 'cancelled':
       case 'canceled':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /// Keep a consolidated lot that already occupies paid orders when cloud
+  /// is behind.
+  ///
+  /// Replacing `localShipments` with the Firestore list dropped a shipment
+  /// after `createShipmentFromOrders` had already marked the orders
+  /// processing. Consolidate then created a second lot, and two riders
+  /// could be paid for one order.
+  static List<Map<String, dynamic>> mergeShipmentDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeShipmentRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeShipmentRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferShipmentRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferShipmentRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final localTerminal = _shipmentCancelled(local);
+    final incomingTerminal = _shipmentCancelled(incoming);
+    // Do not resurrect a cancelled lot from a stale ready copy.
+    if (localTerminal && !incomingTerminal) return local;
+    if (incomingTerminal && !localTerminal) return incoming;
+    final incomingRank = _shipmentFulfillmentRank(incoming);
+    final localRank = _shipmentFulfillmentRank(local);
+    if (incomingRank > localRank) return incoming;
+    if (localRank > incomingRank) return local;
+    // Same rank: keep the rider assignment so hydrate cannot reopen a
+    // taken lot as an unassigned offer.
+    if (_shipmentAssignedHuber(incoming).isNotEmpty &&
+        _shipmentAssignedHuber(local).isEmpty) {
+      return incoming;
+    }
+    return local;
+  }
+
+  static const _cancelledShipmentStatus = {
+    'cancelled',
+    'canceled',
+  };
+
+  static bool _shipmentCancelled(Map<String, dynamic> row) {
+    return _cancelledShipmentStatus
+        .contains('${row['status'] ?? ''}'.toLowerCase());
+  }
+
+  static String _shipmentAssignedHuber(Map<String, dynamic> row) {
+    return '${row['assignedHuberId'] ?? ''}'.trim();
+  }
+
+  static int _shipmentFulfillmentRank(Map<String, dynamic> row) {
+    switch ('${row['status'] ?? ''}'.toLowerCase()) {
+      case 'delivered':
+        return 6;
+      case 'out_for_delivery':
+        return 5;
+      case 'shipped':
+        return 4;
+      case 'assigned':
+        return 3;
+      case 'offering':
+        return 2;
+      case 'ready':
         return 1;
       default:
         return 0;
