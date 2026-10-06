@@ -319,4 +319,86 @@ void main() {
       'cancelled',
     );
   });
+
+  test('hydrate keeps a local shipment a stale snapshot omitted', () {
+    Map<String, dynamic> lot({
+      required String id,
+      required String status,
+      String? assignedHuberId,
+    }) =>
+        {
+          'id': id,
+          'sellerId': 'seller-1',
+          'createdByUserId': 'seller-1',
+          'orderIds': [id.replaceFirst('shp_', 'ord_')],
+          'items': const [],
+          'destination': {
+            'recipientName': 'Buyer',
+            'phone': '0241111111',
+            'line1': '12 Spintex Rd',
+            'city': 'Accra',
+            'region': 'Greater Accra',
+          },
+          'status': status,
+          if (assignedHuberId != null) 'assignedHuberId': assignedHuberId,
+          'createdAt': '2026-10-06T11:00:00.000Z',
+          'updatedAt': '2026-10-06T11:00:00.000Z',
+        };
+    final fresh = lot(id: 'shp_new', status: 'ready');
+    final older = lot(id: 'shp_old', status: 'delivered');
+    final merged = CloudStore.mergeShipmentRows(
+      local: [fresh, older],
+      incoming: [older],
+    );
+    expect(merged.map((e) => e['id']), containsAll(['shp_new', 'shp_old']));
+    expect(
+      merged.firstWhere((e) => e['id'] == 'shp_new')['status'],
+      'ready',
+    );
+  });
+
+  test('hydrate keeps assigned over a stale offering cloud copy', () {
+    const id = 'shp_1';
+    Map<String, dynamic> lot(String status, {String? assignedHuberId}) => {
+          'id': id,
+          'sellerId': 'seller-1',
+          'status': status,
+          if (assignedHuberId != null) 'assignedHuberId': assignedHuberId,
+        };
+    expect(
+      CloudStore.mergeShipmentRows(
+        local: [lot('assigned', assignedHuberId: 'huber-ama')],
+        incoming: [lot('offering')],
+      ).single['assignedHuberId'],
+      'huber-ama',
+    );
+    expect(
+      CloudStore.mergeShipmentRows(
+        local: [lot('offering')],
+        incoming: [lot('assigned', assignedHuberId: 'huber-ama')],
+      ).single['assignedHuberId'],
+      'huber-ama',
+    );
+  });
+
+  test('hydrate does not resurrect a cancelled shipment from a stale ready copy',
+      () {
+    const id = 'shp_1';
+    final cancelled = {'id': id, 'status': 'cancelled'};
+    final ready = {'id': id, 'status': 'ready'};
+    expect(
+      CloudStore.mergeShipmentRows(
+        local: [cancelled],
+        incoming: [ready],
+      ).single['status'],
+      'cancelled',
+    );
+    expect(
+      CloudStore.mergeShipmentRows(
+        local: [ready],
+        incoming: [cancelled],
+      ).single['status'],
+      'cancelled',
+    );
+  });
 }

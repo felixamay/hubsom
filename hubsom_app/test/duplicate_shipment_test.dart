@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:convert';
+
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
@@ -214,5 +216,45 @@ void main() {
     );
     expect(LocalHuberStore.profileById(first.id)!.walletBalanceGhs, 25);
     expect(LocalHuberStore.profileById(second.id)!.walletBalanceGhs, 0);
+  });
+
+  test('stale cloud hydrate cannot drop a just-consolidated shipment', () async {
+    await LocalHuberStore.saveOrder(_paidOrder('ord_hydrate'));
+    final created = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: const ['ord_hydrate'],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+      offeredFeeGhs: 20,
+    );
+    expect(LocalHuberStore.orderHasActiveShipment('ord_hydrate'), isTrue);
+
+    // Same replace hydrateLocalCache used to do: cloud has older lots only.
+    final older = created.toJson()
+      ..['id'] = 'shp_old'
+      ..['orderIds'] = ['ord_old']
+      ..['status'] = 'delivered';
+    final merged = CloudStore.mergeShipmentDocs(
+      localKey: 'localShipments',
+      incoming: [older],
+    );
+    await LocalStore.setString('localShipments', jsonEncode(merged));
+
+    expect(LocalHuberStore.getShipment(created.id)?.status, 'ready');
+    expect(LocalHuberStore.orderHasActiveShipment('ord_hydrate'), isTrue);
+    await expectLater(
+      LocalHuberStore.createShipmentFromOrders(
+        orderIds: const ['ord_hydrate'],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+        offeredFeeGhs: 20,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('already on a shipment'),
+        ),
+      ),
+    );
   });
 }
