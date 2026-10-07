@@ -126,8 +126,16 @@ void main() {
     );
     expect(cancelled.status, 'cancelled');
     expect(LocalCommerceStore.availableCatalogQty(productId), 1);
-    expect(AdminTreasuryStore.cachedPayouts(), isEmpty);
+    expect(
+      AdminTreasuryStore.cachedPayouts().where((p) => p.isPending),
+      isEmpty,
+    );
+    expect(
+      AdminTreasuryStore.cachedPayouts().where((p) => p.isCancelled),
+      hasLength(1),
+    );
     expect(AdminTreasuryStore.snapshot().collectedGhs, 0);
+    expect(AdminTreasuryStore.snapshot().pendingPayoutsGhs, 0);
     expect(PaymentAccountStore.adminCached().balanceGhs, 0);
     expect(PaymentAccountStore.cachedForUser(_buyer)!.balanceGhs, 80);
     expect(
@@ -217,5 +225,67 @@ void main() {
     );
     expect(LocalHuberStore.getOrder(order.id)?.status, 'paid');
     expect(LocalCommerceStore.availableCatalogQty(productId), 0);
+  });
+
+  test('stale cloud hydrate cannot restore a cancelled payout for Pay', () async {
+    final productId = await listOne();
+    await payments.checkout(
+      items: [shopLine(productId)],
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+    final order = LocalHuberStore.listOrders().single;
+    final pending = AdminTreasuryStore.cachedPayouts().single;
+    expect(pending.isPending, isTrue);
+
+    await LocalHuberStore.updateOrderStatus(order.id, 'cancelled');
+    expect(AdminTreasuryStore.cachedPayouts().single.isCancelled, isTrue);
+
+    final mergedPayouts = CloudStore.mergePayoutDocs(
+      localKey: AdminTreasuryStore.payoutsKey,
+      incoming: [pending.toJson()],
+    );
+    await LocalStore.setString(
+      AdminTreasuryStore.payoutsKey,
+      jsonEncode(mergedPayouts),
+    );
+    final mergedIntakes = CloudStore.mergeIntakeDocs(
+      localKey: AdminTreasuryStore.intakesKey,
+      incoming: [
+        {
+          'id': 'tin_order_${order.id}',
+          'source': 'order',
+          'refId': order.id,
+          'amountGhs': 40,
+          'createdAt': '2026-10-07T11:00:00.000Z',
+        },
+      ],
+    );
+    await LocalStore.setString(
+      AdminTreasuryStore.intakesKey,
+      jsonEncode(mergedIntakes),
+    );
+
+    expect(AdminTreasuryStore.cachedPayouts().single.isCancelled, isTrue);
+    expect(AdminTreasuryStore.snapshot().pendingPayoutsGhs, 0);
+    expect(AdminTreasuryStore.snapshot().collectedGhs, 0);
+    await expectLater(
+      AdminTreasuryStore.paySeller(pending.id),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('cancelled'),
+        ),
+      ),
+    );
+    expect(PaymentAccountStore.cachedForUser(_seller)?.balanceGhs ?? 0, 0);
+
+    await LocalStore.setString(AdminTreasuryStore.payoutsKey, '[]');
+    final restored = CloudStore.mergePayoutDocs(
+      localKey: AdminTreasuryStore.payoutsKey,
+      incoming: [pending.toJson()],
+    );
+    expect(restored, isEmpty);
   });
 }

@@ -608,6 +608,24 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'adminPayouts') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergePayoutDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
+        if (entry.key == 'adminIntakes') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeIntakeDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -911,6 +929,143 @@ class CloudStore {
 
   static String _shipmentAssignedHuber(Map<String, dynamic> row) {
     return '${row['assignedHuberId'] ?? ''}'.trim();
+  }
+
+  /// Keep a paid or voided seller payout when cloud is behind.
+  ///
+  /// Replacing `adminPayouts` with the Firestore list restored a pending
+  /// payout after `paySeller` or after `reverseCancelledOrder` had already
+  /// refunded the buyer. Admin then paid 94% on a sale that was gone.
+  static List<Map<String, dynamic>> mergePayoutDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergePayoutRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergePayoutRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      if (current == null) {
+        if (_payoutRank(row) == 0 && _orderCancelledForPayout(row)) {
+          continue;
+        }
+        byId[id] = row;
+        continue;
+      }
+      byId[id] = preferPayoutRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferPayoutRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    return _payoutRank(incoming) > _payoutRank(local) ? incoming : local;
+  }
+
+  /// paid > cancelled > pending so a stale pending copy cannot reopen a
+  /// finished or voided payout.
+  static int _payoutRank(Map<String, dynamic> row) {
+    switch ('${row['status'] ?? ''}'.toLowerCase()) {
+      case 'paid':
+        return 2;
+      case 'cancelled':
+      case 'canceled':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  static bool _orderCancelledForPayout(Map<String, dynamic> row) {
+    final orderId = '${row['orderId'] ?? ''}'.trim();
+    if (orderId.isEmpty) return false;
+    for (final order in _localDocList('localOrders')) {
+      if ('${order['id'] ?? ''}' != orderId) continue;
+      return _orderTerminal(order);
+    }
+    return false;
+  }
+
+  /// Keep a local intake a stale snapshot omitted, and do not resurrect a
+  /// reversed collection after cancel refunded the buyer.
+  static List<Map<String, dynamic>> mergeIntakeDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeIntakeRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeIntakeRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      if (current == null) {
+        if (!_intakeReversed(row) && _orderCancelledForIntake(row)) {
+          continue;
+        }
+        byId[id] = row;
+        continue;
+      }
+      byId[id] = preferIntakeRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> preferIntakeRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    if (_intakeReversed(local) && !_intakeReversed(incoming)) return local;
+    if (_intakeReversed(incoming) && !_intakeReversed(local)) return incoming;
+    return local;
+  }
+
+  static bool _intakeReversed(Map<String, dynamic> row) {
+    return row['reversed'] == true;
+  }
+
+  static bool _orderCancelledForIntake(Map<String, dynamic> row) {
+    if ('${row['source'] ?? ''}' != 'order') return false;
+    final orderId = '${row['refId'] ?? ''}'.trim();
+    if (orderId.isEmpty) return false;
+    for (final order in _localDocList('localOrders')) {
+      if ('${order['id'] ?? ''}' != orderId) continue;
+      return _orderTerminal(order);
+    }
+    return false;
   }
 
   static int _shipmentFulfillmentRank(Map<String, dynamic> row) {

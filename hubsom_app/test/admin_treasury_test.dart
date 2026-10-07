@@ -208,4 +208,45 @@ void main() {
     expect(LocalHuberStore.getOrder('ord_old')?.status, 'paid');
     expect(AdminTreasuryStore.snapshot().collectedGhs, 112);
   });
+
+  test('stale cloud hydrate cannot reopen a paid seller payout', () async {
+    final order = _paidOrder();
+    await LocalHuberStore.saveOrder(order);
+    await AdminTreasuryStore.recordPaidOrder(order);
+    await AdminAccountStore.save(_seller);
+    final id = AdminTreasuryStore.payoutId(order.id, 's1');
+    await AdminTreasuryStore.paySeller(id);
+    expect(AdminTreasuryStore.cachedPayouts().single.isPaid, isTrue);
+
+    final merged = CloudStore.mergePayoutDocs(
+      localKey: AdminTreasuryStore.payoutsKey,
+      incoming: [
+        {
+          'id': id,
+          'sellerId': 's1',
+          'sellerName': 'Kojo Store',
+          'orderId': order.id,
+          'salesGhs': 100,
+          'commissionGhs': 6,
+          'netGhs': 94,
+          'status': 'pending',
+          'createdAt': order.createdAt,
+        },
+      ],
+    );
+    await LocalStore.setString(
+      AdminTreasuryStore.payoutsKey,
+      jsonEncode(merged),
+    );
+
+    expect(AdminTreasuryStore.cachedPayouts().single.isPaid, isTrue);
+    await AdminTreasuryStore.paySeller(id);
+    expect(
+      AdminAccountStore.cached()
+          .firstWhere((a) => a.email == _seller.email)
+          .user
+          .walletBalanceGhs,
+      94,
+    );
+  });
 }
