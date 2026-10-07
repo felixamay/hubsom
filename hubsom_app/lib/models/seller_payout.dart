@@ -29,7 +29,7 @@ class SellerPayout extends Equatable {
   final double salesGhs;
   final double commissionGhs;
   final double netGhs;
-  /// pending | paid
+  /// pending | paid | cancelled
   final String status;
   final String createdAt;
   final String? paidAt;
@@ -37,6 +37,8 @@ class SellerPayout extends Equatable {
 
   bool get isPending => status == 'pending';
   bool get isPaid => status == 'paid';
+  bool get isCancelled =>
+      status == 'cancelled' || status == 'canceled';
 
   factory SellerPayout.fromSale({
     required String id,
@@ -136,6 +138,7 @@ class TreasuryIntake extends Equatable {
     this.commissionGhs = 0,
     this.buyerId,
     this.note = '',
+    this.reversed = false,
   });
 
   final String id;
@@ -149,6 +152,7 @@ class TreasuryIntake extends Equatable {
   final String? buyerId;
   final String createdAt;
   final String note;
+  final bool reversed;
 
   factory TreasuryIntake.fromJson(Map<String, dynamic> json) => TreasuryIntake(
         id: '${json['id'] ?? ''}',
@@ -161,6 +165,7 @@ class TreasuryIntake extends Equatable {
         buyerId: json['buyerId'] as String?,
         createdAt: '${json['createdAt'] ?? ''}',
         note: '${json['note'] ?? ''}',
+        reversed: json['reversed'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -174,10 +179,29 @@ class TreasuryIntake extends Equatable {
         if (buyerId != null) 'buyerId': buyerId,
         'createdAt': createdAt,
         if (note.isNotEmpty) 'note': note,
+        if (reversed) 'reversed': true,
       };
 
+  TreasuryIntake copyWith({
+    bool? reversed,
+    String? note,
+  }) =>
+      TreasuryIntake(
+        id: id,
+        source: source,
+        refId: refId,
+        amountGhs: amountGhs,
+        merchandiseGhs: merchandiseGhs,
+        shipmentGhs: shipmentGhs,
+        commissionGhs: commissionGhs,
+        buyerId: buyerId,
+        createdAt: createdAt,
+        note: note ?? this.note,
+        reversed: reversed ?? this.reversed,
+      );
+
   @override
-  List<Object?> get props => [id, source, amountGhs];
+  List<Object?> get props => [id, source, amountGhs, reversed];
 }
 
 class TreasurySnapshot {

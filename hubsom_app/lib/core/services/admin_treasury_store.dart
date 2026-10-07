@@ -32,6 +32,7 @@ abstract final class AdminTreasuryStore {
     var shipment = 0.0;
     var commission = 0.0;
     for (final row in rows) {
+      if (row.reversed) continue;
       collected += row.amountGhs;
       shipment += row.shipmentGhs;
       commission += row.commissionGhs;
@@ -41,7 +42,7 @@ abstract final class AdminTreasuryStore {
     for (final pot in pots) {
       if (pot.isPaid) {
         paid += pot.netGhs;
-      } else {
+      } else if (pot.isPending) {
         pending += pot.netGhs;
       }
     }
@@ -170,14 +171,27 @@ abstract final class AdminTreasuryStore {
         );
       }
     }
-    await _writePayouts(
-      _readPayouts().where((p) => p.orderId != order.id).toList(),
-    );
-    await _writeIntakes(
-      _readIntakes()
-          .where((e) => !(e.source == 'order' && e.refId == order.id))
-          .toList(),
-    );
+    // Tombstone instead of deleting. Cloud upsert cannot remove the old
+    // pending docs, and hydrate used to restore them so admin could pay a
+    // sale the buyer had already been refunded for.
+    await _writePayouts([
+      for (final p in _readPayouts())
+        p.orderId == order.id && p.isPending
+            ? p.copyWith(
+                status: 'cancelled',
+                note: 'Voided because the order was cancelled',
+              )
+            : p,
+    ]);
+    await _writeIntakes([
+      for (final e in _readIntakes())
+        e.source == 'order' && e.refId == order.id
+            ? e.copyWith(
+                reversed: true,
+                note: 'Voided because the order was cancelled',
+              )
+            : e,
+    ]);
 
     final merchandise =
         order.lines.fold<double>(0, (s, l) => s + l.lineTotalGhs);
@@ -265,7 +279,23 @@ abstract final class AdminTreasuryStore {
     final idx = rows.indexWhere((p) => p.id == payoutId);
     if (idx < 0) throw StateError('Payout not found');
     final current = rows[idx];
+    if (current.isCancelled) {
+      throw StateError(
+        'This payout was voided because the order was cancelled',
+      );
+    }
     if (current.isPaid) return current;
+    final order = LocalHuberStore.getOrder(current.orderId);
+    if (order != null) {
+      switch (order.status.toLowerCase()) {
+        case 'cancelled':
+        case 'canceled':
+        case 'refunded':
+          throw StateError(
+            'This order was cancelled and cannot be paid out',
+          );
+      }
+    }
 
     final accounts = await AdminAccountStore.list();
     final account = _accountForPayout(accounts, current);
@@ -441,37 +471,28 @@ abstract final class AdminTreasuryStore {
     try {
       final remotePayouts = await CloudStore.listDocs(CloudStore.adminPayouts);
       if (remotePayouts.isNotEmpty) {
-        final byId = {for (final p in _readPayouts()) p.id: p};
-        for (final row in remotePayouts) {
-          try {
-            final pot = SellerPayout.fromJson(row);
-            if (pot.id.isEmpty) continue;
-            final local = byId[pot.id];
-            if (local == null || (pot.isPaid && !local.isPaid)) {
-              byId[pot.id] = pot;
-            }
-          } catch (_) {}
-        }
         await LocalStore.setString(
           payoutsKey,
-          jsonEncode(byId.values.map((e) => e.toJson()).toList()),
+          jsonEncode(
+            CloudStore.mergePayoutRows(
+              local: _readList(payoutsKey),
+              incoming: remotePayouts,
+            ),
+          ),
         );
       }
     } catch (_) {}
     try {
       final remoteIntakes = await CloudStore.listDocs(CloudStore.adminIntakes);
       if (remoteIntakes.isNotEmpty) {
-        final byId = {for (final p in _readIntakes()) p.id: p};
-        for (final row in remoteIntakes) {
-          try {
-            final pot = TreasuryIntake.fromJson(row);
-            if (pot.id.isEmpty) continue;
-            byId.putIfAbsent(pot.id, () => pot);
-          } catch (_) {}
-        }
         await LocalStore.setString(
           intakesKey,
-          jsonEncode(byId.values.map((e) => e.toJson()).toList()),
+          jsonEncode(
+            CloudStore.mergeIntakeRows(
+              local: _readList(intakesKey),
+              incoming: remoteIntakes,
+            ),
+          ),
         );
       }
     } catch (_) {}

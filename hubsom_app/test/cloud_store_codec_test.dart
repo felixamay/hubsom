@@ -401,4 +401,115 @@ void main() {
       'cancelled',
     );
   });
+
+  test('hydrate keeps a local payout a stale snapshot omitted', () {
+    final fresh = {
+      'id': 'pot_ord_new_s1',
+      'sellerId': 's1',
+      'orderId': 'ord_new',
+      'salesGhs': 100,
+      'netGhs': 94,
+      'status': 'pending',
+      'createdAt': '2026-10-07T11:00:00.000Z',
+    };
+    final older = {
+      'id': 'pot_ord_old_s1',
+      'sellerId': 's1',
+      'orderId': 'ord_old',
+      'salesGhs': 40,
+      'netGhs': 37.6,
+      'status': 'paid',
+      'createdAt': '2026-10-01T11:00:00.000Z',
+      'paidAt': '2026-10-01T12:00:00.000Z',
+    };
+    final merged = CloudStore.mergePayoutRows(
+      local: [fresh, older],
+      incoming: [older],
+    );
+    expect(
+      merged.map((e) => e['id']),
+      containsAll(['pot_ord_new_s1', 'pot_ord_old_s1']),
+    );
+    expect(
+      merged.firstWhere((e) => e['id'] == 'pot_ord_new_s1')['status'],
+      'pending',
+    );
+  });
+
+  test('hydrate keeps paid over a stale pending cloud copy', () {
+    const id = 'pot_ord_1_s1';
+    final paid = {
+      'id': id,
+      'orderId': 'ord_1',
+      'status': 'paid',
+      'paidAt': '2026-10-07T12:00:00.000Z',
+    };
+    final pending = {'id': id, 'orderId': 'ord_1', 'status': 'pending'};
+    expect(
+      CloudStore.mergePayoutRows(
+        local: [paid],
+        incoming: [pending],
+      ).single['status'],
+      'paid',
+    );
+    expect(
+      CloudStore.mergePayoutRows(
+        local: [pending],
+        incoming: [paid],
+      ).single['status'],
+      'paid',
+    );
+  });
+
+  test('hydrate does not resurrect a cancelled payout from a stale pending copy',
+      () {
+    const id = 'pot_ord_1_s1';
+    final cancelled = {'id': id, 'orderId': 'ord_1', 'status': 'cancelled'};
+    final pending = {'id': id, 'orderId': 'ord_1', 'status': 'pending'};
+    expect(
+      CloudStore.mergePayoutRows(
+        local: [cancelled],
+        incoming: [pending],
+      ).single['status'],
+      'cancelled',
+    );
+    expect(
+      CloudStore.mergePayoutRows(
+        local: [pending],
+        incoming: [cancelled],
+      ).single['status'],
+      'cancelled',
+    );
+  });
+
+  test('hydrate keeps a reversed intake over a stale live copy', () {
+    const id = 'tin_order_ord_1';
+    final reversed = {
+      'id': id,
+      'source': 'order',
+      'refId': 'ord_1',
+      'amountGhs': 40,
+      'reversed': true,
+    };
+    final live = {
+      'id': id,
+      'source': 'order',
+      'refId': 'ord_1',
+      'amountGhs': 40,
+    };
+    expect(
+      CloudStore.mergeIntakeRows(
+        local: [reversed],
+        incoming: [live],
+      ).single['reversed'],
+      isTrue,
+    );
+    expect(
+      CloudStore.mergeIntakeRows(
+        local: [live],
+        incoming: [reversed],
+      ).single['reversed'],
+      isTrue,
+    );
+  });
 }
