@@ -626,6 +626,24 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'huberDeliveries') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeDeliveryDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
+        if (entry.key == 'huberProfiles') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeHuberProfileDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -1085,6 +1103,176 @@ class CloudStore {
       default:
         return 0;
     }
+  }
+
+  /// Keep a completed delivery when cloud is behind.
+  ///
+  /// Replacing `huberDeliveries` with the Firestore list reset Proof of
+  /// delivery back to accepted. The rider tapped complete again and the
+  /// wallet was credited a second time for the same shipment.
+  static List<Map<String, dynamic>> mergeDeliveryDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeDeliveryRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeDeliveryRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferDeliveryRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferDeliveryRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final localCancelled = _deliveryCancelled(local);
+    final incomingCancelled = _deliveryCancelled(incoming);
+    if (localCancelled && !incomingCancelled && !_deliveryDelivered(incoming)) {
+      return local;
+    }
+    if (incomingCancelled && !localCancelled && !_deliveryDelivered(local)) {
+      return incoming;
+    }
+    return _deliveryFulfillmentRank(incoming) > _deliveryFulfillmentRank(local)
+        ? incoming
+        : local;
+  }
+
+  static bool _deliveryCancelled(Map<String, dynamic> row) {
+    switch ('${row['status'] ?? ''}'.toLowerCase()) {
+      case 'cancelled':
+      case 'canceled':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool _deliveryDelivered(Map<String, dynamic> row) {
+    return '${row['status'] ?? ''}'.toLowerCase() == 'delivered';
+  }
+
+  static int _deliveryFulfillmentRank(Map<String, dynamic> row) {
+    switch ('${row['status'] ?? ''}'.toLowerCase()) {
+      case 'delivered':
+        return 7;
+      case 'arrived_dropoff':
+        return 6;
+      case 'en_route_dropoff':
+        return 5;
+      case 'picked_up':
+        return 4;
+      case 'arrived_pickup':
+        return 3;
+      case 'en_route_pickup':
+        return 2;
+      case 'accepted':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /// Keep rider earnings that already landed when cloud is behind.
+  ///
+  /// Replacing `huberProfiles` with the Firestore list restored a pre-drop
+  /// wallet after Proof of delivery had already credited the fee. The rider
+  /// either lost the pay, or completed again and was paid twice.
+  static List<Map<String, dynamic>> mergeHuberProfileDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeHuberProfileRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeHuberProfileRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferHuberProfileRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferHuberProfileRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final localAt = _huberProfileUpdatedAt(local);
+    final incomingAt = _huberProfileUpdatedAt(incoming);
+    if (localAt != null && incomingAt != null) {
+      if (incomingAt.isAfter(localAt)) return incoming;
+      if (localAt.isAfter(incomingAt)) return local;
+    } else if (incomingAt != null && localAt == null) {
+      return incoming;
+    } else if (localAt != null && incomingAt == null) {
+      return local;
+    }
+    final incomingWallet = _huberWallet(incoming);
+    final localWallet = _huberWallet(local);
+    if (incomingWallet > localWallet) return incoming;
+    if (localWallet > incomingWallet) return local;
+    final incomingDone = _huberCompletedCount(incoming);
+    final localDone = _huberCompletedCount(local);
+    if (incomingDone > localDone) return incoming;
+    return local;
+  }
+
+  static DateTime? _huberProfileUpdatedAt(Map<String, dynamic> row) {
+    final raw = '${row['updatedAt'] ?? ''}'.trim();
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw)?.toUtc();
+  }
+
+  static double _huberWallet(Map<String, dynamic> row) {
+    final value = row['walletBalanceGhs'];
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
+  }
+
+  static int _huberCompletedCount(Map<String, dynamic> row) {
+    final value = row['completedCount'];
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
   }
 
   static List<Map<String, dynamic>> _localDocList(String localKey) {

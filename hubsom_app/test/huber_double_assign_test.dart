@@ -195,4 +195,80 @@ void main() {
     expect(LocalHuberStore.profileById(rider.id)!.walletBalanceGhs, paid);
     expect(LocalHuberStore.profileById(rider.id)!.completedCount, 1);
   });
+
+  test('stale cloud hydrate cannot pay a rider twice after proof of delivery',
+      () async {
+    final rider = await _onlineRider(
+      id: 'u4',
+      name: 'Ama Rider',
+      email: 'ama3@hubsom.test',
+    );
+    final order = Order(
+      id: 'ord_hydrate_pay',
+      subtotalGhs: 40,
+      status: 'paid',
+      lines: const [
+        OrderLine(
+          productId: 'p3',
+          sellerId: 'seller-1',
+          name: 'Shea',
+          quantity: 1,
+          unitPriceGhs: 40,
+          lineTotalGhs: 40,
+          category: 'beauty',
+        ),
+      ],
+      shipping: const OrderShipping(
+        recipientName: 'Buyer',
+        phone: '0241111111',
+        line1: '12 Spintex Rd',
+        city: 'Accra',
+        region: 'Greater Accra',
+        location: GeoLocation(latitude: 5.63, longitude: -0.17),
+      ),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await LocalHuberStore.saveOrder(order);
+    final shipment = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: [order.id],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+      offeredFeeGhs: 15,
+    );
+    await LocalHuberStore.dispatchToHubers(shipment);
+    final offer = LocalHuberStore.openOffersForDriver(rider.id).first;
+    final delivery = await LocalHuberStore.acceptOffer(
+      offerId: offer.id,
+      driver: LocalHuberStore.profileById(rider.id)!,
+    );
+    final acceptedDelivery = Map<String, dynamic>.from(delivery.toJson());
+    final acceptedProfile =
+        Map<String, dynamic>.from(LocalHuberStore.profileById(rider.id)!.toJson());
+
+    final done = await LocalHuberStore.completeWithPod(delivery.id);
+    expect(done.status, 'delivered');
+    final paid = LocalHuberStore.profileById(rider.id)!.walletBalanceGhs;
+    expect(paid, 15);
+
+    // Same replace hydrateLocalCache used to do: cloud still has accepted
+    // and a pre-drop wallet because the complete upsert had not landed.
+    final mergedDeliveries = CloudStore.mergeDeliveryDocs(
+      localKey: 'huberDeliveries',
+      incoming: [acceptedDelivery],
+    );
+    await LocalStore.setString('huberDeliveries', jsonEncode(mergedDeliveries));
+    final mergedProfiles = CloudStore.mergeHuberProfileDocs(
+      localKey: 'huberProfiles',
+      incoming: [acceptedProfile],
+    );
+    await LocalStore.setString('huberProfiles', jsonEncode(mergedProfiles));
+
+    expect(LocalHuberStore.deliveryById(delivery.id)?.status, 'delivered');
+    expect(LocalHuberStore.profileById(rider.id)!.walletBalanceGhs, paid);
+
+    final again = await LocalHuberStore.completeWithPod(delivery.id);
+    expect(again.status, 'delivered');
+    expect(LocalHuberStore.profileById(rider.id)!.walletBalanceGhs, paid);
+    expect(LocalHuberStore.profileById(rider.id)!.completedCount, 1);
+  });
 }
