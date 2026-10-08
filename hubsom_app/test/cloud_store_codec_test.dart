@@ -512,4 +512,145 @@ void main() {
       isTrue,
     );
   });
+
+  test('hydrate keeps a local delivery a stale snapshot omitted', () {
+    final fresh = {
+      'id': 'del_new',
+      'shipmentId': 'shp_new',
+      'huberId': 'huber-1',
+      'status': 'accepted',
+    };
+    final older = {
+      'id': 'del_old',
+      'shipmentId': 'shp_old',
+      'huberId': 'huber-1',
+      'status': 'delivered',
+    };
+    final merged = CloudStore.mergeDeliveryRows(
+      local: [fresh, older],
+      incoming: [older],
+    );
+    expect(
+      merged.map((e) => e['id']),
+      containsAll(['del_new', 'del_old']),
+    );
+    expect(
+      merged.firstWhere((e) => e['id'] == 'del_new')['status'],
+      'accepted',
+    );
+  });
+
+  test('hydrate keeps delivered over a stale accepted cloud copy', () {
+    const id = 'del_1';
+    final delivered = {
+      'id': id,
+      'shipmentId': 'shp_1',
+      'status': 'delivered',
+    };
+    final accepted = {
+      'id': id,
+      'shipmentId': 'shp_1',
+      'status': 'accepted',
+    };
+    expect(
+      CloudStore.mergeDeliveryRows(
+        local: [delivered],
+        incoming: [accepted],
+      ).single['status'],
+      'delivered',
+    );
+    expect(
+      CloudStore.mergeDeliveryRows(
+        local: [accepted],
+        incoming: [delivered],
+      ).single['status'],
+      'delivered',
+    );
+  });
+
+  test('hydrate does not resurrect a cancelled delivery from a stale accepted copy',
+      () {
+    const id = 'del_1';
+    final cancelled = {
+      'id': id,
+      'shipmentId': 'shp_1',
+      'status': 'cancelled',
+    };
+    final accepted = {
+      'id': id,
+      'shipmentId': 'shp_1',
+      'status': 'accepted',
+    };
+    expect(
+      CloudStore.mergeDeliveryRows(
+        local: [cancelled],
+        incoming: [accepted],
+      ).single['status'],
+      'cancelled',
+    );
+    expect(
+      CloudStore.mergeDeliveryRows(
+        local: [accepted],
+        incoming: [cancelled],
+      ).single['status'],
+      'cancelled',
+    );
+  });
+
+  test('hydrate keeps a local Huber profile a stale snapshot omitted', () {
+    final fresh = {
+      'id': 'huber-new',
+      'walletBalanceGhs': 15,
+      'completedCount': 1,
+      'updatedAt': '2026-10-08T11:00:00.000Z',
+    };
+    final older = {
+      'id': 'huber-old',
+      'walletBalanceGhs': 0,
+      'completedCount': 0,
+      'updatedAt': '2026-10-01T11:00:00.000Z',
+    };
+    final merged = CloudStore.mergeHuberProfileRows(
+      local: [fresh, older],
+      incoming: [older],
+    );
+    expect(
+      merged.map((e) => e['id']),
+      containsAll(['huber-new', 'huber-old']),
+    );
+    expect(
+      merged.firstWhere((e) => e['id'] == 'huber-new')['walletBalanceGhs'],
+      15,
+    );
+  });
+
+  test('hydrate keeps credited rider earnings over a stale empty wallet', () {
+    const id = 'huber-1';
+    final paid = {
+      'id': id,
+      'walletBalanceGhs': 25,
+      'completedCount': 1,
+      'updatedAt': '2026-10-08T12:00:00.000Z',
+    };
+    final stale = {
+      'id': id,
+      'walletBalanceGhs': 0,
+      'completedCount': 0,
+      'updatedAt': '2026-10-08T11:00:00.000Z',
+    };
+    expect(
+      CloudStore.mergeHuberProfileRows(
+        local: [paid],
+        incoming: [stale],
+      ).single['walletBalanceGhs'],
+      25,
+    );
+    expect(
+      CloudStore.mergeHuberProfileRows(
+        local: [stale],
+        incoming: [paid],
+      ).single['walletBalanceGhs'],
+      25,
+    );
+  });
 }
