@@ -644,6 +644,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'localStreams') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              mergeStreamDocs(localKey: entry.key, incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -1273,6 +1282,189 @@ class CloudStore {
     final value = row['completedCount'];
     if (value is num) return value.toInt();
     return int.tryParse('$value') ?? 0;
+  }
+
+  /// Keep the live bag that already sold when cloud is behind.
+  ///
+  /// Replacing `localStreams` with the Firestore list restored pre-checkout
+  /// `productQuantities` after `_consumeLiveBag` had already decremented.
+  /// A second checkout then wrote another paid order for the last unit.
+  static List<Map<String, dynamic>> mergeStreamDocs({
+    required String localKey,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    return mergeStreamRows(
+      local: _localDocList(localKey),
+      incoming: incoming,
+    );
+  }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeStreamRows({
+    required List<Map<String, dynamic>> local,
+    required List<Map<String, dynamic>> incoming,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in local) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in incoming) {
+      final id = '${row['id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final current = byId[id];
+      byId[id] = current == null
+          ? row
+          : preferStreamRow(local: current, incoming: row);
+    }
+    return byId.values.toList();
+  }
+
+  /// [local] is this device's copy. [incoming] is the cloud snapshot.
+  @visibleForTesting
+  static Map<String, dynamic> preferStreamRow({
+    required Map<String, dynamic> local,
+    required Map<String, dynamic> incoming,
+  }) {
+    final out = Map<String, dynamic>.from(local);
+    final quantities = _minProductQuantities(local, incoming);
+    if (quantities.isEmpty) {
+      out.remove('productQuantities');
+    } else {
+      out['productQuantities'] = quantities;
+    }
+    out['productIds'] = _unionStringIds(
+      local['productIds'],
+      incoming['productIds'],
+    );
+    if (_streamEnded(incoming) && !_streamEnded(local)) {
+      out['status'] = incoming['status'];
+      if (incoming['endedAt'] != null) out['endedAt'] = incoming['endedAt'];
+    } else if (_streamLive(incoming) &&
+        !_streamLive(local) &&
+        !_streamEnded(local)) {
+      out['status'] = incoming['status'];
+      out.remove('endedAt');
+    }
+    final auction = _preferStreamAuction(local['auction'], incoming['auction']);
+    if (auction == null) {
+      out.remove('auction');
+    } else {
+      out['auction'] = auction;
+    }
+    final incomingViewers = _streamViewerCount(incoming);
+    out['viewerCount'] = incomingViewers;
+    final peak = [
+      _streamPeakViewers(local),
+      _streamPeakViewers(incoming),
+      incomingViewers,
+    ].reduce((a, b) => a > b ? a : b);
+    out['peakViewers'] = peak;
+    if (incoming['pinnedProductId'] != null) {
+      out['pinnedProductId'] = incoming['pinnedProductId'];
+    }
+    if (incoming['replayAvailable'] == true) {
+      out['replayAvailable'] = true;
+    }
+    return out;
+  }
+
+  static Map<String, int> _minProductQuantities(
+    Map<String, dynamic> local,
+    Map<String, dynamic> incoming,
+  ) {
+    final left = _productQuantityMap(local);
+    final right = _productQuantityMap(incoming);
+    final out = <String, int>{};
+    for (final key in {...left.keys, ...right.keys}) {
+      if (left.containsKey(key) && right.containsKey(key)) {
+        final a = left[key]!;
+        final b = right[key]!;
+        out[key] = a < b ? a : b;
+      } else if (left.containsKey(key)) {
+        out[key] = left[key]!;
+      } else {
+        out[key] = right[key]!;
+      }
+    }
+    return out;
+  }
+
+  static Map<String, int> _productQuantityMap(Map<String, dynamic> row) {
+    final raw = row['productQuantities'];
+    if (raw is! Map) return {};
+    final out = <String, int>{};
+    for (final entry in raw.entries) {
+      final n = entry.value is num
+          ? (entry.value as num).toInt()
+          : int.tryParse('${entry.value}');
+      if (n != null && n >= 0) out['${entry.key}'] = n;
+    }
+    return out;
+  }
+
+  static List<String> _unionStringIds(dynamic a, dynamic b) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final raw in [a, b]) {
+      if (raw is! List) continue;
+      for (final item in raw) {
+        final id = '$item'.trim();
+        if (id.isEmpty || !seen.add(id)) continue;
+        out.add(id);
+      }
+    }
+    return out;
+  }
+
+  static bool _streamEnded(Map<String, dynamic> row) {
+    return '${row['endedAt'] ?? ''}'.trim().isNotEmpty;
+  }
+
+  static bool _streamLive(Map<String, dynamic> row) {
+    return '${row['status'] ?? ''}' == 'live' && !_streamEnded(row);
+  }
+
+  static int _streamViewerCount(Map<String, dynamic> row) {
+    final value = row['viewerCount'];
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
+
+  static int _streamPeakViewers(Map<String, dynamic> row) {
+    final value = row['peakViewers'];
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
+
+  static Map<String, dynamic>? _preferStreamAuction(dynamic a, dynamic b) {
+    if (a is! Map) {
+      return b is Map ? Map<String, dynamic>.from(b) : null;
+    }
+    if (b is! Map) return Map<String, dynamic>.from(a);
+    final left = Map<String, dynamic>.from(a);
+    final right = Map<String, dynamic>.from(b);
+    final leftOrder = '${left['orderId'] ?? ''}'.trim();
+    final rightOrder = '${right['orderId'] ?? ''}'.trim();
+    if (rightOrder.isNotEmpty && leftOrder.isEmpty) return right;
+    if (leftOrder.isNotEmpty && rightOrder.isEmpty) return left;
+    final leftStatus = '${left['status'] ?? ''}';
+    final rightStatus = '${right['status'] ?? ''}';
+    if (rightStatus == 'sold' && leftStatus != 'sold') return right;
+    if (leftStatus == 'sold' && rightStatus != 'sold') return left;
+    if (rightStatus == 'open' && leftStatus == 'reserve_not_met') return right;
+    if (leftStatus == 'open' && rightStatus == 'reserve_not_met') return left;
+    final leftBid = _streamAuctionBid(left);
+    final rightBid = _streamAuctionBid(right);
+    if (rightBid > leftBid + 0.001) return right;
+    if (leftBid > rightBid + 0.001) return left;
+    return left;
+  }
+
+  static double _streamAuctionBid(Map<String, dynamic> row) {
+    final value = row['currentBidGhs'];
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
   }
 
   static List<Map<String, dynamic>> _localDocList(String localKey) {

@@ -653,4 +653,86 @@ void main() {
       25,
     );
   });
+
+  test('hydrate keeps a local live show a stale snapshot omitted', () {
+    final fresh = {
+      'id': 'live-new',
+      'status': 'live',
+      'productQuantities': {'sku-1': 0},
+    };
+    final older = {
+      'id': 'live-old',
+      'status': 'ended',
+      'productQuantities': {'sku-2': 1},
+    };
+    final merged = CloudStore.mergeStreamRows(
+      local: [fresh, older],
+      incoming: [older],
+    );
+    expect(
+      merged.map((e) => e['id']),
+      containsAll(['live-new', 'live-old']),
+    );
+    expect(
+      merged.firstWhere((e) => e['id'] == 'live-new')['productQuantities'],
+      {'sku-1': 0},
+    );
+  });
+
+  test('hydrate keeps the sold live-bag count over a stale restock', () {
+    const id = 'live-1';
+    final sold = {
+      'id': id,
+      'status': 'live',
+      'productQuantities': {'sku-1': 0},
+    };
+    final stale = {
+      'id': id,
+      'status': 'live',
+      'productQuantities': {'sku-1': 1},
+    };
+    expect(
+      CloudStore.mergeStreamRows(
+        local: [sold],
+        incoming: [stale],
+      ).single['productQuantities'],
+      {'sku-1': 0},
+    );
+    expect(
+      CloudStore.mergeStreamRows(
+        local: [stale],
+        incoming: [sold],
+      ).single['productQuantities'],
+      {'sku-1': 0},
+    );
+  });
+
+  test('hydrate does not resurrect an ended show from a stale live copy', () {
+    const id = 'live-1';
+    final ended = {
+      'id': id,
+      'status': 'ended',
+      'endedAt': '2026-10-13T11:00:00.000Z',
+      'productQuantities': {'sku-1': 0},
+    };
+    final live = {
+      'id': id,
+      'status': 'live',
+      'productQuantities': {'sku-1': 1},
+    };
+    expect(
+      CloudStore.mergeStreamRows(
+        local: [ended],
+        incoming: [live],
+      ).single['status'],
+      'ended',
+    );
+    expect(
+      CloudStore.mergeStreamRows(
+        local: [live],
+        incoming: [ended],
+      ).single['status'],
+      'ended',
+    );
+  });
 }
