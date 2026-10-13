@@ -224,4 +224,61 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('stale cloud hydrate cannot restock a sold live bag for a second checkout',
+      () async {
+    final live = await goLive(qty: 1);
+    final product = LocalCommerceStore.getProduct(live.productId)!;
+    final line = {
+      'productId': product.id,
+      'quantity': 1,
+      'source': 'live',
+      'streamId': live.stream.id,
+      'name': product.name,
+      'priceGhs': product.priceGhs,
+    };
+
+    await payments.checkout(
+      items: [line],
+      shipping: _shipping,
+      paymentMethods: const ['mtn-momo'],
+    );
+    expect(
+      LocalCommerceStore.getStream(live.stream.id)!.offeredQty(live.productId),
+      0,
+    );
+
+    // Same replace hydrateLocalCache used to do: cloud still has the
+    // pre-checkout bag because the stream upsert had not landed.
+    final staleCloud = live.stream.toJson();
+    final merged = CloudStore.mergeStreamDocs(
+      localKey: 'localStreams',
+      incoming: [staleCloud],
+    );
+    await LocalStore.setString('localStreams', jsonEncode(merged));
+
+    expect(
+      LocalCommerceStore.getStream(live.stream.id)!.offeredQty(live.productId),
+      0,
+    );
+    await expectLater(
+      payments.checkout(
+        items: [line],
+        shipping: _shipping,
+        paymentMethods: const ['mtn-momo'],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Sold out'),
+        ),
+      ),
+    );
+    expect(
+      LocalHuberStore.listOrders()
+          .where((o) => o.lines.any((l) => l.productId == product.id)),
+      hasLength(1),
+    );
+  });
 }
