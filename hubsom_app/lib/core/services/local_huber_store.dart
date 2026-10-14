@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/huber.dart';
@@ -26,6 +27,11 @@ class LocalHuberStore {
 
   static const defaultFeeGhs = 15.0;
   static const offerTtl = Duration(minutes: 15);
+
+  /// Last docs sent to Firestore, keyed by collection. Tests use this to
+  /// prove a local save does not rewrite other riders' cached rows.
+  @visibleForTesting
+  static final lastSyncedByCollection = <String, List<Map<String, dynamic>>>{};
 
   static List<Map<String, dynamic>> _readList(String key) {
     final raw = LocalStore.getString(key);
@@ -61,17 +67,22 @@ class LocalHuberStore {
 
   static Future<void> _writeList(String key, List<Map<String, dynamic>> rows) async {
     await LocalStore.setString(key, jsonEncode(rows));
-    final collection = switch (key) {
-      _profilesKey => CloudStore.hubers,
-      _offersKey => CloudStore.offers,
-      _deliveriesKey => CloudStore.deliveries,
-      _ordersKey => CloudStore.orders,
-      _shipmentsKey => CloudStore.shipments,
-      _ => null,
-    };
-    if (collection != null) {
+  }
+
+  /// Hydrate caches every rider's deliveries/offers/orders on this phone.
+  /// Writing that whole snapshot would restore a stale accepted POD or a
+  /// pre-drop wallet for someone else — they could complete and get paid twice.
+  static Future<void> _syncCollection(
+    String collection,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    lastSyncedByCollection[collection] = [
+      for (final row in rows) Map<String, dynamic>.from(row),
+    ];
+    if (rows.isEmpty) return;
+    try {
       await CloudStore.upsertDocs(collection, rows);
-    }
+    } catch (_) {}
   }
 
   // --- profiles ---
@@ -102,6 +113,7 @@ class LocalHuberStore {
       rows.add(profile);
     }
     await _writeList(_profilesKey, rows.map((e) => e.toJson()).toList());
+    await _syncCollection(CloudStore.hubers, [profile.toJson()]);
     return profile;
   }
 
@@ -180,9 +192,7 @@ class LocalHuberStore {
       rows.insert(0, order);
     }
     await _writeList(_ordersKey, rows.map((e) => e.toJson()).toList());
-    try {
-      await CloudStore.upsertDocs(CloudStore.orders, [order.toJson()]);
-    } catch (_) {}
+    await _syncCollection(CloudStore.orders, [order.toJson()]);
     return order;
   }
 
@@ -331,9 +341,7 @@ class LocalHuberStore {
       rows.insert(0, shipment);
     }
     await _writeList(_shipmentsKey, rows.map((e) => e.toJson()).toList());
-    try {
-      await CloudStore.upsertDocs(CloudStore.shipments, [shipment.toJson()]);
-    } catch (_) {}
+    await _syncCollection(CloudStore.shipments, [shipment.toJson()]);
     return shipment;
   }
 
@@ -459,8 +467,16 @@ class LocalHuberStore {
   static List<HuberOffer> listOffers() =>
       _readList(_offersKey).map(HuberOffer.fromJson).toList();
 
-  static Future<void> _saveOffers(List<HuberOffer> offers) =>
-      _writeList(_offersKey, offers.map((e) => e.toJson()).toList());
+  static Future<void> _saveOffers(
+    List<HuberOffer> offers, {
+    required List<HuberOffer> changed,
+  }) async {
+    await _writeList(_offersKey, offers.map((e) => e.toJson()).toList());
+    await _syncCollection(
+      CloudStore.offers,
+      changed.map((e) => e.toJson()).toList(),
+    );
+  }
 
   static List<HuberOffer> openOffersForDriver(String huberId) {
     return listOffers()
@@ -471,8 +487,13 @@ class LocalHuberStore {
   static List<HuberDelivery> listDeliveries() =>
       _readList(_deliveriesKey).map(HuberDelivery.fromJson).toList();
 
-  static Future<void> _saveDeliveries(List<HuberDelivery> rows) =>
-      _writeList(_deliveriesKey, rows.map((e) => e.toJson()).toList());
+  static Future<void> _saveDeliveries(
+    List<HuberDelivery> rows, {
+    required HuberDelivery changed,
+  }) async {
+    await _writeList(_deliveriesKey, rows.map((e) => e.toJson()).toList());
+    await _syncCollection(CloudStore.deliveries, [changed.toJson()]);
+  }
 
   static HuberDelivery? activeDeliveryFor(String huberId) {
     for (final d in listDeliveries()) {
@@ -580,7 +601,7 @@ class LocalHuberStore {
     final existing = listOffers()
         .where((o) => o.shipmentId != shipment.id)
         .toList();
-    await _saveOffers([...offers, ...existing]);
+    await _saveOffers([...offers, ...existing], changed: offers);
 
     final contractOffers = offers
         .map(
@@ -639,7 +660,13 @@ class LocalHuberStore {
         offers[i] = offers[i].copyWith(status: 'declined');
       }
     }
-    await _saveOffers(offers);
+    await _saveOffers(
+      offers,
+      changed: [
+        for (final o in offers)
+          if (o.shipmentId == offer.shipmentId) o,
+      ],
+    );
 
     final shipment = getShipment(offer.shipmentId);
     if (shipment != null) {
@@ -703,7 +730,7 @@ class LocalHuberStore {
     );
     final deliveries = listDeliveries();
     deliveries.insert(0, delivery);
-    await _saveDeliveries(deliveries);
+    await _saveDeliveries(deliveries, changed: delivery);
     final assignedShipment = getShipment(offer.shipmentId);
     if (assignedShipment != null) {
       await syncOrdersForShipment(assignedShipment, 'processing');
@@ -719,7 +746,7 @@ class LocalHuberStore {
     final idx = offers.indexWhere((o) => o.id == offerId);
     if (idx < 0) throw StateError('Offer not found');
     offers[idx] = offers[idx].copyWith(status: 'declined');
-    await _saveOffers(offers);
+    await _saveOffers(offers, changed: [offers[idx]]);
     final decided = driver.completedCount + driver.declinedCount + 1;
     await upsertProfile(
       driver.copyWith(
@@ -795,7 +822,7 @@ class LocalHuberStore {
     final now = DateTime.now().toUtc().toIso8601String();
     final updated = current.copyWith(status: nextStatus, updatedAt: now);
     rows[idx] = updated;
-    await _saveDeliveries(rows);
+    await _saveDeliveries(rows, changed: updated);
 
     final shipment = getShipment(current.shipmentId);
     if (shipment != null) {
