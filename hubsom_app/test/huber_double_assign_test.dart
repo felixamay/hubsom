@@ -49,6 +49,7 @@ void main() {
 
   setUp(() async {
     CloudStore.useNetwork = false;
+    LocalHuberStore.lastSyncedByCollection.clear();
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-huber-assign');
     Hive.init(dir.path);
@@ -270,5 +271,124 @@ void main() {
     expect(again.status, 'delivered');
     expect(LocalHuberStore.profileById(rider.id)!.walletBalanceGhs, paid);
     expect(LocalHuberStore.profileById(rider.id)!.completedCount, 1);
+  });
+
+  test('proof of delivery does not upsert another rider stale job to cloud',
+      () async {
+    final first = await _onlineRider(
+      id: 'u5',
+      name: 'Ama Rider',
+      email: 'ama5@hubsom.test',
+    );
+    final second = await _onlineRider(
+      id: 'u6',
+      name: 'Kojo Rider',
+      email: 'kojo6@hubsom.test',
+    );
+
+    Future<Order> paidOrder(String id) => LocalHuberStore.saveOrder(
+          Order(
+            id: id,
+            subtotalGhs: 40,
+            status: 'paid',
+            lines: const [
+              OrderLine(
+                productId: 'p-writeback',
+                sellerId: 'seller-1',
+                name: 'Shea',
+                quantity: 1,
+                unitPriceGhs: 40,
+                lineTotalGhs: 40,
+                category: 'beauty',
+              ),
+            ],
+            shipping: const OrderShipping(
+              recipientName: 'Buyer',
+              phone: '0241111111',
+              line1: '12 Spintex Rd',
+              city: 'Accra',
+              region: 'Greater Accra',
+              location: GeoLocation(latitude: 5.63, longitude: -0.17),
+            ),
+            createdAt: DateTime.now().toUtc().toIso8601String(),
+          ),
+        );
+
+    await paidOrder('ord_writeback_a');
+    await paidOrder('ord_writeback_b');
+    final shipmentA = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: const ['ord_writeback_a'],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+      offeredFeeGhs: 15,
+    );
+    final shipmentB = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: const ['ord_writeback_b'],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+      offeredFeeGhs: 18,
+    );
+    await LocalHuberStore.dispatchToHubers(shipmentA);
+    await LocalHuberStore.dispatchToHubers(shipmentB);
+
+    final deliveryA = await LocalHuberStore.acceptOffer(
+      offerId: LocalHuberStore.openOffersForDriver(first.id)
+          .firstWhere((o) => o.shipmentId == shipmentA.id)
+          .id,
+      driver: LocalHuberStore.profileById(first.id)!,
+    );
+    final deliveryB = await LocalHuberStore.acceptOffer(
+      offerId: LocalHuberStore.openOffersForDriver(second.id)
+          .firstWhere((o) => o.shipmentId == shipmentB.id)
+          .id,
+      driver: LocalHuberStore.profileById(second.id)!,
+    );
+
+    final done = await LocalHuberStore.completeWithPod(deliveryA.id);
+    expect(done.status, 'delivered');
+    expect(LocalHuberStore.profileById(first.id)!.walletBalanceGhs, 15);
+
+    final syncedDeliveries =
+        LocalHuberStore.lastSyncedByCollection[CloudStore.deliveries] ??
+            const [];
+    expect(syncedDeliveries, hasLength(1));
+    expect(syncedDeliveries.single['id'], deliveryA.id);
+    expect(syncedDeliveries.single['status'], 'delivered');
+    expect(
+      syncedDeliveries.any((e) => e['id'] == deliveryB.id),
+      isFalse,
+    );
+
+    final syncedProfiles =
+        LocalHuberStore.lastSyncedByCollection[CloudStore.hubers] ?? const [];
+    expect(syncedProfiles, hasLength(1));
+    expect(syncedProfiles.single['id'], first.id);
+    expect(syncedProfiles.single['walletBalanceGhs'], 15);
+    expect(
+      syncedProfiles.any((e) => e['id'] == second.id),
+      isFalse,
+    );
+
+    // Kojo's phone still has Ama's job as accepted (cloud write from Ama
+    // had not landed). His own advance must not push that stale POD.
+    final staleA = deliveryA.copyWith(status: 'accepted');
+    await LocalStore.setString(
+      'huberDeliveries',
+      jsonEncode([
+        staleA.toJson(),
+        LocalHuberStore.deliveryById(deliveryB.id)!.toJson(),
+      ]),
+    );
+    await LocalHuberStore.advanceDelivery(deliveryB.id);
+
+    final afterB =
+        LocalHuberStore.lastSyncedByCollection[CloudStore.deliveries] ??
+            const [];
+    expect(afterB, hasLength(1));
+    expect(afterB.single['id'], deliveryB.id);
+    expect(
+      afterB.any((e) => e['id'] == deliveryA.id),
+      isFalse,
+    );
   });
 }
