@@ -50,6 +50,7 @@ Order _sale() => Order(
 Future<void> _init() async {
   AppConfig.load();
   CloudStore.useNetwork = false;
+  PaymentAccountStore.debugIncomingAccount = null;
   SharedPreferences.setMockInitialValues({});
   Hive.init(Directory.systemTemp.createTempSync('hubsom-pay-accounts').path);
   await LocalStore.init();
@@ -260,5 +261,91 @@ void main() {
     expect(WithdrawalStore.pending().single.amountGhs, 40);
     expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 40);
     expect(WithdrawalStore.byId('wd-old')?.isProcessed, isTrue);
+  });
+
+  test('a second device cannot cash out a wallet the first already withdrew',
+      () async {
+    final user = _seller.copyWith(walletBalanceGhs: 94);
+    await PaymentAccountStore.withdrawAccountFor(user);
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 94);
+
+    // Phone already cashed out. Laptop still holds the pre-withdraw cache.
+    PaymentAccountStore.debugIncomingAccount = PaymentAccountStore.cachedForUser(
+      user,
+    )!.copyWith(
+      balanceGhs: 0,
+      updatedAt: '2026-10-15T11:00:00.000Z',
+    );
+
+    await expectLater(
+      PaymentAccountStore.withdraw(
+        user: user,
+        amountGhs: 94,
+        rail: 'mtn-momo',
+        handle: '0240000000',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Payment account needs'),
+        ),
+      ),
+    );
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 0);
+    expect(WithdrawalStore.pending(), isEmpty);
+  });
+
+  test('a second device cannot spend a wallet the first already spent',
+      () async {
+    final user = _seller.copyWith(walletBalanceGhs: 50);
+    await PaymentAccountStore.withdrawAccountFor(user);
+    PaymentAccountStore.debugIncomingAccount = PaymentAccountStore.cachedForUser(
+      user,
+    )!.copyWith(
+      balanceGhs: 0,
+      updatedAt: '2026-10-15T11:05:00.000Z',
+    );
+
+    await expectLater(
+      PaymentAccountStore.spendFromWithdrawAccount(
+        user: user,
+        amountGhs: 50,
+        ref: 'ord_second_phone',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Payment account needs'),
+        ),
+      ),
+    );
+    expect(PaymentAccountStore.cachedForUser(user)!.balanceGhs, 0);
+  });
+
+  test('resolveAgainstCloud prefers the already-reduced remote balance', () {
+    final local = PaymentAccount.withdrawOnly(
+      ownerUserId: _seller.id,
+      email: _seller.email,
+      name: _seller.name,
+      balanceGhs: 94,
+    ).copyWith(updatedAt: '2026-10-15T11:10:00.000Z');
+    final remote = local.copyWith(
+      balanceGhs: 0,
+      updatedAt: '2026-10-15T11:00:00.000Z',
+    );
+    final resolved = PaymentAccountStore.resolveAgainstCloud(
+      local: local,
+      remote: remote,
+    );
+    expect(resolved.balanceGhs, 0);
+  });
+
+  test('firestore rules allow the withdrawals collection', () {
+    final rules = File('firestore.rules').existsSync()
+        ? File('firestore.rules').readAsStringSync()
+        : File('hubsom_app/firestore.rules').readAsStringSync();
+    expect(rules.contains('match /withdrawals/{id}'), isTrue);
   });
 }

@@ -80,6 +80,12 @@ service cloud.firestore {
     match /paymentAccounts/{id} {
       allow read, write: if true;
     }
+    // Cash-out requests. Without this rule the client write was denied, so
+    // admin on another device never saw a pending withdrawal after the wallet
+    // debit had already landed on paymentAccounts.
+    match /withdrawals/{id} {
+      allow read, write: if true;
+    }
     match /giftLedger/{id} {
       allow read, write: if true;
     }

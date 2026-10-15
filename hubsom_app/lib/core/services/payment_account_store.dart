@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../models/payment_account.dart';
@@ -13,6 +15,11 @@ import 'withdrawal_store.dart';
 /// Admin receive account + withdraw-only seller/user accounts.
 abstract final class PaymentAccountStore {
   static const _key = 'paymentAccounts';
+
+  /// Other-device snapshot used by [withdraw] / [spendFromWithdrawAccount].
+  /// Tests inject this so a stale laptop cache cannot cash out twice.
+  @visibleForTesting
+  static PaymentAccount? debugIncomingAccount;
 
   static PaymentAccount adminCached() {
     final existing = _byId()[PaymentAccount.adminId];
@@ -184,7 +191,7 @@ abstract final class PaymentAccountStore {
     required String rail,
     required String handle,
   }) async {
-    final account = await withdrawAccountFor(user);
+    final account = await _latestWithdrawAccount(user);
     if (account.canReceive) {
       throw StateError('The admin receive account is not a user withdraw account');
     }
@@ -232,7 +239,7 @@ abstract final class PaymentAccountStore {
     required double amountGhs,
     required String ref,
   }) async {
-    final account = await withdrawAccountFor(user);
+    final account = await _latestWithdrawAccount(user);
     final amount = HubsomCommission.roundGhs(amountGhs);
     if (account.balanceGhs + 0.001 < amount) {
       throw StateError(
@@ -248,6 +255,59 @@ abstract final class PaymentAccountStore {
     await AdminAccountStore.save(profile);
     await _mirrorSession(profile);
     return next;
+  }
+
+  /// Prefer the cloud row when another phone already spent or cashed out.
+  ///
+  /// A laptop that stayed signed in keeps the pre-withdraw balance. Using that
+  /// cache let the same 94 GHS be submitted twice — admin would pay both.
+  @visibleForTesting
+  static PaymentAccount resolveAgainstCloud({
+    required PaymentAccount local,
+    PaymentAccount? remote,
+  }) {
+    if (remote == null) return local;
+    final preferred = PaymentAccount.fromJson(
+      CloudStore.preferFresherPaymentAccount(
+        local: local.toJson(),
+        incoming: remote.toJson(),
+      ),
+    );
+    // A spend on the other phone may lose the updatedAt race. Never debit
+    // against a balance Firestore already reduced.
+    if (remote.balanceGhs + 0.001 < preferred.balanceGhs) {
+      return remote;
+    }
+    return preferred;
+  }
+
+  static Future<PaymentAccount> _latestWithdrawAccount(HubsomUser user) async {
+    final local = await withdrawAccountFor(user);
+    var remote = debugIncomingAccount;
+    if (remote == null && CloudStore.useNetwork) {
+      try {
+        final row = await CloudStore.getDoc(
+          CloudStore.paymentAccounts,
+          local.id,
+        );
+        if (row != null && row.isNotEmpty) {
+          remote = PaymentAccount.fromJson(row);
+        }
+      } catch (_) {}
+    }
+    final latest = resolveAgainstCloud(local: local, remote: remote);
+    if (latest.balanceGhs + 0.001 < local.balanceGhs) {
+      await _writeLocal(latest);
+    }
+    return latest;
+  }
+
+  static Future<void> _writeLocal(PaymentAccount account) async {
+    final byId = _byId()..[account.id] = account;
+    await LocalStore.setString(
+      _key,
+      jsonEncode(byId.values.map((e) => e.toJson()).toList()),
+    );
   }
 
   static Map<String, PaymentAccount> _byId() {
