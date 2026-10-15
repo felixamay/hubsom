@@ -42,24 +42,21 @@ abstract final class WithdrawalStore {
     try {
       final remote = await CloudStore.listDocs(CloudStore.withdrawals);
       if (remote.isEmpty) return;
-      final byId = <String, WithdrawalRequest>{
-        for (final row in listAll()) row.id: row,
-      };
-      for (final row in remote) {
-        try {
-          final next = WithdrawalRequest.fromJson(row);
-          if (next.id.isEmpty) continue;
-          byId[next.id] = next;
-        } catch (_) {}
-      }
-      await _save(byId.values.toList());
+      final merged = CloudStore.mergeWithdrawalRows(
+        local: listAll().map((e) => e.toJson()).toList(),
+        incoming: remote,
+      );
+      await _persistLocal(merged.map(WithdrawalRequest.fromJson).toList());
     } catch (_) {}
   }
 
   static Future<WithdrawalRequest> upsert(WithdrawalRequest row) async {
     final byId = {for (final e in listAll()) e.id: e};
     byId[row.id] = row;
-    await _save(byId.values.toList());
+    await _persistLocal(byId.values.toList());
+    try {
+      await CloudStore.upsertDocs(CloudStore.withdrawals, [row.toJson()]);
+    } catch (_) {}
     return row;
   }
 
@@ -75,17 +72,11 @@ abstract final class WithdrawalStore {
     );
   }
 
-  static Future<void> _save(List<WithdrawalRequest> rows) async {
+  static Future<void> _persistLocal(List<WithdrawalRequest> rows) async {
     rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await LocalStore.setString(
       key,
       jsonEncode(rows.map((e) => e.toJson()).toList()),
     );
-    try {
-      await CloudStore.upsertDocs(
-        CloudStore.withdrawals,
-        rows.map((e) => e.toJson()).toList(),
-      );
-    } catch (_) {}
   }
 }
