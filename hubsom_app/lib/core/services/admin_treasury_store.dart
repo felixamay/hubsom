@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../../core/auth/afia_access.dart';
 import '../../core/constants/hubsom_commission.dart';
 import '../../models/order.dart';
@@ -15,6 +17,11 @@ import 'payment_account_store.dart';
 abstract final class AdminTreasuryStore {
   static const payoutsKey = 'adminPayouts';
   static const intakesKey = 'adminIntakes';
+
+  /// Last docs sent to Firestore, keyed by collection. Tests use this to
+  /// prove a local save does not rewrite other sellers' cached payouts.
+  @visibleForTesting
+  static final lastSyncedByCollection = <String, List<Map<String, dynamic>>>{};
 
   static String get adminEmail => AfiaAccess.ownerEmail;
 
@@ -123,6 +130,7 @@ abstract final class AdminTreasuryStore {
     final existing = _readPayouts();
     final byId = {for (final p in existing) p.id: p};
     final written = <SellerPayout>[];
+    final created = <SellerPayout>[];
 
     for (final entry in grouped.entries) {
       final sales = entry.value.fold<double>(0, (s, l) => s + l.lineTotalGhs);
@@ -151,10 +159,11 @@ abstract final class AdminTreasuryStore {
         createdAt: createdAt,
       );
       byId[id] = payout;
+      created.add(payout);
       written.add(payout);
     }
 
-    await _writePayouts(byId.values.toList());
+    await _writePayouts(byId.values.toList(), changed: created);
     return written;
   }
 
@@ -174,7 +183,7 @@ abstract final class AdminTreasuryStore {
     // Tombstone instead of deleting. Cloud upsert cannot remove the old
     // pending docs, and hydrate used to restore them so admin could pay a
     // sale the buyer had already been refunded for.
-    await _writePayouts([
+    final nextPayouts = [
       for (final p in _readPayouts())
         p.orderId == order.id && p.isPending
             ? p.copyWith(
@@ -182,8 +191,15 @@ abstract final class AdminTreasuryStore {
                 note: 'Voided because the order was cancelled',
               )
             : p,
-    ]);
-    await _writeIntakes([
+    ];
+    await _writePayouts(
+      nextPayouts,
+      changed: [
+        for (final p in nextPayouts)
+          if (p.orderId == order.id && p.isCancelled) p,
+      ],
+    );
+    final nextIntakes = [
       for (final e in _readIntakes())
         e.source == 'order' && e.refId == order.id
             ? e.copyWith(
@@ -191,7 +207,14 @@ abstract final class AdminTreasuryStore {
                 note: 'Voided because the order was cancelled',
               )
             : e,
-    ]);
+    ];
+    await _writeIntakes(
+      nextIntakes,
+      changed: [
+        for (final e in nextIntakes)
+          if (e.source == 'order' && e.refId == order.id) e,
+      ],
+    );
 
     final merchandise =
         order.lines.fold<double>(0, (s, l) => s + l.lineTotalGhs);
@@ -261,7 +284,7 @@ abstract final class AdminTreasuryStore {
       note: note,
     );
     rows.insert(0, row);
-    await _writeIntakes(rows);
+    await _writeIntakes(rows, changed: [row]);
     return row;
   }
 
@@ -322,7 +345,7 @@ abstract final class AdminTreasuryStore {
       note: 'Paid by Hubsom Admin after ${HubsomCommission.percentLabel} commission',
     );
     rows[idx] = paid;
-    await _writePayouts(rows);
+    await _writePayouts(rows, changed: [paid]);
     return paid;
   }
 
@@ -438,32 +461,50 @@ abstract final class AdminTreasuryStore {
     }
   }
 
-  static Future<void> _writePayouts(List<SellerPayout> rows) async {
+  /// Hydrate caches every seller payout this admin browser has seen.
+  /// Writing that whole snapshot would restore a stale pending row after
+  /// another device already paid it — Pay 94% could credit the seller twice.
+  static Future<void> _syncCollection(
+    String collection,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    lastSyncedByCollection[collection] = [
+      for (final row in rows) Map<String, dynamic>.from(row),
+    ];
+    if (rows.isEmpty) return;
+    try {
+      await CloudStore.upsertDocs(collection, rows);
+    } catch (_) {}
+  }
+
+  static Future<void> _writePayouts(
+    List<SellerPayout> rows, {
+    required List<SellerPayout> changed,
+  }) async {
     rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await LocalStore.setString(
       payoutsKey,
       jsonEncode(rows.map((e) => e.toJson()).toList()),
     );
-    try {
-      await CloudStore.upsertDocs(
-        CloudStore.adminPayouts,
-        rows.map((e) => e.toJson()).toList(),
-      );
-    } catch (_) {}
+    await _syncCollection(
+      CloudStore.adminPayouts,
+      changed.map((e) => e.toJson()).toList(),
+    );
   }
 
-  static Future<void> _writeIntakes(List<TreasuryIntake> rows) async {
+  static Future<void> _writeIntakes(
+    List<TreasuryIntake> rows, {
+    required List<TreasuryIntake> changed,
+  }) async {
     rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await LocalStore.setString(
       intakesKey,
       jsonEncode(rows.map((e) => e.toJson()).toList()),
     );
-    try {
-      await CloudStore.upsertDocs(
-        CloudStore.adminIntakes,
-        rows.map((e) => e.toJson()).toList(),
-      );
-    } catch (_) {}
+    await _syncCollection(
+      CloudStore.adminIntakes,
+      changed.map((e) => e.toJson()).toList(),
+    );
   }
 
   static Future<void> _hydrate() async {
