@@ -87,6 +87,7 @@ Future<void> _init() async {
       'userJson': _buyer.toJson(),
     },
   });
+  AdminTreasuryStore.lastSyncedByCollection.clear();
 }
 
 void main() {
@@ -248,5 +249,50 @@ void main() {
           .walletBalanceGhs,
       94,
     );
+  });
+
+  test('paying one seller does not upsert another stale pending payout to cloud',
+      () async {
+    final first = _paidOrder(id: 'ord_writeback_a');
+    final second = _paidOrder(id: 'ord_writeback_b', sales: 50, ship: 8);
+    await LocalHuberStore.saveOrder(first);
+    await AdminTreasuryStore.recordPaidOrder(first);
+    await AdminAccountStore.save(_seller);
+    final firstId = AdminTreasuryStore.payoutId(first.id, 's1');
+    await AdminTreasuryStore.paySeller(firstId);
+    expect(AdminTreasuryStore.cachedPayouts().single.isPaid, isTrue);
+
+    await LocalHuberStore.saveOrder(second);
+    await AdminTreasuryStore.recordPaidOrder(second);
+    final secondId = AdminTreasuryStore.payoutId(second.id, 's1');
+    final created = AdminTreasuryStore.lastSyncedByCollection[
+            CloudStore.adminPayouts] ??
+        const [];
+    expect(created, hasLength(1));
+    expect(created.single['id'], secondId);
+    expect(created.single['status'], 'pending');
+    expect(created.any((e) => e['id'] == firstId), isFalse);
+
+    // Another admin laptop still has the first payout as pending (the paid
+    // cloud write had not landed). Paying the second must not push that
+    // stale pending row, or Pay 94% could credit the first sale again.
+    final staleFirst = AdminTreasuryStore.cachedPayouts()
+        .firstWhere((p) => p.id == firstId)
+        .copyWith(status: 'pending', note: '');
+    final liveSecond =
+        AdminTreasuryStore.cachedPayouts().firstWhere((p) => p.id == secondId);
+    await LocalStore.setString(
+      AdminTreasuryStore.payoutsKey,
+      jsonEncode([staleFirst.toJson(), liveSecond.toJson()]),
+    );
+    await AdminTreasuryStore.paySeller(secondId);
+
+    final afterPay = AdminTreasuryStore.lastSyncedByCollection[
+            CloudStore.adminPayouts] ??
+        const [];
+    expect(afterPay, hasLength(1));
+    expect(afterPay.single['id'], secondId);
+    expect(afterPay.single['status'], 'paid');
+    expect(afterPay.any((e) => e['id'] == firstId), isFalse);
   });
 }
