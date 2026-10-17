@@ -25,6 +25,7 @@ void main() {
   setUp(() async {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    GiftStore.debugIncomingGiftPoints = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-live-gift');
     Hive.init(dir.path);
@@ -44,6 +45,8 @@ void main() {
       walletBalanceGhs: 100,
     );
     repo = LiveRepository(ApiClient());
+    await LocalStore.setString('localGiftLedger', '[]');
+    await LocalStore.setString('localGiftHostEarnings', '{}');
     await _putVault(seller);
     await LocalStore.setUserJson(jsonEncode(seller.toJson()));
   });
@@ -327,6 +330,100 @@ void main() {
       ],
     );
     expect(merged.map((e) => e['id']), containsAll(['gft_local', 'gft_cloud']));
+  });
+
+  test('a second device cannot spend gift points the first already sent',
+      () async {
+    final stream = await goLive();
+    await LocalStore.setUserJson(jsonEncode(viewer.toJson()));
+    await _putVault(viewer);
+    await repo.buyGiftPoints(packId: 'p100', paymentMethod: 'paystack');
+    await repo.sendGift(streamId: stream.id, giftId: 'heart');
+    expect(
+      GiftStore.listLedger(userId: viewer.id)
+          .where((e) => e.kind == 'send' && e.streamId == stream.id),
+      hasLength(1),
+    );
+    expect(GiftStore.hostEarnings(stream.sellerId), GiftCatalog.hostShareGhs(10));
+
+    // Laptop still shows the pre-send 100 pts. Phone already wrote the
+    // send row and reduced the cloud balance to 90.
+    await LocalStore.setUserJson(
+      jsonEncode(viewer.copyWith(giftPoints: 100).toJson()),
+    );
+    await _putVault(viewer.copyWith(giftPoints: 100));
+    GiftStore.debugIncomingGiftPoints = 90;
+
+    // Ledger + cloud both say only 90 remain. A Crown (100) would invent
+    // 10 unpaid points and credit the host again.
+    await expectLater(
+      repo.sendGift(streamId: stream.id, giftId: 'crown'),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Buy points'),
+        ),
+      ),
+    );
+    expect(
+      GiftStore.listLedger(userId: viewer.id).where((e) => e.kind == 'send'),
+      hasLength(1),
+    );
+    expect(GiftStore.hostEarnings(stream.sellerId), GiftCatalog.hostShareGhs(10));
+
+    // Even after the session cache is restored to the purchased 100, the
+    // ledger send rows cap what this laptop can still give.
+    GiftStore.debugIncomingGiftPoints = null;
+    await LocalStore.setUserJson(
+      jsonEncode(viewer.copyWith(giftPoints: 100).toJson()),
+    );
+    expect(
+      GiftStore.remainingGiftPoints(viewer.copyWith(giftPoints: 100)),
+      90,
+    );
+    final leftover = await repo.sendGift(streamId: stream.id, giftId: 'heart');
+    expect(leftover.user.giftPoints, 80);
+    expect(
+      GiftStore.listLedger(userId: viewer.id).where((e) => e.kind == 'send'),
+      hasLength(2),
+    );
+  });
+
+  test('stale session points cannot spend a purchase the ledger already sent',
+      () async {
+    final drained = viewer.copyWith(giftPoints: 100);
+    await LocalStore.setString(
+      'localGiftLedger',
+      jsonEncode([
+        {
+          'id': 'gpt_pack',
+          'userId': viewer.id,
+          'kind': 'purchase',
+          'points': 100,
+          'priceGhs': 10,
+          'createdAt': '2026-10-17T10:00:00Z',
+        },
+        {
+          'id': 'gft_phone',
+          'userId': viewer.id,
+          'kind': 'send',
+          'points': 100,
+          'hostSellerId': 'sel-1',
+          'hostShareGhs': 8,
+          'createdAt': '2026-10-17T10:05:00Z',
+        },
+      ]),
+    );
+
+    expect(GiftStore.remainingGiftPoints(drained), 0);
+    expect(
+      GiftStore.resolveAgainstCloud(
+        local: drained,
+        remoteGiftPoints: 0,
+      ).giftPoints,
+      0,
+    );
   });
 
   test('gifts are blocked after the show ends', () async {

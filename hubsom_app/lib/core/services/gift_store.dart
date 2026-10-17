@@ -18,6 +18,11 @@ class GiftStore {
   static const _hostEarningsKey = 'localGiftHostEarnings';
   static const _uuid = Uuid();
 
+  /// Other-device snapshot used by [sendGift]. Tests inject this so a stale
+  /// laptop cache cannot spend points the phone already sent.
+  @visibleForTesting
+  static int? debugIncomingGiftPoints;
+
   static HubsomUser? _sessionUser() {
     final raw = LocalStore.userJson;
     if (raw == null || raw.isEmpty) return null;
@@ -293,6 +298,59 @@ class GiftStore {
     return saved;
   }
 
+  /// Points still spendable after another device already sent gifts.
+  ///
+  /// `user.giftPoints` is the session cache. A phone can drain the same
+  /// purchase and write send rows to `giftLedger` while this laptop still
+  /// shows the pre-send balance — those leftover points were never paid for.
+  @visibleForTesting
+  static int remainingGiftPoints(HubsomUser user) {
+    final mine = listLedger(userId: user.id);
+    final purchased = mine
+        .where((e) => e.kind == 'purchase')
+        .fold<int>(0, (sum, e) => sum + e.points);
+    final sent = mine
+        .where((e) => e.kind == 'send')
+        .fold<int>(0, (sum, e) => sum + e.points);
+    final profile = user.giftPoints < 0 ? 0 : user.giftPoints;
+    if (purchased <= 0 && sent <= 0) return profile;
+    final fromLedger = purchased - sent;
+    final capped = fromLedger < 0 ? 0 : fromLedger;
+    return profile < capped ? profile : capped;
+  }
+
+  /// Prefer the cloud / ledger balance when another phone already spent.
+  @visibleForTesting
+  static HubsomUser resolveAgainstCloud({
+    required HubsomUser local,
+    int? remoteGiftPoints,
+  }) {
+    var points = local.giftPoints < 0 ? 0 : local.giftPoints;
+    if (remoteGiftPoints != null && remoteGiftPoints < points) {
+      points = remoteGiftPoints < 0 ? 0 : remoteGiftPoints;
+    }
+    return local.copyWith(
+      giftPoints: remainingGiftPoints(local.copyWith(giftPoints: points)),
+    );
+  }
+
+  static Future<HubsomUser> _latestGiftUser(HubsomUser user) async {
+    await pullCloud();
+    int? remote = debugIncomingGiftPoints;
+    if (remote == null && CloudStore.useNetwork) {
+      try {
+        final row = await CloudStore.getAccount(user.email);
+        final raw = row?['userJson'];
+        if (raw is Map) {
+          remote = HubsomUser.fromJson(
+            Map<String, dynamic>.from(raw),
+          ).giftPoints;
+        }
+      } catch (_) {}
+    }
+    return resolveAgainstCloud(local: user, remoteGiftPoints: remote);
+  }
+
   static Future<({HubsomUser user, LiveGift gift, GiftLedgerEntry entry})>
       sendGift({
     required HubsomUser sender,
@@ -301,22 +359,23 @@ class GiftStore {
   }) async {
     final gift = GiftCatalog.byId(giftId);
     if (gift == null) throw StateError('Unknown gift');
-    if (sender.giftPoints < gift.costPoints) {
-      throw StateError(
-        'You need ${gift.costPoints} points for ${gift.name}. Buy points first.',
-      );
-    }
     final stream = LocalCommerceStore.getStream(streamId);
     if (stream == null || !stream.isLive) {
       throw StateError('Gifts can only be sent while the show is live');
     }
-    final selfGift = stream.hosts.any((h) => h.id == sender.id) ||
-        (sender.sellerId != null &&
-            sender.sellerId!.isNotEmpty &&
-            sender.sellerId == stream.sellerId);
+    final latest = await _latestGiftUser(sender);
+    if (latest.giftPoints < gift.costPoints) {
+      throw StateError(
+        'You need ${gift.costPoints} points for ${gift.name}. Buy points first.',
+      );
+    }
+    final selfGift = stream.hosts.any((h) => h.id == latest.id) ||
+        (latest.sellerId != null &&
+            latest.sellerId!.isNotEmpty &&
+            latest.sellerId == stream.sellerId);
 
-    final next = sender.copyWith(
-      giftPoints: sender.giftPoints - gift.costPoints,
+    final next = latest.copyWith(
+      giftPoints: latest.giftPoints - gift.costPoints,
     );
     final saved = await persistUser(next);
 
