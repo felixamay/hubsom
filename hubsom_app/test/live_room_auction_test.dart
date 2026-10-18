@@ -25,6 +25,7 @@ void main() {
   setUp(() async {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    LocalCommerceStore.debugIncomingAuction = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-live-room');
     Hive.init(dir.path);
@@ -396,6 +397,141 @@ void main() {
         LocalCommerceStore.preferFresherAuction(stale, fresh);
     expect(preferred?.currentBidGhs, 80);
     expect(preferred?.highestBidder, 'Kojo Bidder');
+  });
+
+  test('resolveAgainstCloud keeps a higher same-lot bid and ignores a sold lot',
+      () {
+    final open = LiveAuction(
+      id: 'lot-open',
+      productId: 'p1',
+      startingBidGhs: 50,
+      currentBidGhs: 50,
+      minIncrementGhs: 5,
+      endsAt: DateTime.now()
+          .toUtc()
+          .add(const Duration(seconds: 20))
+          .toIso8601String(),
+      status: 'open',
+    );
+    final phone = open.copyWith(
+      currentBidGhs: 100,
+      bidderCount: 1,
+      highestBidder: 'Ama Host',
+      highestBidderId: 'seller-1',
+    );
+    expect(
+      LocalCommerceStore.resolveAgainstCloud(local: open, remote: phone)
+          .currentBidGhs,
+      100,
+    );
+
+    final nextLot = open.copyWith(
+      currentBidGhs: 50,
+      status: 'open',
+    );
+    // copyWith cannot change id; build a distinct sold lot.
+    final soldPrev = LiveAuction(
+      id: 'lot-sold',
+      productId: 'p1',
+      startingBidGhs: 50,
+      currentBidGhs: 180,
+      minIncrementGhs: 5,
+      endsAt: DateTime.now().toUtc().toIso8601String(),
+      status: 'sold',
+      orderId: 'ord_auc_lot-sold',
+      highestBidder: 'Ama Host',
+      highestBidderId: 'seller-1',
+    );
+    expect(
+      LocalCommerceStore.resolveAgainstCloud(
+        local: nextLot,
+        remote: soldPrev,
+      ).id,
+      'lot-open',
+    );
+    expect(
+      LocalCommerceStore.resolveAgainstCloud(
+        local: nextLot,
+        remote: soldPrev,
+      ).currentBidGhs,
+      50,
+    );
+  });
+
+  test('a stale laptop bid cannot overwrite a higher bid already on the lot',
+      () async {
+    final stream = await goLive();
+    final lot = stream.auction!;
+    expect(lot.currentBidGhs, 80);
+
+    final ama = const HubsomUser(
+      id: 'buyer-ama',
+      email: 'ama@hubsom.test',
+      name: 'Ama Bidder',
+      role: 'buyer',
+    );
+    final high = await LocalCommerceStore.placeBid(
+      auctionId: lot.id,
+      amountGhs: 120,
+      bidder: ama,
+    );
+    expect(high.currentBidGhs, 120);
+    expect(high.highestBidderId, 'buyer-ama');
+
+    // Laptop still shows the opening 80 GHS. 90 would have been legal
+    // against that cache and would have made Kojo the winner at 90.
+    await LocalCommerceStore.updateStream(stream.id, auction: lot);
+    LocalCommerceStore.debugIncomingAuction = high;
+
+    await expectLater(
+      LocalCommerceStore.placeBid(
+        auctionId: lot.id,
+        amountGhs: 90,
+        bidder: bidder,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Bid must be at least'),
+        ),
+      ),
+    );
+
+    final kept = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(kept.currentBidGhs, 120);
+    expect(kept.highestBidderId, 'buyer-ama');
+    expect(kept.highestBidder, 'Ama Bidder');
+  });
+
+  test('a laptop that is behind can still take the lead with a higher bid',
+      () async {
+    final stream = await goLive();
+    final lot = stream.auction!;
+    final ama = const HubsomUser(
+      id: 'buyer-ama',
+      email: 'ama@hubsom.test',
+      name: 'Ama Bidder',
+      role: 'buyer',
+    );
+    final high = await LocalCommerceStore.placeBid(
+      auctionId: lot.id,
+      amountGhs: 120,
+      bidder: ama,
+    );
+
+    await LocalCommerceStore.updateStream(stream.id, auction: lot);
+    LocalCommerceStore.debugIncomingAuction = high;
+
+    final next = await LocalCommerceStore.placeBid(
+      auctionId: lot.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    expect(next.currentBidGhs, 150);
+    expect(next.highestBidderId, 'buyer-1');
+    expect(next.recentBids.first.amountGhs, 150);
+    expect(next.recentBids.any((b) => b.amountGhs == 120), isTrue);
   });
 
   test('LiveAuction.isOpen reflects status and end time', () {

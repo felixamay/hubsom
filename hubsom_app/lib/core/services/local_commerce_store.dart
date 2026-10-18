@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/order.dart';
@@ -38,6 +39,11 @@ class LocalCommerceStore {
   static const _videoSavesKey = 'localVideoSaves';
   static const _sellerFollowersKey = 'localSellerFollowers';
   static const _uuid = Uuid();
+
+  /// Other-device snapshot used by [placeBid]. Tests inject this so a stale
+  /// laptop cache cannot overwrite a higher bid already on the same lot.
+  @visibleForTesting
+  static LiveAuction? debugIncomingAuction;
 
   /// Wipe local commerce (keeps auth vault / cart / session).
   static Future<void> clearDemoAndCommerce() async {
@@ -398,6 +404,40 @@ class LocalCommerceStore {
     if (a.endsAt.compareTo(b.endsAt) > 0) return a;
     if (b.recentBids.length > a.recentBids.length) return b;
     return a;
+  }
+
+  /// Prefer the cloud lot when another phone already bid higher.
+  ///
+  /// Only the same [LiveAuction.id] is considered — a sold previous lot
+  /// must not replace the next open unit.
+  @visibleForTesting
+  static LiveAuction resolveAgainstCloud({
+    required LiveAuction local,
+    LiveAuction? remote,
+  }) {
+    if (remote == null || remote.id != local.id) return local;
+    return preferFresherAuction(local, remote) ?? local;
+  }
+
+  static Future<LiveAuction> _latestAuction({
+    required String streamId,
+    required LiveAuction local,
+  }) async {
+    var remote = debugIncomingAuction;
+    if (remote == null && CloudStore.useNetwork) {
+      try {
+        final row = await CloudStore.getDoc(CloudStore.streams, streamId);
+        if (row != null && row.isNotEmpty) {
+          remote = LiveStream.fromJson(row).auction;
+        }
+      } catch (_) {}
+    }
+    final latest = resolveAgainstCloud(local: local, remote: remote);
+    if (latest.currentBidGhs > local.currentBidGhs + 0.001 ||
+        (latest.highestBidderId ?? '') != (local.highestBidderId ?? '')) {
+      await updateStream(streamId, auction: latest);
+    }
+    return latest;
   }
 
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
@@ -1002,7 +1042,13 @@ class LocalCommerceStore {
       throw StateError('Auction not found');
     }
     if (!stream.isLive) throw StateError('Show has ended');
-    final auction = stream.auction!;
+    // A laptop that joined at 50 GHS will still pass a 60 GHS bid after the
+    // phone already wrote 100 to Firestore. Writing that stale lot back
+    // makes the lower bidder the winner and the seller is paid 60.
+    final auction = await _latestAuction(
+      streamId: stream.id,
+      local: stream.auction!,
+    );
     if (auction.status != 'open') throw StateError('Auction is closed');
 
     final now = DateTime.now().toUtc();
