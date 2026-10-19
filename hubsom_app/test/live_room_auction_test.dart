@@ -534,6 +534,131 @@ void main() {
     expect(next.recentBids.any((b) => b.amountGhs == 120), isTrue);
   });
 
+  test('a stale laptop bid cannot resurrect a previous lot over the next unit',
+      () async {
+    final stream = await goLive();
+    final firstLot = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: firstLot.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+    expect(await LocalCommerceStore.finalizeAuction(stream.id), isNotNull);
+    final nextLot = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(nextLot.id, isNot(firstLot.id));
+    expect(nextLot.isOpen, isTrue);
+
+    // Laptop still holds the sold first lot as if it were open at 80.
+    await LocalCommerceStore.updateStream(stream.id, auction: firstLot);
+    LocalCommerceStore.debugIncomingAuction = nextLot;
+
+    await expectLater(
+      LocalCommerceStore.placeBid(
+        auctionId: firstLot.id,
+        amountGhs: 90,
+        bidder: bidder,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Auction is closed'),
+        ),
+      ),
+    );
+
+    final kept = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(kept.id, nextLot.id);
+    expect(kept.isOpen, isTrue);
+    expect(kept.currentBidGhs, nextLot.currentBidGhs);
+  });
+
+  test('stale Tap to sell settles the cloud lot instead of discarding the winner',
+      () async {
+    final stream = await goLive();
+    final opening = stream.auction!;
+    final extra = await LocalCommerceStore.createProduct(
+      user: seller,
+      name: 'Second drop',
+      description: 'After the winning bid',
+      category: 'fashion',
+      priceGhs: 70,
+      stock: 1,
+      images: const ['a', 'b', 'c'],
+    );
+    final winning = await LocalCommerceStore.placeBid(
+      auctionId: opening.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+
+    // Host laptop still shows the opening 80 GHS with no bidder.
+    await LocalCommerceStore.updateStream(stream.id, auction: opening);
+    LocalCommerceStore.debugIncomingAuction = winning;
+
+    final next = await LocalCommerceStore.startAuctionOnLive(
+      streamId: stream.id,
+      user: seller,
+      productId: extra.id,
+    );
+
+    expect(next.auction!.productId, extra.id);
+    expect(next.auction!.isOpen, isTrue);
+    final orders = LocalHuberStore.listOrders()
+        .where((o) => o.streamId == stream.id)
+        .toList();
+    expect(orders, hasLength(1));
+    expect(orders.first.userId, 'buyer-1');
+    expect(orders.first.subtotalGhs, 150);
+    expect(orders.first.lines.single.productId, opening.productId);
+  });
+
+  test('stale Extend cannot reopen a sold lot over the auto-relisted unit',
+      () async {
+    final stream = await goLive();
+    final firstLot = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: firstLot.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    await LocalCommerceStore.updateStream(
+      stream.id,
+      auction: LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+            endsAt: DateTime.now()
+                .toUtc()
+                .subtract(const Duration(seconds: 1))
+                .toIso8601String(),
+          ),
+    );
+    expect(await LocalCommerceStore.finalizeAuction(stream.id), isNotNull);
+    final nextLot = LocalCommerceStore.getStream(stream.id)!.auction!;
+    expect(nextLot.id, isNot(firstLot.id));
+
+    await LocalCommerceStore.updateStream(stream.id, auction: firstLot);
+    LocalCommerceStore.debugIncomingAuction = nextLot;
+
+    final extended = await LocalCommerceStore.extendAuction(
+      streamId: stream.id,
+    );
+    expect(extended.id, nextLot.id);
+    expect(extended.isOpen, isTrue);
+    expect(extended.isSold, isFalse);
+    expect(
+      LocalCommerceStore.getStream(stream.id)!.auction!.id,
+      nextLot.id,
+    );
+  });
+
   test('LiveAuction.isOpen reflects status and end time', () {
     final open = LiveAuction(
       id: 'a1',

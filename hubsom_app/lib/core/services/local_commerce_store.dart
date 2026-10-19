@@ -40,8 +40,9 @@ class LocalCommerceStore {
   static const _sellerFollowersKey = 'localSellerFollowers';
   static const _uuid = Uuid();
 
-  /// Other-device snapshot used by [placeBid]. Tests inject this so a stale
-  /// laptop cache cannot overwrite a higher bid already on the same lot.
+  /// Other-device snapshot used by [placeBid] / [startAuctionOnLive] /
+  /// [extendAuction] / finalize. Tests inject this so a stale laptop cache
+  /// cannot overwrite the lot that is already on Firestore.
   @visibleForTesting
   static LiveAuction? debugIncomingAuction;
 
@@ -409,7 +410,8 @@ class LocalCommerceStore {
   /// Prefer the cloud lot when another phone already bid higher.
   ///
   /// Only the same [LiveAuction.id] is considered — a sold previous lot
-  /// must not replace the next open unit.
+  /// must not replace the next open unit. [placeBid] rejects that case
+  /// instead of writing the old lot back.
   @visibleForTesting
   static LiveAuction resolveAgainstCloud({
     required LiveAuction local,
@@ -419,10 +421,7 @@ class LocalCommerceStore {
     return preferFresherAuction(local, remote) ?? local;
   }
 
-  static Future<LiveAuction> _latestAuction({
-    required String streamId,
-    required LiveAuction local,
-  }) async {
+  static Future<LiveAuction?> _incomingAuction(String streamId) async {
     var remote = debugIncomingAuction;
     if (remote == null && CloudStore.useNetwork) {
       try {
@@ -432,12 +431,48 @@ class LocalCommerceStore {
         }
       } catch (_) {}
     }
+    return remote;
+  }
+
+  static Future<LiveAuction> _latestAuction({
+    required String streamId,
+    required LiveAuction local,
+  }) async {
+    final remote = await _incomingAuction(streamId);
+    // Auto-relist / Tap to sell already replaced this lot on Firestore.
+    // Writing the cached previous lot would resurrect it over the next unit.
+    if (remote != null && remote.id != local.id) {
+      await updateStream(streamId, auction: remote);
+      throw StateError('Auction is closed');
+    }
     final latest = resolveAgainstCloud(local: local, remote: remote);
     if (latest.currentBidGhs > local.currentBidGhs + 0.001 ||
         (latest.highestBidderId ?? '') != (local.highestBidderId ?? '')) {
       await updateStream(streamId, auction: latest);
     }
     return latest;
+  }
+
+  /// Host actions must follow the lot already on Firestore.
+  ///
+  /// A laptop that still holds the opening auction would otherwise settle
+  /// that ghost lot (no winner) and [_syncStream] the new one over a 200 GHS
+  /// bid — or [extendAuction] would reopen a sold unit over the auto-relist.
+  static Future<void> _adoptCurrentAuction(String streamId) async {
+    final local = getStream(streamId)?.auction;
+    final remote = await _incomingAuction(streamId);
+    if (remote == null) return;
+    final latest = (local == null || remote.id != local.id)
+        ? remote
+        : (preferFresherAuction(local, remote) ?? remote);
+    if (local == null ||
+        latest.id != local.id ||
+        latest.currentBidGhs > local.currentBidGhs + 0.001 ||
+        (latest.highestBidderId ?? '') != (local.highestBidderId ?? '') ||
+        latest.status != local.status ||
+        latest.orderId != local.orderId) {
+      await updateStream(streamId, auction: latest);
+    }
   }
 
   static LiveStream mergeStreams(LiveStream local, LiveStream remote) {
@@ -903,7 +938,8 @@ class LocalCommerceStore {
       throw StateError('Auction items must come from your catalog.');
     }
 
-    final current = stream.auction;
+    await _adoptCurrentAuction(streamId);
+    final current = getStream(streamId)?.auction;
     if (current != null &&
         current.productId == productId &&
         (current.isOpen || current.awaitingExtend)) {
@@ -994,6 +1030,7 @@ class LocalCommerceStore {
     required String streamId,
     int seconds = 30,
   }) async {
+    await _adoptCurrentAuction(streamId);
     final stream = getStream(streamId);
     if (stream == null || stream.auction == null) {
       throw StateError('Auction not found');
@@ -1105,6 +1142,7 @@ class LocalCommerceStore {
     String streamId, {
     required bool autoRelist,
   }) async {
+    await _adoptCurrentAuction(streamId);
     final current = getStream(streamId)?.auction;
     if (current == null || current.orderId != null || current.isSold) return;
     if (current.isOpen) {
