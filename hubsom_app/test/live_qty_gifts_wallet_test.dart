@@ -31,6 +31,8 @@ void main() {
   setUp(() async {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    GiftStore.debugIncomingGiftPoints = null;
+    GiftStore.debugIncomingHostEarnings = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-live-qty');
     Hive.init(dir.path);

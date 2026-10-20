@@ -26,6 +26,7 @@ void main() {
     AppConfig.load();
     CloudStore.useNetwork = false;
     GiftStore.debugIncomingGiftPoints = null;
+    GiftStore.debugIncomingHostEarnings = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-live-gift');
     Hive.init(dir.path);
@@ -206,6 +207,43 @@ void main() {
       GiftStore.receivedFor(stream.sellerId)
           .where((e) => e.streamId == stream.id),
       isEmpty,
+    );
+  });
+
+  test('cloud host remaining is used even when it is zero after cash-out', () {
+    expect(
+      GiftStore.hostEarningsBase(local: 8, remote: 0),
+      0,
+    );
+    expect(
+      GiftStore.hostEarningsBase(local: 8, remote: 12),
+      12,
+    );
+    expect(
+      GiftStore.hostEarningsBase(local: 8, remote: null),
+      8,
+    );
+  });
+
+  test('a later viewer gift cannot restore host earnings already withdrawn',
+      () async {
+    final stream = await goLive();
+    // Viewer laptop still holds the 8 GHS Ama already cashed out on her phone.
+    await LocalStore.setString(
+      'localGiftHostEarnings',
+      jsonEncode({stream.sellerId: 8.0}),
+    );
+    GiftStore.debugIncomingHostEarnings = 0;
+
+    await LocalStore.setUserJson(jsonEncode(viewer.toJson()));
+    await _putVault(viewer);
+    await repo.buyGiftPoints(packId: 'p100', paymentMethod: 'paystack');
+    await repo.sendGift(streamId: stream.id, giftId: 'heart');
+
+    // Only this Heart's host share, not 8 + share.
+    expect(
+      GiftStore.hostEarnings(stream.sellerId),
+      GiftCatalog.hostShareGhs(10),
     );
   });
 
