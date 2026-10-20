@@ -23,6 +23,11 @@ class GiftStore {
   @visibleForTesting
   static int? debugIncomingGiftPoints;
 
+  /// Other-device host remaining used by [sendGift]. Tests inject this so a
+  /// stale viewer cache cannot restore earnings the host already cashed out.
+  @visibleForTesting
+  static double? debugIncomingHostEarnings;
+
   static HubsomUser? _sessionUser() {
     final raw = LocalStore.userJson;
     if (raw == null || raw.isEmpty) return null;
@@ -225,18 +230,35 @@ class GiftStore {
     } catch (_) {}
   }
 
+  /// Remaining host balance to add this gift onto.
+  ///
+  /// Cloud remaining is authoritative, including 0 after a cash-out.
+  /// Taking only a higher cloud amount restored the pre-withdraw map when
+  /// a viewer laptop sent another gift, and the host could cash out twice.
+  @visibleForTesting
+  static double hostEarningsBase({
+    required double local,
+    double? remote,
+  }) {
+    if (remote != null) return remote < 0 ? 0 : remote;
+    return local < 0 ? 0 : local;
+  }
+
   static Future<void> _addHostEarnings(String sellerId, double share) async {
     var current = hostEarnings(sellerId);
-    if (CloudStore.useNetwork) {
+    double? remote = debugIncomingHostEarnings;
+    if (remote == null && CloudStore.useNetwork) {
       try {
         final row = await CloudStore.getDoc(
           CloudStore.giftHostEarnings,
           sellerId,
         );
-        final cloud = (row?['balanceGhs'] as num?)?.toDouble() ?? 0;
-        if (cloud > current) current = cloud;
+        if (row != null && row.isNotEmpty) {
+          remote = (row['balanceGhs'] as num?)?.toDouble() ?? 0;
+        }
       } catch (_) {}
     }
+    current = hostEarningsBase(local: current, remote: remote);
     final next = current + share;
     final map = _hostEarnings();
     map[sellerId] = next;
