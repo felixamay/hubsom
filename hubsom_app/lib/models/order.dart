@@ -232,8 +232,19 @@ class Order extends Equatable {
     return lines.any((l) => l.sellerId == sid);
   }
 
+  bool get isTerminalStatus {
+    switch (status.toLowerCase()) {
+      case 'cancelled':
+      case 'canceled':
+      case 'refunded':
+        return true;
+      default:
+        return false;
+    }
+  }
+
   int get fulfillmentRank {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'delivered':
         return 5;
       case 'shipped':
@@ -244,6 +255,8 @@ class Order extends Equatable {
       case 'paid':
         return 2;
       case 'cancelled':
+      case 'canceled':
+      case 'refunded':
         return 1;
       default:
         return 0;
@@ -251,7 +264,13 @@ class Order extends Equatable {
   }
 
   /// Keep the order that is further along in fulfillment.
+  ///
+  /// Cancelled / refunded is terminal. `paid` ranks above `cancelled`, so
+  /// a stale paid snapshot would otherwise reopen a sale the buyer already
+  /// got refunded — Purchases used this merge and wrote the paid copy back.
   Order preferFulfillment(Order other) {
+    if (isTerminalStatus && !other.isTerminalStatus) return this;
+    if (other.isTerminalStatus && !isTerminalStatus) return other;
     return other.fulfillmentRank > fulfillmentRank ? other : this;
   }
 

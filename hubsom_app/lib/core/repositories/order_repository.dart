@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../../models/order.dart';
 import '../../models/shipment.dart';
 import '../../models/user.dart';
@@ -13,6 +15,10 @@ class OrderRepository {
   OrderRepository(this._api);
 
   final ApiClient _api;
+
+  /// Test-only cloud orders returned by [buyerOrders] / [sellerOrders].
+  @visibleForTesting
+  static List<Map<String, dynamic>>? debugIncomingOrders;
 
   HubsomUser? get _sessionUser {
     final raw = LocalStore.userJson;
@@ -57,7 +63,7 @@ class OrderRepository {
       for (final o in LocalHuberStore.listOrders()) o.id: o,
     };
     try {
-      final rows = await CloudStore.listDocs(CloudStore.orders);
+      final rows = debugIncomingOrders ?? await CloudStore.listDocs(CloudStore.orders);
       for (final row in rows) {
         try {
           final o = Order.fromJson(row);
@@ -99,12 +105,22 @@ class OrderRepository {
       for (final o in LocalHuberStore.listOrders()) o.id: o,
     };
     try {
-      final rows = await CloudStore.listDocs(CloudStore.orders);
+      final rows = debugIncomingOrders ?? await CloudStore.listDocs(CloudStore.orders);
       for (final row in rows) {
         try {
           final o = Order.fromJson(row);
           final existing = byId[o.id];
-          final next = existing == null ? o : existing.preferFulfillment(o);
+          // Same terminal-safe merge as seller hydrate. preferFulfillment
+          // used to rank paid above cancelled, so a lagged paid snapshot
+          // reopened a refunded sale and wrote it back to Firestore.
+          final next = existing == null
+              ? o
+              : Order.fromJson(
+                  CloudStore.preferOrderRow(
+                    local: existing.toJson(),
+                    incoming: o.toJson(),
+                  ),
+                );
           byId[o.id] = next;
           if (existing == null || next.status != existing.status) {
             await LocalHuberStore.saveOrder(next);
