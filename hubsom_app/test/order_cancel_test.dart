@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
+import 'package:hubsom_app/core/repositories/order_repository.dart';
 import 'package:hubsom_app/core/services/admin_account_store.dart';
 import 'package:hubsom_app/core/services/admin_treasury_store.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
@@ -59,6 +60,7 @@ void main() {
   setUp(() async {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    OrderRepository.debugIncomingOrders = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-order-cancel');
     Hive.init(dir.path);
@@ -287,5 +289,54 @@ void main() {
       incoming: [pending.toJson()],
     );
     expect(restored, isEmpty);
+  });
+
+  test('preferFulfillment does not reopen a cancelled sale from a stale paid copy',
+      () {
+    const paid = Order(
+      id: 'ord_term',
+      subtotalGhs: 40,
+      status: 'paid',
+      userId: 'buyer-cancel',
+      lines: [],
+      createdAt: '2026-10-21T11:00:00.000Z',
+    );
+    final cancelled = paid.copyWith(status: 'cancelled');
+    final refunded = paid.copyWith(status: 'refunded');
+    expect(cancelled.preferFulfillment(paid).status, 'cancelled');
+    expect(paid.preferFulfillment(cancelled).status, 'cancelled');
+    expect(refunded.preferFulfillment(paid).status, 'refunded');
+    expect(
+      paid.copyWith(status: 'processing').preferFulfillment(paid).status,
+      'processing',
+    );
+  });
+
+  test('opening Purchases does not resurrect a cancelled order from stale cloud paid',
+      () async {
+    final productId = await listOne();
+    await payments.checkout(
+      items: [shopLine(productId)],
+      shipping: _shipping,
+      paymentMethods: const ['wallet'],
+    );
+    final order = LocalHuberStore.listOrders().single;
+    await LocalHuberStore.updateOrderStatus(order.id, 'cancelled');
+    expect(LocalCommerceStore.availableCatalogQty(productId), 1);
+    expect(PaymentAccountStore.cachedForUser(_buyer)!.balanceGhs, 80);
+
+    final stalePaid = Map<String, dynamic>.from(order.toJson());
+    stalePaid['status'] = 'paid';
+    OrderRepository.debugIncomingOrders = [stalePaid];
+
+    final purchases = await OrderRepository(_offlineApi()).buyerOrders();
+    expect(purchases.single.status, 'cancelled');
+    expect(LocalHuberStore.getOrder(order.id)?.status, 'cancelled');
+    expect(LocalCommerceStore.availableCatalogQty(productId), 1);
+    expect(PaymentAccountStore.cachedForUser(_buyer)!.balanceGhs, 80);
+    expect(
+      AdminTreasuryStore.cachedPayouts().where((p) => p.isCancelled),
+      hasLength(1),
+    );
   });
 }
