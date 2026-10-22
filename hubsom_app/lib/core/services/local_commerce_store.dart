@@ -18,6 +18,7 @@ import 'live_viewer_identity.dart';
 import 'local_blob_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'product_tombstone.dart';
 import 'shop_video_cloud.dart';
 import 'shop_video_merge.dart';
 import 'storage_media.dart';
@@ -204,6 +205,7 @@ class LocalCommerceStore {
 
   static List<Product> _allProducts() => _readList(_productsKey)
       .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
+      .where((p) => !isDeletedProductId(p.id))
       .toList();
 
   static List<Product> listProducts({
@@ -318,6 +320,7 @@ class LocalCommerceStore {
   }
 
   static Future<void> deleteProduct(String productId) async {
+    await tombstoneProductId(productId);
     final products = _allProducts();
     products.removeWhere((p) => p.id == productId);
     await _writeList(_productsKey, products.map((p) => p.toJson()).toList());

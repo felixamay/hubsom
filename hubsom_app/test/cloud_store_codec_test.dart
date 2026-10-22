@@ -735,4 +735,32 @@ void main() {
       'ended',
     );
   });
+
+  test('hydrate does not restore a product this device already deleted', () {
+    const gone = 'prod-gone';
+    final deleted = {
+      'id': gone,
+      'name': 'Wax print',
+      'stock': 4,
+      'sellerId': 'seller-1',
+    };
+    final other = {
+      'id': 'prod-keep',
+      'name': 'Shea butter',
+      'stock': 2,
+      'sellerId': 'seller-1',
+    };
+    final kept = CloudStore.dropDeletedProductDocs(
+      incoming: [deleted, other],
+      deletedIds: {gone},
+    );
+    expect(kept.map((e) => e['id']), ['prod-keep']);
+    expect(
+      CloudStore.dropDeletedProductDocs(
+        incoming: [deleted, other],
+        deletedIds: const {},
+      ).map((e) => e['id']),
+      containsAll([gone, 'prod-keep']),
+    );
+  });
 }
