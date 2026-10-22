@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../config/firebase_options.dart';
 import 'firebase_bootstrap.dart';
 import 'local_store.dart';
+import 'product_tombstone.dart';
 import 'shop_video_merge.dart';
 
 /// Firestore-backed Hubsom data so accounts work on any browser/device.
@@ -653,6 +654,15 @@ class CloudStore {
           );
           return;
         }
+        if (entry.key == 'localProducts') {
+          await LocalStore.setString(
+            entry.key,
+            jsonEncode(
+              dropDeletedProductDocs(incoming: rows),
+            ),
+          );
+          return;
+        }
         await LocalStore.setString(entry.key, jsonEncode(rows));
       } catch (e) {
         if (kDebugMode) {
@@ -660,6 +670,21 @@ class CloudStore {
         }
       }
     }));
+  }
+
+  /// Drop SKUs this device already deleted so a lagged products snapshot
+  /// cannot put them back on Home after `deleteDoc` failed or raced.
+  @visibleForTesting
+  static List<Map<String, dynamic>> dropDeletedProductDocs({
+    required List<Map<String, dynamic>> incoming,
+    Set<String>? deletedIds,
+  }) {
+    final banned = deletedIds ?? readDeletedProductIds();
+    if (banned.isEmpty) return incoming;
+    return [
+      for (final row in incoming)
+        if (!banned.contains('${row['id'] ?? ''}'.trim())) row,
+    ];
   }
 
   /// Union local + cloud rows by `id` so a partial snapshot cannot drop

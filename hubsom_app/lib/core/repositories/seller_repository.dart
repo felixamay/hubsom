@@ -11,6 +11,7 @@ import '../services/ghana_places.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
 import '../services/product_demo_video_store.dart';
+import '../services/product_tombstone.dart';
 import 'auth_repository.dart';
 
 class SellerRepository {
@@ -450,6 +451,8 @@ class SellerRepository {
       final remote = <Product>[];
       for (final row in remoteRows) {
         try {
+          final id = '${row['id'] ?? ''}'.trim();
+          if (id.isEmpty || isDeletedProductId(id)) continue;
           if ('${row['sellerId']}' != seller.id) continue;
           remote.add(Product.fromJson(row));
         } catch (_) {}

@@ -11,6 +11,7 @@ import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
+import 'package:hubsom_app/core/services/product_tombstone.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,8 +80,41 @@ void main() {
 
     await repo.deleteProduct(id);
     expect(LocalCommerceStore.getProduct(id), isNull);
+    expect(isDeletedProductId(id), isTrue);
     final after = await repo.myProducts();
     expect(after.any((p) => p.id == id), isFalse);
+  });
+
+  test('cloud hydrate cannot put a deleted listing back on the catalog', () async {
+    final repo = SellerRepository(ApiClient());
+    final tiny = _dataUrl(_jpeg());
+    final created = await repo.createProduct({
+      'name': 'Clip mug',
+      'description': 'Take down',
+      'category': 'home',
+      'priceGhs': 25,
+      'stock': 2,
+      'images': [tiny, tiny, tiny],
+    });
+    final id = '${created['id']}';
+    final ghost = Map<String, dynamic>.from(created);
+
+    await repo.deleteProduct(id);
+    expect(LocalCommerceStore.getProduct(id), isNull);
+
+    // Same replace hydrateLocalCache used to do: Firestore still has the SKU
+    // because deleteDoc failed or the snapshot was taken first.
+    final restored = CloudStore.dropDeletedProductDocs(
+      incoming: [ghost],
+    );
+    await LocalStore.setString('localProducts', jsonEncode(restored));
+
+    expect(LocalCommerceStore.getProduct(id), isNull);
+    expect(LocalCommerceStore.availableCatalogQty(id), 0);
+    expect(
+      (await repo.myProducts()).any((p) => p.id == id),
+      isFalse,
+    );
   });
 
   test('create product requires quantity of at least 1', () async {

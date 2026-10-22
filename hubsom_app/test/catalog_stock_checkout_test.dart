@@ -433,6 +433,33 @@ void main() {
     expect(LocalHuberStore.listOrders(), isEmpty);
   });
 
+  test('stale catalog hydrate cannot sell a listing the seller already deleted',
+      () async {
+    final productId = await listOne(stock: 1);
+    final ghost = LocalCommerceStore.getProduct(productId)!.toJson();
+    await LocalCommerceStore.deleteProduct(productId);
+
+    final restored = CloudStore.dropDeletedProductDocs(incoming: [ghost]);
+    await LocalStore.setString('localProducts', jsonEncode(restored));
+
+    expect(LocalCommerceStore.getProduct(productId), isNull);
+    await expectLater(
+      payments.checkout(
+        items: [shopLine(productId)],
+        shipping: _shipping,
+        paymentMethods: const ['mtn-momo'],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('no longer for sale'),
+        ),
+      ),
+    );
+    expect(LocalHuberStore.listOrders(), isEmpty);
+  });
+
   test('deleting a live listing closes the lot and does not invent a winner',
       () async {
     final productId = await listOne(stock: 1);
