@@ -47,6 +47,12 @@ class LocalCommerceStore {
   @visibleForTesting
   static LiveAuction? debugIncomingAuction;
 
+  /// Other-device paid orders used by checkout / finalize. Tests inject this
+  /// so a laptop that never hydrated cannot sell a unit the phone already
+  /// wrote to Firestore.
+  @visibleForTesting
+  static List<Map<String, dynamic>>? debugIncomingOrders;
+
   /// Wipe local commerce (keeps auth vault / cart / session).
   static Future<void> clearDemoAndCommerce() async {
     await LocalStore.remove(_productsKey);
@@ -1167,6 +1173,8 @@ class LocalCommerceStore {
     String streamId, {
     bool autoRelist = true,
   }) async {
+    // Shop checkout on another phone may already have the last unit.
+    await adoptCloudOrders();
     final stream = getStream(streamId);
     if (stream == null || stream.auction == null) return null;
     var auction = stream.auction!;
@@ -1295,6 +1303,31 @@ class LocalCommerceStore {
       await _relistSameProductAuction(streamId, sold: auction);
     }
     return order;
+  }
+
+  /// Merge paid orders already on Firestore into this device's cache.
+  ///
+  /// `committedQty` only reads `localOrders`. A phone can check out the last
+  /// unit and write the sale to cloud while this laptop still has an empty
+  /// order list — checkout and finalize then wrote a second paid order for
+  /// stock the seller no longer has.
+  static Future<void> adoptCloudOrders() async {
+    List<Map<String, dynamic>>? rows = debugIncomingOrders;
+    if (rows == null && CloudStore.useNetwork) {
+      try {
+        rows = await CloudStore.listDocs(CloudStore.orders);
+      } catch (_) {
+        return;
+      }
+    }
+    if (rows == null || rows.isEmpty) return;
+    final merged = CloudStore.mergeOrderRows(
+      local: [
+        for (final order in LocalHuberStore.listOrders()) order.toJson(),
+      ],
+      incoming: rows,
+    );
+    await LocalStore.setString('localOrders', jsonEncode(merged));
   }
 
   /// Paid (or otherwise committed) units of [productId] across local orders.
