@@ -105,6 +105,9 @@ class PaymentService {
     // it (same rule as live Tap to sell). Without this gate a shop checkout
     // could write another paid order for a unit that was already gone, or
     // sell the unit sitting on a live bag while the auction is still open.
+    // Another phone's checkout is only in Firestore until this device
+    // hydrates — pull it before the local committed-qty check.
+    await LocalCommerceStore.adoptCloudOrders();
     _assertCatalogStock(items);
     // Take units from the live bag only once payment is happening. Adding to
     // cart used to decrement immediately, so closing the room without paying

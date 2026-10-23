@@ -55,6 +55,7 @@ void main() {
   setUp(() async {
     AppConfig.load();
     CloudStore.useNetwork = false;
+    LocalCommerceStore.debugIncomingOrders = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-catalog-stock');
     Hive.init(dir.path);
@@ -84,6 +85,30 @@ void main() {
         'name': 'Shea butter',
         'priceGhs': 40,
         'sellerId': 'seller-u-${_seller.id}',
+      };
+
+  Map<String, dynamic> paidCloudOrder(
+    String productId, {
+    String id = 'ord_other_phone',
+    int quantity = 1,
+  }) =>
+      {
+        'id': id,
+        'status': 'paid',
+        'subtotalGhs': 40.0 * quantity,
+        'lines': [
+          {
+            'productId': productId,
+            'sellerId': 'seller-u-${_seller.id}',
+            'name': 'Shea butter',
+            'quantity': quantity,
+            'unitPriceGhs': 40,
+            'lineTotalGhs': 40.0 * quantity,
+            'category': 'beauty',
+          },
+        ],
+        'paymentMethods': ['mtn-momo'],
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       };
 
   test('shop checkout cannot sell more units than catalog stock', () async {
@@ -119,6 +144,77 @@ void main() {
       LocalHuberStore.listOrders()
           .where((o) => o.lines.any((l) => l.productId == productId)),
       hasLength(1),
+    );
+  });
+
+  test('shop checkout cannot sell a unit another device already paid for',
+      () async {
+    final productId = await listOne();
+    expect(LocalHuberStore.listOrders(), isEmpty);
+    LocalCommerceStore.debugIncomingOrders = [paidCloudOrder(productId)];
+
+    await expectLater(
+      payments.checkout(
+        items: [shopLine(productId)],
+        shipping: _shipping,
+        paymentMethods: const ['mtn-momo'],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('sold out'),
+        ),
+      ),
+    );
+    expect(
+      LocalHuberStore.listOrders().map((o) => o.id),
+      ['ord_other_phone'],
+    );
+  });
+
+  test('finalizeAuction does not invent a winner after another device sold the unit',
+      () async {
+    final productId = await listOne(stock: 1);
+    final stream = await LocalCommerceStore.createStream(
+      user: _seller,
+      title: 'Night live',
+      cover: 'https://cdn.hubsom.test/live-thumb.jpg',
+      productIds: [productId],
+      productQuantities: {productId: 1},
+      pinnedProductId: productId,
+      auctionProductId: productId,
+      startingBidGhs: 20,
+      askingPriceGhs: 20,
+      auctionDurationSeconds: 30,
+    );
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 25,
+      bidder: _bidder,
+    );
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    LocalCommerceStore.debugIncomingOrders = [paidCloudOrder(productId)];
+
+    final order = await LocalCommerceStore.finalizeAuction(
+      stream.id,
+      autoRelist: false,
+    );
+    expect(order, isNull);
+    expect(
+      LocalHuberStore.listOrders().where((o) => o.id.startsWith('ord_auc_')),
+      isEmpty,
+    );
+    expect(
+      LocalCommerceStore.getStream(stream.id)!.auction!.status,
+      'closed',
     );
   });
 
