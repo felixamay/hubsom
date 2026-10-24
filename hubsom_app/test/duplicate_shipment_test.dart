@@ -9,6 +9,7 @@ import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/models/huber.dart';
 import 'package:hubsom_app/models/order.dart';
+import 'package:hubsom_app/models/shipment.dart';
 import 'package:hubsom_app/models/user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -70,6 +71,7 @@ void main() {
 
   setUp(() async {
     CloudStore.useNetwork = false;
+    LocalHuberStore.debugIncomingShipments = null;
     SharedPreferences.setMockInitialValues({});
     final dir = Directory.systemTemp.createTempSync('hubsom-dup-ship');
     Hive.init(dir.path);
@@ -216,6 +218,67 @@ void main() {
     );
     expect(LocalHuberStore.profileById(first.id)!.walletBalanceGhs, 25);
     expect(LocalHuberStore.profileById(second.id)!.walletBalanceGhs, 0);
+  });
+
+  test('cannot consolidate an order another device already put on a shipment',
+      () async {
+    await LocalHuberStore.saveOrder(_paidOrder('ord_phone'));
+    expect(
+      LocalHuberStore.listShipments()
+          .where((s) => s.orderIds.contains('ord_phone')),
+      isEmpty,
+    );
+
+    LocalHuberStore.debugIncomingShipments = [
+      Shipment(
+        id: 'shp_phone',
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+        orderIds: const ['ord_phone'],
+        items: const [
+          ShipmentItem(
+            orderId: 'ord_phone',
+            productId: 'p1',
+            name: 'Wax print',
+            quantity: 1,
+            lineTotalGhs: 80,
+          ),
+        ],
+        destination: const OrderShipping(
+          recipientName: 'Buyer',
+          phone: '0241111111',
+          line1: '12 Spintex Rd',
+          city: 'Accra',
+          region: 'Greater Accra',
+        ),
+        status: 'ready',
+        offeredFeeGhs: 20,
+        createdAt: DateTime.now().toUtc().toIso8601String(),
+        updatedAt: DateTime.now().toUtc().toIso8601String(),
+      ).toJson(),
+    ];
+
+    await expectLater(
+      LocalHuberStore.createShipmentFromOrders(
+        orderIds: const ['ord_phone'],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+        offeredFeeGhs: 20,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('already on a shipment'),
+        ),
+      ),
+    );
+    expect(
+      LocalHuberStore.listShipments()
+          .where((s) => s.occupiesOrders && s.orderIds.contains('ord_phone'))
+          .map((s) => s.id),
+      ['shp_phone'],
+    );
   });
 
   test('stale cloud hydrate cannot drop a just-consolidated shipment', () async {
