@@ -33,6 +33,12 @@ class LocalHuberStore {
   @visibleForTesting
   static final lastSyncedByCollection = <String, List<Map<String, dynamic>>>{};
 
+  /// Other-device shipments used by [createShipmentFromOrders]. Tests inject
+  /// this so a laptop that never hydrated cannot consolidate an order the
+  /// phone already put on a live lot.
+  @visibleForTesting
+  static List<Map<String, dynamic>>? debugIncomingShipments;
+
   static List<Map<String, dynamic>> _readList(String key) {
     final raw = LocalStore.getString(key);
     if (raw == null || raw.isEmpty) return [];
@@ -381,6 +387,31 @@ class LocalHuberStore {
     return false;
   }
 
+  /// Merge lots already on Firestore into this device's cache.
+  ///
+  /// `orderHasActiveShipment` only reads `localShipments`. A phone can
+  /// consolidate a paid order and write the lot to cloud while this laptop
+  /// still has an empty shipment list — Consolidate then created a second
+  /// lot, and two riders could be paid for one order.
+  static Future<void> adoptCloudShipments() async {
+    List<Map<String, dynamic>>? rows = debugIncomingShipments;
+    if (rows == null && CloudStore.useNetwork) {
+      try {
+        rows = await CloudStore.listDocs(CloudStore.shipments);
+      } catch (_) {
+        return;
+      }
+    }
+    if (rows == null || rows.isEmpty) return;
+    final merged = CloudStore.mergeShipmentRows(
+      local: [
+        for (final shipment in listShipments()) shipment.toJson(),
+      ],
+      incoming: rows,
+    );
+    await LocalStore.setString(_shipmentsKey, jsonEncode(merged));
+  }
+
   static void _assertOrdersFreeToConsolidate(Iterable<Order> orders) {
     for (final order in orders) {
       switch (order.status.toLowerCase()) {
@@ -404,6 +435,9 @@ class LocalHuberStore {
     double? offeredFeeGhs,
     OrderShipping? destination,
   }) async {
+    // Another phone's consolidate is only in Firestore until this device
+    // hydrates — pull it before the local occupancy check.
+    await adoptCloudShipments();
     final wanted = orderIds.toSet();
     final orders = listOrders().where((o) => wanted.contains(o.id)).toList();
     if (orders.isEmpty) {
