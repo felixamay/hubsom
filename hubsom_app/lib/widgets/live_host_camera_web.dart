@@ -1,15 +1,13 @@
-import 'dart:async';
 import 'dart:js_interop';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
-import '../core/services/live_webrtc_signal_store.dart';
 import '../core/theme/hubsom_colors.dart';
-import 'live_webrtc_helpers_web.dart';
+import 'owncast_rtmp_card.dart';
 
-/// Host camera preview + WebRTC publish so viewers can see the seller.
+/// Host camera preview. Viewers watch Owncast / nginx-rtmp HLS, not WebRTC.
 class LiveHostCamera extends StatefulWidget {
   const LiveHostCamera({
     super.key,
@@ -33,14 +31,11 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   web.MediaStream? _media;
   String? _error;
   bool _ready = false;
-  Timer? _publishPoll;
-  final Map<String, _HostPeer> _peers = {};
 
   @override
   void initState() {
     super.initState();
-    _viewType =
-        'hubsom-live-cam-${DateTime.now().microsecondsSinceEpoch}';
+    _viewType = 'hubsom-live-cam-${DateTime.now().microsecondsSinceEpoch}';
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final video = web.HTMLVideoElement()
         ..autoplay = true
@@ -73,22 +68,18 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         t.enabled = widget.micOn;
       }
     }
-    if (widget.streamId != oldWidget.streamId) {
-      _restartPublisher();
-    }
   }
 
   Future<void> _start() async {
     try {
-      final stream =
-          await web.window.navigator.mediaDevices
-              .getUserMedia(
-                web.MediaStreamConstraints(
-                  video: true.toJS,
-                  audio: true.toJS,
-                ),
-              )
-              .toDart;
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(
+            web.MediaStreamConstraints(
+              video: true.toJS,
+              audio: true.toJS,
+            ),
+          )
+          .toDart;
       _media = stream;
       if (!widget.micOn) {
         for (final t in stream.getAudioTracks().toDart) {
@@ -104,7 +95,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         _error = null;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _attach(stream));
-      _restartPublisher();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -113,169 +103,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         });
       }
     }
-  }
-
-  void _restartPublisher() {
-    _publishPoll?.cancel();
-    _publishPoll = null;
-    final streamId = widget.streamId;
-    final media = _media;
-    if (streamId == null ||
-        streamId.isEmpty ||
-        media == null ||
-        !widget.enabled) {
-      return;
-    }
-    _publishPoll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_hostTick(streamId, media));
-    });
-    unawaited(_hostTick(streamId, media));
-  }
-
-  Future<void> _hostTick(String streamId, web.MediaStream media) async {
-    if (!mounted) return;
-    try {
-      final signals = await LiveWebrtcSignalStore.listForStream(streamId);
-      final activeIds = <String>{};
-
-      for (final signal in signals) {
-        if (signal.state == 'closed') {
-          await _dropPeer(signal.viewerId);
-          continue;
-        }
-        activeIds.add(signal.viewerId);
-
-        var peer = _peers[signal.viewerId];
-        if (peer != null && signal.state == 'waiting') {
-          // Viewer rejoined — renegotiate from a fresh offer.
-          await _dropPeer(signal.viewerId);
-          peer = null;
-        }
-        if (peer == null) {
-          if ((signal.answerSdp ?? '').isNotEmpty &&
-              signal.state == 'answered') {
-            // Stale session from a previous host tab — ask viewer to rejoin.
-            await LiveWebrtcSignalStore.upsert(
-              LiveWebrtcSignal(
-                id: signal.id,
-                streamId: streamId,
-                viewerId: signal.viewerId,
-                state: 'waiting',
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-            continue;
-          }
-          peer = await _createPeer(streamId, signal.viewerId, media);
-          _peers[signal.viewerId] = peer;
-        }
-
-        if (!peer.answerApplied && (signal.answerSdp ?? '').isNotEmpty) {
-          await peer.pc
-              .setRemoteDescription(
-                web.RTCSessionDescriptionInit(
-                  type: signal.answerType ?? 'answer',
-                  sdp: signal.answerSdp ?? '',
-                ),
-              )
-              .toDart;
-          peer.answerApplied = true;
-        }
-
-        if (signal.viewerIce.length > peer.viewerIceApplied) {
-          await applyRemoteIce(
-            peer.pc,
-            signal.viewerIce,
-            appliedCount: peer.viewerIceApplied,
-          );
-          peer.viewerIceApplied = signal.viewerIce.length;
-        }
-
-        if (peer.iceDirty && peer.localIce.isNotEmpty) {
-          peer.iceDirty = false;
-          final latest = await LiveWebrtcSignalStore.get(
-            streamId,
-            signal.viewerId,
-          );
-          if (latest != null && latest.state != 'closed') {
-            await LiveWebrtcSignalStore.upsert(
-              latest.copyWith(
-                hostIce: List<String>.from(peer.localIce),
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-          }
-        }
-      }
-
-      final stale = _peers.keys
-          .where((id) => !activeIds.contains(id))
-          .toList(growable: false);
-      for (final id in stale) {
-        await _dropPeer(id);
-      }
-    } catch (_) {
-      // Host preview still works if signaling fails.
-    }
-  }
-
-  Future<_HostPeer> _createPeer(
-    String streamId,
-    String viewerId,
-    web.MediaStream media,
-  ) async {
-    final pc = web.RTCPeerConnection(liveRtcConfig());
-    final peer = _HostPeer(pc: pc);
-
-    for (final track in media.getTracks().toDart) {
-      pc.addTrack(track, media);
-    }
-
-    pc.onicecandidate = ((web.Event event) {
-      final iceEvent = event as web.RTCPeerConnectionIceEvent;
-      final c = iceEvent.candidate;
-      if (c == null) return;
-      final encoded = encodeIceCandidate(c);
-      if (encoded.isEmpty) return;
-      peer.localIce.add(encoded);
-      peer.iceDirty = true;
-    }).toJS;
-
-    final offer = await pc.createOffer().toDart;
-    if (offer == null) {
-      pc.close();
-      throw StateError('Could not create WebRTC offer');
-    }
-    await pc
-        .setLocalDescription(
-          web.RTCLocalSessionDescriptionInit(
-            type: offer.type,
-            sdp: offer.sdp,
-          ),
-        )
-        .toDart;
-
-    await LiveWebrtcSignalStore.upsert(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(streamId, viewerId),
-        streamId: streamId,
-        viewerId: viewerId,
-        state: 'offered',
-        offerSdp: offer.sdp,
-        offerType: offer.type,
-        hostIce: List<String>.from(peer.localIce),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
-    return peer;
-  }
-
-  Future<void> _dropPeer(String viewerId) async {
-    final peer = _peers.remove(viewerId);
-    if (peer == null) return;
-    try {
-      peer.pc.close();
-    } catch (_) {}
   }
 
   void _attach(web.MediaStream stream) {
@@ -294,15 +121,6 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
   }
 
   void _stop() {
-    _publishPoll?.cancel();
-    _publishPoll = null;
-    for (final id in _peers.keys.toList(growable: false)) {
-      unawaited(_dropPeer(id));
-    }
-    final streamId = widget.streamId;
-    if (streamId != null && streamId.isNotEmpty) {
-      unawaited(LiveWebrtcSignalStore.closeAllForStream(streamId));
-    }
     final stream = _media;
     if (stream != null) {
       _stopTracks(stream);
@@ -323,6 +141,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         hostName: widget.hostName,
         subtitle: 'Camera off',
         icon: Icons.videocam_off,
+        streamId: widget.streamId,
       );
     }
     if (_error != null) {
@@ -330,6 +149,7 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
         hostName: widget.hostName,
         subtitle: _error!,
         icon: Icons.videocam_off,
+        streamId: widget.streamId,
       );
     }
     if (!_ready) {
@@ -370,19 +190,16 @@ class _LiveHostCameraState extends State<LiveHostCamera> {
             ),
           ),
         ),
+        if (widget.streamId != null && widget.streamId!.isNotEmpty)
+          Positioned(
+            left: 12,
+            right: 12,
+            top: 12,
+            child: OwncastRtmpCard(streamId: widget.streamId!, compact: true),
+          ),
       ],
     );
   }
-}
-
-class _HostPeer {
-  _HostPeer({required this.pc});
-
-  final web.RTCPeerConnection pc;
-  final List<String> localIce = [];
-  bool iceDirty = false;
-  bool answerApplied = false;
-  int viewerIceApplied = 0;
 }
 
 class _PresenceFallback extends StatelessWidget {
@@ -390,56 +207,73 @@ class _PresenceFallback extends StatelessWidget {
     required this.hostName,
     required this.subtitle,
     required this.icon,
+    this.streamId,
   });
 
   final String hostName;
   final String subtitle;
   final IconData icon;
+  final String? streamId;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF0B1F17),
       alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          CircleAvatar(
-            radius: 42,
-            backgroundColor: HubsomColors.forest,
-            child: Text(
-              hostName.isNotEmpty ? hostName.substring(0, 1).toUpperCase() : 'H',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 36,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            hostName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 22,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
+          Column(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: Colors.white54, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
+              CircleAvatar(
+                radius: 42,
+                backgroundColor: HubsomColors.forest,
                 child: Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white54),
+                  hostName.isNotEmpty
+                      ? hostName.substring(0, 1).toUpperCase()
+                      : 'H',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                hostName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: Colors.white54, size: 18),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white54),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
+          if (streamId != null && streamId!.isNotEmpty)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 12,
+              child: OwncastRtmpCard(streamId: streamId!, compact: true),
+            ),
         ],
       ),
     );

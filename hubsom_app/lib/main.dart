@@ -22,6 +22,10 @@ Future<void> main() async {
   AppConfig.load();
   await Hive.initFlutter();
   await LocalStore.init();
+  AppConfig.owncastBaseUrlOverride = LocalStore.getString('owncastBaseUrl');
+  AppConfig.owncastRtmpUrlOverride = LocalStore.getString('owncastRtmpUrl');
+  AppConfig.owncastMediaTokenOverride =
+      LocalStore.getString('owncastMediaToken');
   await ProductDemoVideoStore.init();
   await LocalCommerceStore.migrateClearDemoOnce();
   await FirebaseBootstrap.init();

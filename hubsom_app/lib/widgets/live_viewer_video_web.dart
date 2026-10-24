@@ -5,11 +5,11 @@ import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
-import '../core/services/live_webrtc_signal_store.dart';
+import '../core/services/owncast_media.dart';
 import '../core/theme/hubsom_colors.dart';
-import 'live_webrtc_helpers_web.dart';
+import 'live_hls_helpers_web.dart';
 
-/// Viewer stage: pulls the host camera/mic over WebRTC (Firestore signaling).
+/// Viewer stage: Owncast / nginx-rtmp HLS (Safari native, Chrome via hls.js).
 class LiveViewerVideo extends StatefulWidget {
   const LiveViewerVideo({
     super.key,
@@ -30,16 +30,12 @@ class LiveViewerVideo extends StatefulWidget {
 
 class _LiveViewerVideoState extends State<LiveViewerVideo> {
   late final String _viewType;
-  web.RTCPeerConnection? _pc;
+  LiveHlsSession? _session;
   Timer? _poll;
   bool _ready = false;
   bool _connecting = true;
-  bool _needsUnmute = false;
+  bool _needsUnmute = true;
   String? _status;
-  int _hostIceApplied = 0;
-  String? _acceptedOfferSdp;
-  final List<String> _localIce = [];
-  bool _iceDirty = false;
 
   @override
   void initState() {
@@ -49,6 +45,7 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       final video = web.HTMLVideoElement()
         ..autoplay = true
+        ..muted = true
         ..setAttribute('playsinline', 'true')
         ..style.width = '100%'
         ..style.height = '100%'
@@ -57,101 +54,36 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
       video.id = _viewType;
       return video;
     });
-    unawaited(_bootstrap());
-    _poll = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_tick());
-    });
-  }
-
-  Future<void> _bootstrap() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await LiveWebrtcSignalStore.upsert(
-      LiveWebrtcSignal(
-        id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-        streamId: widget.streamId,
-        viewerId: widget.viewerId,
-        state: 'waiting',
-        updatedAt: now,
-      ),
-    );
-    if (mounted) {
-      setState(() {
-        _connecting = true;
-        _status = 'Connecting to seller…';
+    _status = OwncastMedia.isConfigured
+        ? 'Waiting for seller stream…'
+        : 'Owncast VPS not connected';
+    if (OwncastMedia.isConfigured) {
+      _poll = Timer.periodic(const Duration(seconds: 2), (_) {
+        unawaited(_tick());
       });
+      unawaited(_tick());
+    } else {
+      _connecting = false;
     }
-    await _tick();
   }
 
   Future<void> _tick() async {
+    if (!mounted || _ready || !OwncastMedia.isConfigured) return;
+    final ready = await OwncastMedia.isHlsReady(widget.streamId);
     if (!mounted) return;
-    try {
-      final signal = await LiveWebrtcSignalStore.get(
-        widget.streamId,
-        widget.viewerId,
-      );
-      if (signal == null || signal.state == 'closed') {
-        if (signal?.state == 'closed') {
-          await _resetPeer(rejoin: true);
-        }
-        return;
-      }
-
-      if ((signal.offerSdp ?? '').isNotEmpty &&
-          signal.offerSdp != _acceptedOfferSdp) {
-        await _acceptOffer(signal);
-      }
-
-      final pc = _pc;
-      if (pc != null && signal.hostIce.length > _hostIceApplied) {
-        await applyRemoteIce(
-          pc,
-          signal.hostIce,
-          appliedCount: _hostIceApplied,
-        );
-        _hostIceApplied = signal.hostIce.length;
-      }
-
-      if (_iceDirty && _localIce.isNotEmpty) {
-        _iceDirty = false;
-        final latest = await LiveWebrtcSignalStore.get(
-          widget.streamId,
-          widget.viewerId,
-        );
-        if (latest != null && latest.state != 'closed') {
-          await LiveWebrtcSignalStore.upsert(
-            latest.copyWith(
-              viewerIce: List<String>.from(_localIce),
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-        }
-      }
-    } catch (_) {
-      // Keep polling; live room still works without video.
+    if (!ready) {
+      setState(() {
+        _connecting = true;
+        _status = 'Waiting for seller stream…';
+      });
+      return;
     }
+    await _attachHls();
   }
 
-  Future<void> _acceptOffer(LiveWebrtcSignal signal) async {
-    await _disposePc();
-    final pc = web.RTCPeerConnection(liveRtcConfig());
-    _pc = pc;
-    _hostIceApplied = 0;
-    _localIce.clear();
-    _acceptedOfferSdp = null;
-
-    pc.ontrack = ((web.Event event) {
-      final te = event as web.RTCTrackEvent;
-      final streams = te.streams.toDart;
-      web.MediaStream? remote;
-      if (streams.isNotEmpty) {
-        remote = streams.first;
-      } else {
-        final stream = web.MediaStream();
-        stream.addTrack(te.track);
-        remote = stream;
-      }
-      _attach(remote);
+  Future<void> _attachHls() async {
+    final el = web.document.getElementById(_viewType);
+    if (el == null || !el.isA<web.HTMLVideoElement>()) {
       if (mounted) {
         setState(() {
           _ready = true;
@@ -159,68 +91,30 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
           _status = null;
         });
       }
-    }).toJS;
-
-    pc.onicecandidate = ((web.Event event) {
-      final iceEvent = event as web.RTCPeerConnectionIceEvent;
-      final c = iceEvent.candidate;
-      if (c == null) return;
-      final encoded = encodeIceCandidate(c);
-      if (encoded.isEmpty) return;
-      _localIce.add(encoded);
-      _iceDirty = true;
-    }).toJS;
-
-    final offer = web.RTCSessionDescriptionInit(
-      type: signal.offerType ?? 'offer',
-      sdp: signal.offerSdp ?? '',
-    );
-    await pc.setRemoteDescription(offer).toDart;
-    final answer = await pc.createAnswer().toDart;
-    if (answer == null) return;
-    await pc
-        .setLocalDescription(
-          web.RTCLocalSessionDescriptionInit(
-            type: answer.type,
-            sdp: answer.sdp,
-          ),
-        )
-        .toDart;
-
-    _acceptedOfferSdp = signal.offerSdp;
-    await LiveWebrtcSignalStore.upsert(
-      signal.copyWith(
-        state: 'answered',
-        answerSdp: answer.sdp,
-        answerType: answer.type,
-        viewerIce: List<String>.from(_localIce),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
-    if (mounted) {
-      setState(() {
-        _connecting = true;
-        _status = 'Almost there…';
-      });
+      return;
     }
-  }
-
-  void _attach(web.MediaStream stream) {
-    final el = web.document.getElementById(_viewType);
-    if (el != null && el.isA<web.HTMLVideoElement>()) {
-      final video = el as web.HTMLVideoElement;
-      video.srcObject = stream;
-      video.muted = false;
-      video.play().toDart.then(
-        (_) {
-          if (mounted) setState(() => _needsUnmute = false);
-        },
-        onError: (_) {
-          video.muted = true;
-          video.play().toDart;
-          if (mounted) setState(() => _needsUnmute = true);
-        },
+    final video = el as web.HTMLVideoElement;
+    _session?.dispose();
+    try {
+      _session = await attachLiveHls(
+        video: video,
+        url: OwncastMedia.hlsUrl(widget.streamId),
+        muted: true,
       );
+      if (!mounted) return;
+      setState(() {
+        _ready = true;
+        _connecting = false;
+        _status = null;
+        _needsUnmute = true;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _connecting = true;
+          _status = 'Reconnecting…';
+        });
+      }
     }
   }
 
@@ -234,49 +128,10 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     if (mounted) setState(() => _needsUnmute = false);
   }
 
-  Future<void> _disposePc() async {
-    final pc = _pc;
-    _pc = null;
-    if (pc != null) {
-      try {
-        pc.close();
-      } catch (_) {}
-    }
-  }
-
-  Future<void> _resetPeer({required bool rejoin}) async {
-    await _disposePc();
-    _acceptedOfferSdp = null;
-    _hostIceApplied = 0;
-    _localIce.clear();
-    _iceDirty = false;
-    if (mounted) {
-      setState(() {
-        _ready = false;
-        _connecting = true;
-        _status = 'Reconnecting…';
-      });
-    }
-    if (rejoin) {
-      await LiveWebrtcSignalStore.upsert(
-        LiveWebrtcSignal(
-          id: LiveWebrtcSignal.docId(widget.streamId, widget.viewerId),
-          streamId: widget.streamId,
-          viewerId: widget.viewerId,
-          state: 'waiting',
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
-  }
-
   @override
   void dispose() {
     _poll?.cancel();
-    unawaited(_disposePc());
-    unawaited(
-      LiveWebrtcSignalStore.close(widget.streamId, widget.viewerId),
-    );
+    _session?.dispose();
     super.dispose();
   }
 
@@ -285,19 +140,20 @@ class _LiveViewerVideoState extends State<LiveViewerVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (_ready)
-          HtmlElementView(
-            viewType: _viewType,
-            onPlatformViewCreated: (_) {
-              // Stream may already be attached via ontrack.
-            },
-          )
-        else
+        HtmlElementView(
+          viewType: _viewType,
+          onPlatformViewCreated: (_) {
+            if (_ready) unawaited(_attachHls());
+          },
+        ),
+        if (!_ready)
           _PresenceFallback(
             hostName: widget.hostName,
             pulse: widget.pulse,
             subtitle: _status ??
-                (_connecting ? 'Connecting to seller…' : 'Waiting for seller video'),
+                (_connecting
+                    ? 'Connecting to seller…'
+                    : 'Waiting for seller video'),
           ),
         if (_ready)
           Positioned(
@@ -416,17 +272,20 @@ class _PresenceFallback extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 subtitle,
+                textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70),
               ),
-              const SizedBox(height: 14),
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white70,
+              if (OwncastMedia.isConfigured) ...[
+                const SizedBox(height: 14),
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white70,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         );

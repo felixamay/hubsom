@@ -9,6 +9,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
+import '../services/owncast_media.dart';
 import '../services/product_demo_video_store.dart';
 import 'auth_repository.dart';
 
@@ -171,6 +172,15 @@ class SellerRepository {
         bytes: demoVideoBytes,
         mimeType: demoVideoMimeType ?? 'video/mp4',
       );
+      final remote = await OwncastMedia.uploadVideo(
+        videoId: product.id,
+        bytes: demoVideoBytes,
+        mimeType: demoVideoMimeType ?? 'video/mp4',
+      );
+      if (remote != null && remote.isNotEmpty) {
+        product = product.copyWith(demoVideoUrl: remote);
+        await LocalCommerceStore.updateProduct(product);
+      }
     }
 
     if (user.sellerId == null ||
@@ -267,7 +277,7 @@ class SellerRepository {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-|-$'), '');
 
-    final updated = existing.copyWith(
+    var updated = existing.copyWith(
       name: name,
       description: body['description'] as String? ?? existing.description,
       category: body['category'] as String? ?? existing.category,
@@ -298,6 +308,15 @@ class SellerRepository {
         bytes: demoVideoBytes,
         mimeType: demoVideoMimeType ?? 'video/mp4',
       );
+      final remote = await OwncastMedia.uploadVideo(
+        videoId: updated.id,
+        bytes: demoVideoBytes,
+        mimeType: demoVideoMimeType ?? 'video/mp4',
+      );
+      if (remote != null && remote.isNotEmpty) {
+        updated = updated.copyWith(demoVideoUrl: remote);
+        await LocalCommerceStore.updateProduct(updated);
+      }
     } else if (clearDemoVideo) {
       await ProductDemoVideoStore.remove(updated.id);
     }

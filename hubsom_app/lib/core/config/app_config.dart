@@ -7,6 +7,41 @@ class AppConfig {
   static late String openRouteServiceKey;
   static late bool firebaseEnabled;
 
+  /// Public HTTPS origin of the Owncast / Hubsom media VPS.
+  /// Empty until the VPS is purchased and the URL is wired in.
+  static late String _owncastBaseUrlEnv;
+  static late String _owncastRtmpUrlEnv;
+  static late String _owncastMediaTokenEnv;
+
+  /// Optional runtime overrides (Settings / LocalStore) so the VPS URL can
+  /// be pasted without a rebuild.
+  static String? owncastBaseUrlOverride;
+  static String? owncastRtmpUrlOverride;
+  static String? owncastMediaTokenOverride;
+
+  static String get owncastBaseUrl {
+    final override = owncastBaseUrlOverride?.trim() ?? '';
+    if (override.isNotEmpty) return _trimSlash(override);
+    return _trimSlash(_owncastBaseUrlEnv);
+  }
+
+  static String get owncastRtmpUrl {
+    final override = owncastRtmpUrlOverride?.trim() ?? '';
+    if (override.isNotEmpty) return override;
+    return _owncastRtmpUrlEnv.trim();
+  }
+
+  static String get owncastMediaToken {
+    final override = owncastMediaTokenOverride?.trim() ?? '';
+    if (override.isNotEmpty) return override;
+    return _owncastMediaTokenEnv.trim();
+  }
+
+  static bool get owncastConfigured => owncastBaseUrl.isNotEmpty;
+
+  static String _trimSlash(String url) =>
+      url.trim().replaceAll(RegExp(r'/$'), '');
+
   static void load() {
     apiBaseUrl = const String.fromEnvironment(
       'HUBSOM_API_BASE_URL',
@@ -22,5 +57,17 @@ class AppConfig {
         const String.fromEnvironment('OPENROUTESERVICE_KEY', defaultValue: '');
     firebaseEnabled =
         const bool.fromEnvironment('FIREBASE_ENABLED', defaultValue: true);
+    _owncastBaseUrlEnv = const String.fromEnvironment(
+      'HUBSOM_OWNCAST_URL',
+      defaultValue: '',
+    );
+    _owncastRtmpUrlEnv = const String.fromEnvironment(
+      'HUBSOM_OWNCAST_RTMP_URL',
+      defaultValue: '',
+    );
+    _owncastMediaTokenEnv = const String.fromEnvironment(
+      'HUBSOM_OWNCAST_MEDIA_TOKEN',
+      defaultValue: '',
+    );
   }
 }

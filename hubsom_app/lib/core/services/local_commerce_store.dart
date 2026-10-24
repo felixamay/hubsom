@@ -13,6 +13,7 @@ import '../../models/user.dart';
 import 'cloud_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
+import 'owncast_media.dart';
 
 /// Device-local products / sellers / live shows when Firebase Hosting has no API.
 class LocalCommerceStore {
@@ -394,6 +395,8 @@ class LocalCommerceStore {
           if (getProduct(id) != null) getProduct(id)!.category,
       }.toList(),
       isMultiHost: multiHost,
+      recordingUrl:
+          OwncastMedia.isConfigured ? OwncastMedia.hlsUrl(id) : null,
     );
 
     final streams = listStreams();
@@ -1038,6 +1041,7 @@ class LocalCommerceStore {
     required List<String> productIds,
     String caption = '',
     String mimeType = 'video/mp4',
+    String? videoUrl,
   }) async {
     if (productIds.isEmpty) {
       throw StateError('Add at least one product to this video');
@@ -1049,6 +1053,7 @@ class LocalCommerceStore {
       caption: caption.trim(),
       productIds: productIds,
       mimeType: mimeType,
+      videoUrl: videoUrl,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     final rows = _readList(_shopVideosKey);
@@ -1058,6 +1063,25 @@ class LocalCommerceStore {
       await CloudStore.upsertDocs(CloudStore.shopVideos, [video.toJson()]);
     } catch (_) {}
     return video;
+  }
+
+  static Future<ShopVideo?> setShopVideoUrl(String id, String url) async {
+    final rows = _readList(_shopVideosKey);
+    ShopVideo? updated;
+    for (var i = 0; i < rows.length; i++) {
+      final map = Map<String, dynamic>.from(rows[i] as Map);
+      if ('${map['id']}' != id) continue;
+      map['videoUrl'] = url;
+      rows[i] = map;
+      updated = ShopVideo.fromJson(map);
+      break;
+    }
+    if (updated == null) return null;
+    await _writeList(_shopVideosKey, rows);
+    try {
+      await CloudStore.upsertDocs(CloudStore.shopVideos, [updated.toJson()]);
+    } catch (_) {}
+    return updated;
   }
 
   // --- helpers ---

@@ -15,6 +15,7 @@ import '../services/api_response.dart';
 import '../services/cloud_store.dart';
 import '../services/local_commerce_store.dart';
 import '../services/local_store.dart';
+import '../services/owncast_media.dart';
 import '../services/product_demo_video_store.dart';
 
 class CatalogRepository {
@@ -304,6 +305,15 @@ class CatalogRepository {
       bytes: bytes,
       mimeType: mimeType,
     );
+    final remote = await OwncastMedia.uploadVideo(
+      videoId: video.id,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    if (remote != null && remote.isNotEmpty) {
+      return await LocalCommerceStore.setShopVideoUrl(video.id, remote) ??
+          video.copyWith(videoUrl: remote);
+    }
     return video;
   }
 
