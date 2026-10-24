@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node -e \"require('fs').cpSync('node_modules/agora-extension-ai-denoiser/external','public/agora-denoiser',{recursive:true})\""
   },
   "dependencies": {
+    "agora-extension-ai-denoiser": "2.0.2",
     "agora-rtc-sdk-ng": "^4.24.6",
     "agora-token": "^2.0.5",
     "bcryptjs": "^3.0.3",
