@@ -94,5 +94,23 @@ void main() {
     expect(video.productIds, contains(product.id));
     expect(ProductDemoVideoStore.hasVideo(video.id), isTrue);
     expect(await catalog.listShopVideos(), isNotEmpty);
+
+    expect(await catalog.toggleVideoLike(video.id), isTrue);
+    expect(catalog.isVideoLiked(video.id), isTrue);
+    expect(catalog.videoLikeCount(video.id), 1);
+    expect(await catalog.toggleVideoLike(video.id), isFalse);
+
+    expect(await catalog.toggleVideoSave(video.id), isTrue);
+    expect(catalog.isVideoSaved(video.id), isTrue);
+    expect(catalog.videoSaveCount(video.id), 1);
+
+    final comment = await catalog.addVideoComment(video.id, 'Nice clip');
+    expect(comment.text, 'Nice clip');
+    expect(await catalog.listVideoComments(video.id), isNotEmpty);
+    expect(catalog.videoCommentCount(video.id), 1);
+
+    final shares = await catalog.recordVideoShare(video.id);
+    expect(shares, 1);
+    expect((await catalog.getShopVideo(video.id))!.shareCount, 1);
   });
 }

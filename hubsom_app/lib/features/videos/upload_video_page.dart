@@ -22,6 +22,7 @@ class UploadVideoPage extends ConsumerStatefulWidget {
 
 class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   final _caption = TextEditingController();
+  final _sound = TextEditingController();
   Uint8List? _bytes;
   String _mime = 'video/mp4';
   List<Product> _catalog = const [];
@@ -40,6 +41,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
   @override
   void dispose() {
     _caption.dispose();
+    _sound.dispose();
     super.dispose();
   }
 
@@ -99,6 +101,7 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
             mimeType: _mime,
             productIds: _selected.toList(),
             caption: _caption.text.trim(),
+            soundTitle: _sound.text.trim(),
           );
       if (!mounted) return;
       context.pushReplacement('/videos/${video.id}');
@@ -157,6 +160,15 @@ class _UploadVideoPageState extends ConsumerState<UploadVideoPage> {
                     hintText: 'What are you showing?',
                   ),
                   maxLines: 3,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _sound,
+                  decoration: const InputDecoration(
+                    labelText: 'Sound / music',
+                    hintText: 'Original sound - your name',
+                    prefixIcon: Icon(Icons.music_note),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Text(

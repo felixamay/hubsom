@@ -104,6 +104,8 @@ class HubsomUser extends Equatable {
     this.followingSellerIds = const [],
     this.savedProductIds = const [],
     this.likedProductIds = const [],
+    this.savedVideoIds = const [],
+    this.likedVideoIds = const [],
     this.addresses = const [],
     this.emailVerified = false,
     this.walletBalanceGhs = 0,
@@ -123,6 +125,8 @@ class HubsomUser extends Equatable {
   final List<String> followingSellerIds;
   final List<String> savedProductIds;
   final List<String> likedProductIds;
+  final List<String> savedVideoIds;
+  final List<String> likedVideoIds;
   final List<UserAddress> addresses;
   final bool emailVerified;
   final double walletBalanceGhs;
@@ -142,6 +146,8 @@ class HubsomUser extends Equatable {
         followingSellerIds: (json['followingSellerIds'] as List?)?.cast<String>() ?? const [],
         savedProductIds: (json['savedProductIds'] as List?)?.cast<String>() ?? const [],
         likedProductIds: (json['likedProductIds'] as List?)?.cast<String>() ?? const [],
+        savedVideoIds: (json['savedVideoIds'] as List?)?.cast<String>() ?? const [],
+        likedVideoIds: (json['likedVideoIds'] as List?)?.cast<String>() ?? const [],
         addresses: (json['addresses'] as List?)
                 ?.map((e) => UserAddress.fromJson(Map<String, dynamic>.from(e as Map)))
                 .toList() ??
@@ -165,6 +171,8 @@ class HubsomUser extends Equatable {
         'followingSellerIds': followingSellerIds,
         'savedProductIds': savedProductIds,
         'likedProductIds': likedProductIds,
+        'savedVideoIds': savedVideoIds,
+        'likedVideoIds': likedVideoIds,
         'addresses': addresses.map((a) => a.toJson()).toList(),
         'emailVerified': emailVerified,
         'walletBalanceGhs': walletBalanceGhs,
@@ -183,6 +191,8 @@ class HubsomUser extends Equatable {
     List<String>? followingSellerIds,
     List<String>? savedProductIds,
     List<String>? likedProductIds,
+    List<String>? savedVideoIds,
+    List<String>? likedVideoIds,
     List<UserAddress>? addresses,
     bool? emailVerified,
     double? walletBalanceGhs,
@@ -202,6 +212,8 @@ class HubsomUser extends Equatable {
         followingSellerIds: followingSellerIds ?? this.followingSellerIds,
         savedProductIds: savedProductIds ?? this.savedProductIds,
         likedProductIds: likedProductIds ?? this.likedProductIds,
+        savedVideoIds: savedVideoIds ?? this.savedVideoIds,
+        likedVideoIds: likedVideoIds ?? this.likedVideoIds,
         addresses: addresses ?? this.addresses,
         emailVerified: emailVerified ?? this.emailVerified,
         walletBalanceGhs: walletBalanceGhs ?? this.walletBalanceGhs,
@@ -222,6 +234,8 @@ class HubsomUser extends Equatable {
         huberId,
         savedProductIds,
         likedProductIds,
+        savedVideoIds,
+        likedVideoIds,
         walletBalanceGhs,
       ];
 }

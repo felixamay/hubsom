@@ -37,6 +37,7 @@ import '../notifications/notifications_page.dart';
 import '../products/product_comments_page.dart';
 import '../products/product_detail_page.dart';
 import '../videos/upload_video_page.dart';
+import '../videos/video_comments_page.dart';
 import '../videos/video_feed_page.dart';
 import '../sell/sell_page.dart';
 import '../seller/seller_analytics_page.dart';
@@ -201,6 +202,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: UploadVideoPage(preselectedProductIds: ids),
           );
         },
+      ),
+      GoRoute(
+        path: '/videos/:id/comments',
+        builder: (_, state) => VideoCommentsPage(
+          videoId: state.pathParameters['id']!,
+        ),
       ),
       GoRoute(
         path: '/videos/:id',
