@@ -1,0 +1,181 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import {
+  CreditCard,
+  Heart,
+  LogOut,
+  MapPin,
+  MessageCircle,
+  Package,
+  Settings,
+  ShoppingBag,
+  Star,
+  Store,
+  UserRound,
+  Users,
+} from "lucide-react";
+import { signOut } from "@/auth";
+import { AccountAvatarCard } from "@/components/account/AccountAvatarCard";
+import { requireUser } from "@/lib/auth/session";
+import { listOrdersByUser } from "@/lib/data/orders";
+import { getProduct } from "@/lib/data/products";
+import { getUserById } from "@/lib/data/users";
+import { formatGhs } from "@/lib/currency";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Account",
+};
+
+export default async function AccountPage() {
+  const session = await requireUser("/account");
+
+  const user = await getUserById(session.user.id);
+  const orders = await listOrdersByUser(session.user.id);
+
+  const rows = [
+    { href: "/messages", label: "Messages", icon: MessageCircle },
+    { href: "/account/profile", label: "Edit profile", icon: UserRound },
+    { href: "/account/following", label: "Following & followers", icon: Users },
+    { href: "/account/saved", label: "Saved products", icon: Heart },
+    { href: "/cart", label: "Orders & cart", icon: ShoppingBag },
+    { href: "/account/addresses", label: "Addresses", icon: MapPin },
+    { href: "/seller", label: "Seller hub", icon: Store },
+    { href: "/flash-sales", label: "Flash sales", icon: Star },
+    { href: "/account/profile", label: "Payments (MoMo / Card)", icon: CreditCard },
+    { href: "/account/profile", label: "Settings", icon: Settings },
+  ];
+
+  return (
+    <div className="mx-auto max-w-lg px-4 pb-8 pt-5">
+      <h1 className="font-display text-3xl font-extrabold text-hubsom-forest">
+        Account
+      </h1>
+
+      <AccountAvatarCard
+        name={user?.name ?? session.user.name ?? "Hubsom user"}
+        email={user?.email ?? session.user.email ?? ""}
+        image={user?.image}
+        meta={[
+          [user?.city, user?.region].filter(Boolean).join(" · ") ||
+            "Complete your profile",
+          user?.role && user.role !== "buyer" ? user.role : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      />
+
+      <div className="mt-5 overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/80">
+        {rows.map((row, i) => {
+          const Icon = row.icon;
+          return (
+            <Link
+              key={`${row.label}-${i}`}
+              href={row.href}
+              className="flex items-center gap-3 border-b border-hubsom-forest/8 px-4 py-3.5 last:border-b-0 active:bg-hubsom-mint/50"
+            >
+              <Icon className="h-5 w-5 text-hubsom-forest" />
+              <span className="text-sm font-semibold text-hubsom-ink">
+                {row.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      <form
+        action={async () => {
+          "use server";
+          await signOut({ redirectTo: "/auth/sign-in" });
+        }}
+        className="mt-4"
+      >
+        <button
+          type="submit"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-hubsom-forest/10 bg-white/80 px-4 py-3 text-sm font-semibold text-hubsom-live"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </form>
+
+      <div className="mt-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Package className="h-4 w-4 text-hubsom-forest" />
+          <h2 className="font-display text-lg font-bold text-hubsom-ink">
+            Recent orders
+          </h2>
+        </div>
+        {!orders.length ? (
+          <p className="rounded-2xl border border-dashed border-hubsom-forest/20 bg-white/50 px-4 py-8 text-center text-sm text-hubsom-ink/60">
+            No orders yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {await Promise.all(
+              orders.slice(0, 8).map(async (order) => {
+                const reviewable =
+                  order.status !== "cancelled"
+                    ? (
+                        await Promise.all(
+                          order.lines.map(async (line) => {
+                            const product = await getProduct(line.productId);
+                            return product
+                              ? { id: product.id, slug: product.slug, name: product.name }
+                              : null;
+                          }),
+                        )
+                      ).filter(
+                        (p): p is { id: string; slug: string; name: string } =>
+                          Boolean(p),
+                      )
+                    : [];
+
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded-2xl border border-hubsom-forest/10 bg-white/80 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-hubsom-ink">
+                        {order.id}
+                      </p>
+                      <p className="text-sm font-bold text-hubsom-forest">
+                        {formatGhs(order.subtotalGhs)}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-xs text-hubsom-ink/55">
+                      {order.status.replace("_", " ")} · {order.lines.length}{" "}
+                      items
+                    </p>
+                    {order.shipping ? (
+                      <p className="mt-1 truncate text-xs text-hubsom-ink/50">
+                        Ship to {order.shipping.recipientName} ·{" "}
+                        {order.shipping.city}, {order.shipping.region}
+                      </p>
+                    ) : null}
+                    {reviewable.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {reviewable.slice(0, 3).map((product) => (
+                          <Link
+                            key={`${order.id}-${product.id}`}
+                            href={`/products/${product.slug}`}
+                            className="inline-flex items-center gap-1 rounded-lg bg-hubsom-mist px-2 py-1 text-[11px] font-semibold text-hubsom-forest"
+                          >
+                            <Star className="h-3 w-3 text-hubsom-gold" />
+                            Review {product.name.split(" ").slice(0, 2).join(" ")}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }),
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
