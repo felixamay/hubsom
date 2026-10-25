@@ -9,6 +9,7 @@ import '../../models/user.dart';
 import '../config/app_config.dart';
 import 'api_client.dart';
 import 'api_response.dart';
+import 'local_commerce_store.dart';
 import 'local_huber_store.dart';
 import 'local_store.dart';
 
@@ -57,9 +58,10 @@ class PaymentService {
     final lines = items.map((e) {
       final qty = (e['quantity'] as num?)?.toInt() ?? 1;
       final price = (e['priceGhs'] as num?)?.toDouble() ?? 0;
+      final productId = '${e['productId'] ?? ''}';
       return OrderLine(
-        productId: '${e['productId'] ?? ''}',
-        sellerId: e['sellerId'] as String?,
+        productId: productId,
+        sellerId: _sellerIdForLine(e, productId),
         name: '${e['name'] ?? 'Item'}',
         image: e['image'] as String?,
         quantity: qty,
@@ -86,6 +88,15 @@ class PaymentService {
     );
     await LocalHuberStore.saveOrder(order);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  String? _sellerIdForLine(Map<String, dynamic> item, String productId) {
+    final fromCart = '${item['sellerId'] ?? ''}'.trim();
+    if (fromCart.isNotEmpty) return fromCart;
+    if (productId.isEmpty) return null;
+    final fromCatalog = LocalCommerceStore.getProduct(productId)?.sellerId;
+    if (fromCatalog != null && fromCatalog.isNotEmpty) return fromCatalog;
+    return null;
   }
 
   HubsomUser? _sessionUser() {

@@ -6,6 +6,7 @@ class CartItem extends Equatable {
     required this.quantity,
     required this.source,
     this.streamId,
+    this.sellerId,
     required this.name,
     required this.priceGhs,
     this.image,
@@ -16,6 +17,7 @@ class CartItem extends Equatable {
   final int quantity;
   final String source; // buy-now | live | auction | flash-sale | bundle
   final String? streamId;
+  final String? sellerId;
   final String name;
   final double priceGhs;
   final String? image;
@@ -23,11 +25,12 @@ class CartItem extends Equatable {
 
   double get lineTotal => priceGhs * quantity;
 
-  CartItem copyWith({int? quantity}) => CartItem(
+  CartItem copyWith({int? quantity, String? sellerId}) => CartItem(
         productId: productId,
         quantity: quantity ?? this.quantity,
         source: source,
         streamId: streamId,
+        sellerId: sellerId ?? this.sellerId,
         name: name,
         priceGhs: priceGhs,
         image: image,
@@ -39,6 +42,7 @@ class CartItem extends Equatable {
         quantity: (json['quantity'] as num?)?.toInt() ?? 1,
         source: json['source'] as String? ?? 'buy-now',
         streamId: json['streamId'] as String?,
+        sellerId: json['sellerId'] as String?,
         name: json['name'] as String? ?? '',
         priceGhs: (json['priceGhs'] as num?)?.toDouble() ?? 0,
         image: json['image'] as String?,
@@ -50,6 +54,7 @@ class CartItem extends Equatable {
         'quantity': quantity,
         'source': source,
         if (streamId != null) 'streamId': streamId,
+        if (sellerId != null) 'sellerId': sellerId,
         'name': name,
         'priceGhs': priceGhs,
         if (image != null) 'image': image,

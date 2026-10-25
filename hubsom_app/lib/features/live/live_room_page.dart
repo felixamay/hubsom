@@ -505,6 +505,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
             quantity: 1,
             source: 'live',
             streamId: stream!.id,
+            sellerId: product.sellerId,
             name: product.name,
             priceGhs: product.effectivePrice,
             image: product.images.isNotEmpty ? product.images.first : null,

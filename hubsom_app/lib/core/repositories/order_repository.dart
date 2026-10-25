@@ -6,6 +6,7 @@ import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
 
@@ -63,7 +64,7 @@ class OrderRepository {
           final o = Order.fromJson(row);
           if (sellerId != null &&
               sellerId.isNotEmpty &&
-              !o.lines.any((l) => l.sellerId == sellerId)) {
+              !_orderBelongsToSeller(o, sellerId)) {
             continue;
           }
           byId[o.id] = o;
@@ -74,9 +75,7 @@ class OrderRepository {
 
     var orders = byId.values.toList();
     if (sellerId != null && sellerId.isNotEmpty) {
-      orders = orders
-          .where((o) => o.lines.any((l) => l.sellerId == sellerId))
-          .toList();
+      orders = orders.where((o) => _orderBelongsToSeller(o, sellerId)).toList();
     }
     orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
@@ -164,6 +163,19 @@ class OrderRepository {
         updatedAt: DateTime.now().toUtc().toIso8601String(),
       ),
     );
+  }
+
+  bool _orderBelongsToSeller(Order order, String sellerId) {
+    return order.lines.any((line) => _lineBelongsToSeller(line, sellerId));
+  }
+
+  bool _lineBelongsToSeller(OrderLine line, String sellerId) {
+    final stamped = line.sellerId;
+    if (stamped != null && stamped.isNotEmpty) {
+      return stamped == sellerId;
+    }
+    final product = LocalCommerceStore.getProduct(line.productId);
+    return product?.sellerId == sellerId;
   }
 
   /// Dispatch Hubers (rider offers) for a shipment.
