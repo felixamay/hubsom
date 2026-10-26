@@ -6,6 +6,7 @@ import '../../models/user.dart';
 import '../services/api_client.dart';
 import '../services/api_response.dart';
 import '../services/cloud_store.dart';
+import '../services/local_commerce_store.dart';
 import '../services/local_huber_store.dart';
 import '../services/local_store.dart';
 
@@ -24,6 +25,26 @@ class OrderRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Sign-up as seller used to leave [HubsomUser.sellerId] empty. Hydrate then
+  /// dumps every cloud order onto the phone, and an unfiltered Orders page
+  /// lets that seller consolidate or cancel someone else's paid sale.
+  Future<String> _ensureSellerId() async {
+    final user = _sessionUser;
+    if (user == null) {
+      throw StateError('Sign in required');
+    }
+    if (user.sellerId != null && user.sellerId!.isNotEmpty) {
+      return user.sellerId!;
+    }
+    final seller = await LocalCommerceStore.ensureSellerForUser(user);
+    final patched = user.copyWith(
+      sellerId: seller.id,
+      role: user.role == 'buyer' ? 'both' : user.role,
+    );
+    await LocalStore.setUserJson(jsonEncode(patched.toJson()));
+    return seller.id;
   }
 
   Future<Order> checkout(Map<String, dynamic> body) async {
@@ -52,18 +73,17 @@ class OrderRepository {
       }
     } catch (_) {}
 
-    final sellerId = _sessionUser?.sellerId;
+    final sellerId = await _ensureSellerId();
     final byId = <String, Order>{
-      for (final o in LocalHuberStore.listOrders()) o.id: o,
+      for (final o in LocalHuberStore.listOrders())
+        if (LocalHuberStore.orderBelongsToSeller(o, sellerId)) o.id: o,
     };
     try {
       final rows = await CloudStore.listDocs(CloudStore.orders);
       for (final row in rows) {
         try {
           final o = Order.fromJson(row);
-          if (sellerId != null &&
-              sellerId.isNotEmpty &&
-              !o.lines.any((l) => l.sellerId == sellerId)) {
+          if (!LocalHuberStore.orderBelongsToSeller(o, sellerId)) {
             continue;
           }
           byId[o.id] = o;
@@ -72,13 +92,8 @@ class OrderRepository {
       }
     } catch (_) {}
 
-    var orders = byId.values.toList();
-    if (sellerId != null && sellerId.isNotEmpty) {
-      orders = orders
-          .where((o) => o.lines.any((l) => l.sellerId == sellerId))
-          .toList();
-    }
-    orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final orders = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
   }
 
@@ -95,6 +110,12 @@ class OrderRepository {
     final status = patch['status'] as String?;
     if (status == null || status.isEmpty) {
       throw StateError('Order update failed');
+    }
+    final sellerId = await _ensureSellerId();
+    final current = LocalHuberStore.getOrder(orderId);
+    if (current == null ||
+        !LocalHuberStore.orderBelongsToSeller(current, sellerId)) {
+      throw StateError('Order not found');
     }
     return LocalHuberStore.updateOrderStatus(orderId, status);
   }
@@ -128,7 +149,10 @@ class OrderRepository {
         return const [];
       }
     } catch (_) {}
-    return LocalHuberStore.listShipments();
+    final sellerId = await _ensureSellerId();
+    return LocalHuberStore.listShipments()
+        .where((s) => s.sellerId == sellerId)
+        .toList();
   }
 
   Future<Shipment> createShipment(Map<String, dynamic> body) async {
@@ -140,10 +164,11 @@ class OrderRepository {
       }
     } catch (_) {}
     final user = _sessionUser;
+    final sellerId = await _ensureSellerId();
     final ids = (body['orderIds'] as List?)?.map((e) => '$e').toList() ?? const [];
     return LocalHuberStore.createShipmentFromOrders(
       orderIds: ids,
-      sellerId: user?.sellerId ?? user?.id ?? 'seller-local',
+      sellerId: sellerId,
       createdByUserId: user?.id ?? 'local',
     );
   }
