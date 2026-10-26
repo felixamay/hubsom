@@ -83,7 +83,11 @@ class AuthRepository {
           throw AuthException('${data['error']}');
         }
         final userMap = data['user'] as Map? ?? data;
-        final user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+        var user = HubsomUser.fromJson(Map<String, dynamic>.from(userMap));
+        if (AuthRoutes.isSellerRole(user.role) &&
+            (user.sellerId == null || user.sellerId!.isEmpty)) {
+          user = user.copyWith(sellerId: 'seller-${user.id}');
+        }
         final token = data['token'] as String? ?? _issueLocalToken(user);
         await _persist(user, token);
         await _storeLocalCredentials(
@@ -326,6 +330,7 @@ class AuthRepository {
     }
     final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
     final isHuber = AuthRoutes.isHuberRole(role);
+    final isSeller = AuthRoutes.isSellerRole(role);
     final user = HubsomUser(
       id: id,
       email: email,
@@ -334,6 +339,7 @@ class AuthRepository {
       city: huber?.city,
       region: huber?.region,
       role: isHuber ? 'huber' : role,
+      sellerId: isSeller ? 'seller-$id' : null,
       huberId: isHuber ? 'huber-$id' : null,
     );
     await _storeLocalCredentials(email: email, password: password, user: user);

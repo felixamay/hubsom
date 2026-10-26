@@ -66,6 +66,7 @@ void main() {
       lines: const [
         OrderLine(
           productId: 'p1',
+          sellerId: 'seller-1',
           name: 'Wax print',
           quantity: 1,
           unitPriceGhs: 80,

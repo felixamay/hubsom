@@ -226,14 +226,25 @@ class LocalHuberStore {
     return shipment;
   }
 
+  static bool orderBelongsToSeller(Order order, String sellerId) {
+    if (sellerId.isEmpty) return false;
+    return order.lines.any((l) => l.sellerId == sellerId);
+  }
+
   static Future<Shipment> createShipmentFromOrders({
     required List<String> orderIds,
     required String sellerId,
     required String createdByUserId,
   }) async {
+    if (sellerId.isEmpty) {
+      throw StateError('Create your store before consolidating orders');
+    }
     final orders = listOrders().where((o) => orderIds.contains(o.id)).toList();
     if (orders.isEmpty) {
       throw StateError('Select paid orders to consolidate');
+    }
+    if (orders.any((o) => !orderBelongsToSeller(o, sellerId))) {
+      throw StateError('Those orders are not from your store');
     }
     final items = <ShipmentItem>[];
     for (final order in orders) {
