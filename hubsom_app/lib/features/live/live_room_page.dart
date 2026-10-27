@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -13,20 +14,21 @@ import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
 import '../../models/cart.dart';
 import '../../models/product.dart';
 import '../../models/stream.dart';
+import '../../models/user.dart';
 import '../../widgets/hubsom_image.dart';
 import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
 class LiveRoomPage extends ConsumerStatefulWidget {
-  const LiveRoomPage({super.key, required this.streamId, this.hostMode = false});
+  const LiveRoomPage({super.key, required this.streamId});
   final String streamId;
-  final bool hostMode;
 
   @override
   ConsumerState<LiveRoomPage> createState() => _LiveRoomPageState();
@@ -58,12 +60,26 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   Timer? _tick;
   late final AnimationController _pulse;
 
+  HubsomUser? get _sessionUser {
+    final fromAuth = ref.read(authStateProvider).valueOrNull;
+    if (fromAuth != null) return fromAuth;
+    final raw = LocalStore.userJson;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return HubsomUser.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   bool get _isHost {
-    if (widget.hostMode) return true;
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || stream == null) return false;
-    return user.sellerId == stream!.sellerId ||
-        stream!.hosts.any((h) => h.id == user.id);
+    final s = stream;
+    if (s == null) return false;
+    // `?host=1` is only a go-live bookmark. Host controls require the
+    // signed-in user to own this show.
+    return LocalCommerceStore.isHostOf(s, _sessionUser);
   }
 
   String get _hostName {
@@ -181,7 +197,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       }
 
       List<Product> catalog = _catalog;
-      if (_isHost || widget.hostMode) {
+      if (_isHost) {
         try {
           catalog = await ref.read(sellerRepositoryProvider).myProducts();
         } catch (_) {}
@@ -208,12 +224,13 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   Future<void> _joinAgora(LiveStream s) async {
     try {
       _agora = ref.read(agoraServiceProvider);
+      final asHost = LocalCommerceStore.isHostOf(s, _sessionUser);
       final token = await _agora!.fetchToken(
         channelName: s.channelName,
-        uid: widget.hostMode ? 1 : 0,
-        role: widget.hostMode ? 'publisher' : 'subscriber',
+        uid: asHost ? 1 : 0,
+        role: asHost ? 'publisher' : 'subscriber',
       );
-      if (widget.hostMode) {
+      if (asHost) {
         await _agora!.joinAsHost(
           channelName: s.channelName,
           token: token ?? '',
@@ -370,7 +387,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   Future<void> _endLive() async {
-    if (_ending || stream == null) return;
+    if (!_isHost || _ending || stream == null) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -407,6 +424,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   Future<void> _pin(Product product) async {
+    if (!_isHost) return;
     final updated = await ref
         .read(liveRepositoryProvider)
         .pinProduct(widget.streamId, product.id);
@@ -421,6 +439,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   Future<void> _addProductToLive(Product product) async {
+    if (!_isHost) return;
     try {
       final updated = await ref
           .read(liveRepositoryProvider)
@@ -467,7 +486,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   }
 
   Future<void> _extendAuction() async {
-    if (_extendBusy || stream?.auction == null) return;
+    if (!_isHost || _extendBusy || stream?.auction == null) return;
     setState(() => _extendBusy = true);
     try {
       final auction = await ref

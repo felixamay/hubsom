@@ -26,13 +26,10 @@ export async function generateMetadata({
 
 export default async function LiveShowPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ host?: string }>;
 }) {
   const { id } = await params;
-  const { host } = await searchParams;
   const stream = await getStreamById(id);
   if (!stream) notFound();
 
@@ -60,7 +57,6 @@ export default async function LiveShowPage({
       seller={seller}
       products={products}
       initialChat={chat}
-      hostMode={host === "1"}
       initialFollowing={initialFollowing}
       isOwnStore={isOwnStore}
       savedProductIds={savedProductIds}

@@ -56,7 +56,6 @@ export function LiveRoom({
   seller,
   products,
   initialChat,
-  hostMode = false,
   initialFollowing = false,
   isOwnStore = false,
   savedProductIds = [],
@@ -65,7 +64,6 @@ export function LiveRoom({
   seller?: Seller;
   products: Product[];
   initialChat: ChatMessage[];
-  hostMode?: boolean;
   initialFollowing?: boolean;
   isOwnStore?: boolean;
   savedProductIds?: string[];
@@ -105,6 +103,8 @@ export function LiveRoom({
   const cartCount = useCartStore((s) =>
     s.items.reduce((n, i) => n + i.quantity, 0),
   );
+  // `?host=1` is only a go-live bookmark. Host controls require store ownership.
+  const isHost = isOwnStore;
 
   const pinned = useMemo(
     () => products.find((p) => p.id === pinnedId) ?? products[0],
@@ -143,7 +143,7 @@ export function LiveRoom({
   }, [stream.id]);
 
   async function endLive() {
-    if (!hostMode || ending) return;
+    if (!isHost || ending) return;
     setEnding(true);
     setNotice(null);
     try {
@@ -190,12 +190,12 @@ export function LiveRoom({
           {stream.title}
         </h1>
         <p className="mt-2 max-w-sm text-sm text-white/65">
-          {hostMode
+          {isHost
             ? "You ended this live show. Viewers can no longer join it as live."
             : "The host ended this live show."}
         </p>
         <div className="mt-8 flex w-full max-w-xs flex-col gap-2">
-          {hostMode ? (
+          {isHost ? (
             <>
               <Link
                 href="/seller"
@@ -259,6 +259,7 @@ export function LiveRoom({
   }
 
   async function pinProduct(productId: string) {
+    if (!isHost) return;
     setPinnedId(productId);
     await fetch(`/api/streams/${stream.id}`, {
       method: "PATCH",
@@ -280,6 +281,7 @@ export function LiveRoom({
   }
 
   async function startRecording() {
+    if (!isHost) return;
     setRecording(true);
     await fetch(`/api/streams/${stream.id}`, {
       method: "PATCH",
@@ -295,7 +297,7 @@ export function LiveRoom({
           <AgoraPlayer
             ref={playerRef}
             channelName={stream.channelName}
-            role={hostMode ? "publisher" : "subscriber"}
+            role={isHost ? "publisher" : "subscriber"}
             muted={muted}
             className="h-full w-full"
             onLatencySample={onLatencySample}
@@ -320,7 +322,7 @@ export function LiveRoom({
       <AgoraPlayer
         ref={playerRef}
         channelName={stream.channelName}
-        role={hostMode ? "publisher" : "subscriber"}
+        role={isHost ? "publisher" : "subscriber"}
         muted={muted}
         className="absolute inset-0 h-full w-full"
         onLatencySample={onLatencySample}
@@ -381,7 +383,7 @@ export function LiveRoom({
                 sellerId={seller.id}
                 initialFollowing={initialFollowing}
                 initialFollowers={seller.followers}
-                isOwnStore={isOwnStore || hostMode}
+                isOwnStore={isHost}
                 size="sm"
                 variant="live"
                 className="pointer-events-auto shrink-0"
@@ -390,7 +392,7 @@ export function LiveRoom({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          {(hostMode || isOwnStore) && (
+          {isHost && (
             <button
               type="button"
               onClick={() => setConfirmEnd(true)}
@@ -603,7 +605,7 @@ export function LiveRoom({
           sellerAvatar={seller.avatar}
           initialFollowing={initialFollowing}
           initialFollowers={seller.followers}
-          isOwnStore={isOwnStore || hostMode}
+          isOwnStore={isHost}
           streamId={stream.id}
           onMention={(handle) => {
             const mention = `@${handle.replace(/\s+/g, "")} `;
@@ -631,7 +633,7 @@ export function LiveRoom({
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {hostMode && (
+            {isHost && (
               <>
                 <button
                   type="button"
@@ -721,7 +723,7 @@ export function LiveRoom({
         </div>
       )}
 
-      {confirmEnd && (hostMode || isOwnStore) ? (
+      {confirmEnd && isHost ? (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-hubsom-night p-5 text-white shadow-2xl">
             <p className="font-display text-xl font-bold">End this live show?</p>

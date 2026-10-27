@@ -400,7 +400,7 @@ class LocalCommerceStore {
     streams.insert(0, stream);
     await _saveStreams(streams);
 
-    // Keep session sellerId in sync for host-mode checks.
+    // Keep session sellerId in sync so later host checks match this show.
     if (user.sellerId != seller.id) {
       final patched = HubsomUser(
         id: user.id,
@@ -424,6 +424,17 @@ class LocalCommerceStore {
       await LocalStore.setUserJson(jsonEncode(patched.toJson()));
     }
     return stream;
+  }
+
+  /// True when [user] is this show's seller or a listed host.
+  /// A `/live/{id}?host=1` URL is not proof of either.
+  static bool isHostOf(LiveStream stream, HubsomUser? user) {
+    if (user == null || user.id.isEmpty) return false;
+    if (stream.hosts.any((h) => h.id == user.id)) return true;
+    final sellerId = user.sellerId;
+    return sellerId != null &&
+        sellerId.isNotEmpty &&
+        sellerId == stream.sellerId;
   }
 
   static Future<LiveStream?> updateStream(
