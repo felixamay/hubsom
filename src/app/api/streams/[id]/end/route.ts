@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { endLiveStream, getStreamById } from "@/lib/data/stream-registry";
 import { getSeller } from "@/lib/data/sellers";
 import { getUserById } from "@/lib/data/users";
+import { isStreamHost } from "@/lib/live/host-stream";
 
 export async function POST(
   _request: Request,
@@ -24,14 +25,13 @@ export async function POST(
     getSeller(stream.sellerId),
   ]);
 
-  const isOwner = Boolean(
-    seller &&
-      (seller.ownerUserId === session.user.id ||
-        user?.sellerId === seller.id ||
-        session.user.sellerId === seller.id),
-  );
-
-  if (!isOwner) {
+  if (
+    !isStreamHost({
+      userId: session.user.id,
+      userSellerId: user?.sellerId ?? session.user.sellerId,
+      seller,
+    })
+  ) {
     return NextResponse.json(
       { error: "Only the host can end this live show" },
       { status: 403 },
