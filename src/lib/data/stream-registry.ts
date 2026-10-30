@@ -44,6 +44,15 @@ export async function getStreamById(
   return store[id];
 }
 
+export async function findStreamByChannelName(
+  channelName: string,
+): Promise<LiveStream | undefined> {
+  const name = channelName.trim();
+  if (!name) return undefined;
+  const streams = await listAllStreams();
+  return streams.find((s) => s.channelName === name);
+}
+
 export async function upsertStream(stream: LiveStream): Promise<LiveStream> {
   const store = await ensureStore();
   store[stream.id] = stream;
