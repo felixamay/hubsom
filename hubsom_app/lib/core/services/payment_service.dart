@@ -48,10 +48,32 @@ class PaymentService {
         },
       );
       final data = ApiResponse.asMap(res.data);
-      if (data != null && (data['order'] != null || data['id'] != null)) {
-        return data;
+      final status = res.statusCode ?? 0;
+
+      if (data != null) {
+        final error = data['error'];
+        if (error != null || status >= 400) {
+          throw StateError(error == null ? 'Checkout failed' : '$error');
+        }
+        final orderJson = orderJsonFromCheckoutResponse(data);
+        if (orderJson != null) {
+          final order = Order.fromJson(orderJson);
+          await LocalHuberStore.saveOrder(order);
+          return {'ok': true, 'id': order.id, 'order': order.toJson()};
+        }
+        // Real JSON without an order is a failed checkout, not offline mode.
+        throw StateError('Checkout failed');
       }
-    } catch (_) {}
+
+      if (status >= 400) {
+        throw StateError('Checkout failed');
+      }
+      // HTML / empty 2xx from SPA hosting → local fallback below.
+    } on StateError {
+      rethrow;
+    } catch (_) {
+      // Network failure — local fallback below.
+    }
 
     final user = _sessionUser();
     final lines = items.map((e) {
@@ -86,6 +108,27 @@ class PaymentService {
     );
     await LocalHuberStore.saveOrder(order);
     return {'ok': true, 'order': order.toJson()};
+  }
+
+  /// Maps `/api/checkout` bodies that use `order`, `id`, or `orderId`.
+  @visibleForTesting
+  static Map<String, dynamic>? orderJsonFromCheckoutResponse(
+    Map<String, dynamic> data,
+  ) {
+    final nested = data['order'];
+    if (nested is Map) {
+      final map = Map<String, dynamic>.from(nested);
+      final id = map['id'] ?? data['id'] ?? data['orderId'];
+      if (id == null) return null;
+      map['id'] = '$id';
+      return map;
+    }
+    final id = data['id'] ?? data['orderId'];
+    if (id == null) return null;
+    return {
+      ...data,
+      'id': '$id',
+    };
   }
 
   HubsomUser? _sessionUser() {
