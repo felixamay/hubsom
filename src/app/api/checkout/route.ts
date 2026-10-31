@@ -180,6 +180,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       orderId: order.id,
+      id: order.id,
+      order,
       currency: order.currency,
       subtotalGhs: order.subtotalGhs,
       deliveryEstimate: order.deliveryEstimate,
