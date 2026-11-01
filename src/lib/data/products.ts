@@ -109,9 +109,13 @@ export async function updateProductStock(
   const store = await load();
   const idx = store.products.findIndex((p) => p.id === productId);
   if (idx < 0) return undefined;
+  const next = Math.floor(Number(stock));
+  if (!Number.isFinite(next)) {
+    return store.products[idx];
+  }
   store.products[idx] = {
     ...store.products[idx],
-    stock: Math.max(0, Math.floor(stock)),
+    stock: Math.max(0, next),
   };
   await save(store);
   return store.products[idx];
@@ -121,6 +125,7 @@ export async function adjustProductStock(
   productId: string,
   delta: number,
 ): Promise<Product | undefined> {
+  if (!Number.isFinite(delta)) return undefined;
   const product = await getProduct(productId);
   if (!product) return undefined;
   return updateProductStock(productId, product.stock + delta);
