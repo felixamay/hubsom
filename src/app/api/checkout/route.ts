@@ -10,6 +10,7 @@ import { sendDirectMessage } from "@/lib/data/messages";
 import { adjustProductStock, getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getUserById, listUsers, upsertAddress } from "@/lib/data/users";
+import { parseCheckoutQuantity } from "@/lib/checkout-quantity";
 import { formatGhs } from "@/lib/currency";
 import { getEffectivePrice } from "@/lib/pricing";
 import type { ProductCategory } from "@/types";
@@ -73,6 +74,13 @@ export async function POST(request: Request) {
 
     const lines = [];
     for (const item of body.items) {
+      const quantity = parseCheckoutQuantity(item.quantity);
+      if (quantity == null) {
+        return NextResponse.json(
+          { error: "Each item needs a whole quantity of at least 1" },
+          { status: 400 },
+        );
+      }
       const product = await getProduct(item.productId);
       if (!product) {
         return NextResponse.json(
@@ -80,7 +88,7 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      if (product.stock < item.quantity) {
+      if (product.stock < quantity) {
         return NextResponse.json(
           { error: `Insufficient stock for ${product.name}` },
           { status: 409 },
@@ -92,9 +100,9 @@ export async function POST(request: Request) {
         sellerId: product.sellerId,
         name: product.name,
         image: product.images[0],
-        quantity: item.quantity,
+        quantity,
         unitPriceGhs: unit,
-        lineTotalGhs: unit * item.quantity,
+        lineTotalGhs: unit * quantity,
         category: product.category as ProductCategory,
       });
     }
