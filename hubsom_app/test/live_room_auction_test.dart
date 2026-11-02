@@ -160,6 +160,32 @@ void main() {
     expect(again?.id, order.id);
   });
 
+  test('sold API lot with a winner still writes the buyer order', () async {
+    final stream = await goLive();
+    await LocalCommerceStore.placeBid(
+      auctionId: stream.auction!.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    final auctionId = stream.auction!.id;
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          status: 'sold',
+          orderId: 'ord_auc_$auctionId',
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNotNull);
+    expect(order!.id, 'ord_auc_$auctionId');
+    expect(order.userId, 'buyer-1');
+    expect(order.buyerName, 'Kojo Bidder');
+    expect(order.status, 'paid');
+  });
+
   test('unmet asking price does not sell — seller can extend', () async {
     final stream = await goLive();
     final auction = stream.auction!;

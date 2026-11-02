@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { LiveStream, ProductCategory, StreamHost } from "@/types";
+import { settleLiveAuction } from "@/lib/data/live-auction-settle";
 import { getProduct } from "@/lib/data/products";
 import { ensureDefaultSeller } from "@/lib/data/sellers";
 
@@ -71,13 +72,7 @@ export async function endLiveStream(id: string): Promise<LiveStream | undefined>
   const auction =
     current.auction &&
     (current.auction.status === "open" || current.auction.status === "closing")
-      ? {
-          ...current.auction,
-          status:
-            current.auction.bidderCount > 0
-              ? ("sold" as const)
-              : ("unsold" as const),
-        }
+      ? await settleLiveAuction(current)
       : current.auction;
 
   return upsertStream({

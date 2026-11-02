@@ -118,6 +118,9 @@ export interface LiveAuction {
   endsAt: string;
   bidderCount: number;
   highestBidder?: string;
+  highestBidderId?: string;
+  highestBidderEmail?: string;
+  orderId?: string;
   status: "upcoming" | "open" | "closing" | "sold" | "unsold";
 }
 
