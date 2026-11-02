@@ -93,19 +93,38 @@ class LiveRepository {
     return null;
   }
 
+  Future<LiveStream?> _adoptRemoteStream(LiveStream remote) async {
+    final local = LocalCommerceStore.getStream(remote.id);
+    final merged = local == null
+        ? remote
+        : LocalCommerceStore.mergeStreams(local, remote);
+    await LocalCommerceStore.upsertStream(merged);
+    return merged;
+  }
+
   Future<LiveStream?> getStream(String id, {bool joinAsViewer = false}) async {
+    LiveStream? adopted;
     try {
       final res = await _api.get('/api/streams/$id');
       final data = ApiResponse.asMap(res.data);
       final streamMap = data?['stream'] as Map? ?? data;
       if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        adopted = await _adoptRemoteStream(
+          LiveStream.fromJson(Map<String, dynamic>.from(streamMap)),
+        );
       }
     } catch (_) {
       // fall through
     }
 
-    LiveStream? local = LocalCommerceStore.getStream(id);
+    LiveStream? local = adopted ?? LocalCommerceStore.getStream(id);
+    if (adopted != null) {
+      if (joinAsViewer && local != null && local.isLive) {
+        local = await LocalCommerceStore.joinViewer(id) ?? local;
+      }
+      return local;
+    }
+
     final remote = await _cloudStream(id);
 
     if (local == null && remote == null) return null;
@@ -135,7 +154,12 @@ class LiveRepository {
       final data = ApiResponse.asMap(res.data);
       final streamMap = data?['stream'] as Map? ?? data;
       if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        final stream = LiveStream.fromJson(
+          Map<String, dynamic>.from(streamMap),
+        );
+        await LocalCommerceStore.upsertStream(stream);
+        await _syncStream(stream);
+        return stream;
       }
     } catch (_) {
       // fall through to local engine
@@ -166,7 +190,14 @@ class LiveRepository {
       final data = ApiResponse.asMap(res.data);
       final streamMap = data?['stream'] as Map? ?? data;
       if (streamMap != null && streamMap['id'] != null) {
-        return LiveStream.fromJson(Map<String, dynamic>.from(streamMap));
+        final remote = LiveStream.fromJson(
+          Map<String, dynamic>.from(streamMap),
+        );
+        final adopted = await _adoptRemoteStream(remote);
+        await LocalCommerceStore.finalizeAuction(id);
+        final settled = LocalCommerceStore.getStream(id) ?? adopted ?? remote;
+        await _syncStream(settled);
+        return settled;
       }
     } catch (_) {
       // fall through
@@ -285,12 +316,37 @@ class LiveRepository {
         '/api/auctions/$auctionId/bid',
         data: {'amountGhs': amountGhs},
       );
+      final status = res.statusCode ?? 0;
       final data = ApiResponse.asMap(res.data);
-      final auction = data?['auction'] as Map? ?? data;
-      if (auction != null && auction['id'] != null) {
-        return LiveAuction.fromJson(Map<String, dynamic>.from(auction));
+      if (status >= 200 && status < 300) {
+        final auction = data?['auction'] as Map? ?? data;
+        if (auction != null && auction['id'] != null) {
+          var next = LiveAuction.fromJson(Map<String, dynamic>.from(auction));
+          final user = _user;
+          if (next.highestBidderId == null && user != null) {
+            next = next.copyWith(
+              highestBidder: next.highestBidder ?? user.name,
+              highestBidderId: user.id,
+              highestBidderEmail: user.email,
+            );
+          }
+          final stream = LocalCommerceStore.findStreamByAuction(auctionId);
+          if (stream != null) {
+            final saved = await LocalCommerceStore.upsertStream(
+              stream.copyWith(auction: next),
+            );
+            await _syncStream(saved);
+          }
+          return next;
+        }
       }
-    } catch (_) {
+      // 400 means the live lot rejected the bid (ended / too low). Do not
+      // apply it locally — that would clobber the winner already on the API.
+      if (status == 400 && data?['error'] != null) {
+        throw StateError('${data!['error']}');
+      }
+    } catch (e) {
+      if (e is StateError) rethrow;
       // fall through
     }
     final user = _user;

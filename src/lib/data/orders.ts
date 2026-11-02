@@ -60,13 +60,18 @@ export async function getOrder(id: string): Promise<Order | undefined> {
 }
 
 export async function createOrder(
-  input: Omit<Order, "id" | "createdAt">,
+  input: Omit<Order, "id" | "createdAt"> & { id?: string },
 ): Promise<Order> {
   const store = await load();
+  if (input.id) {
+    const existing = store.orders.find((o) => o.id === input.id);
+    if (existing) return existing;
+  }
+  const { id: requestedId, ...rest } = input;
   const order: Order = {
-    ...input,
-    shipping: normalizeShipping(input.shipping),
-    id: `ord_${Date.now().toString(36)}`,
+    ...rest,
+    shipping: normalizeShipping(rest.shipping),
+    id: requestedId ?? `ord_${Date.now().toString(36)}`,
     createdAt: new Date().toISOString(),
   };
   store.orders.unshift(order);

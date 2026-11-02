@@ -586,7 +586,6 @@ class LocalCommerceStore {
       for (final o in LocalHuberStore.listOrders()) {
         if (o.id == auction.orderId) return o;
       }
-      return null;
     }
 
     // Still counting down.
@@ -613,7 +612,7 @@ class LocalCommerceStore {
     }
 
     final product = getProduct(auction.productId);
-    final orderId = 'ord_auc_${auction.id}';
+    final orderId = auction.orderId ?? 'ord_auc_${auction.id}';
     // Idempotent if another device already saved this order id.
     for (final o in LocalHuberStore.listOrders()) {
       if (o.id == orderId) {
