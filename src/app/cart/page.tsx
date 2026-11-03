@@ -50,14 +50,28 @@ export default function CartPage() {
           ...shippingPayload(shipping),
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string;
+        orderId?: string;
+        orderIds?: string[];
+        subtotalGhs?: number;
+      };
       if (!res.ok) {
         setStatus(data.error ?? "Checkout failed");
         return;
       }
       clear();
+      const orderIds = Array.isArray(data.orderIds)
+        ? data.orderIds.filter(Boolean)
+        : data.orderId
+          ? [data.orderId]
+          : [];
+      const orderLabel =
+        orderIds.length > 1
+          ? `Orders ${orderIds.join(" · ")}`
+          : `Order ${orderIds[0] ?? data.orderId}`;
       setStatus(
-        `Order ${data.orderId} created · ${formatGhs(data.subtotalGhs)} · shipping sent to seller`,
+        `${orderLabel} created · ${formatGhs(Number(data.subtotalGhs) || 0)} · shipping sent to seller`,
       );
     } finally {
       setLoading(false);

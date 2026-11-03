@@ -6,6 +6,10 @@ import {
   normalizeShipping,
   type OrderShipping,
 } from "@/lib/data/orders";
+import {
+  groupOrderLinesBySeller,
+  subtotalForLines,
+} from "@/lib/data/order-scope";
 import { sendDirectMessage } from "@/lib/data/messages";
 import { adjustProductStock, getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
@@ -99,69 +103,72 @@ export async function POST(request: Request) {
       });
     }
 
-    const subtotalGhs = lines.reduce((sum, l) => sum + l.lineTotalGhs, 0);
+    const subtotalGhs = subtotalForLines(lines);
+    const bySeller = groupOrderLinesBySeller(lines);
 
     for (const line of lines) {
       await adjustProductStock(line.productId, -line.quantity);
     }
 
-    const order = await createOrder({
-      currency: "GHS",
-      subtotalGhs,
-      status: "pending_payment",
-      userId,
-      buyerName: user?.name || session?.user?.name || shipping.recipientName,
-      buyerEmail: user?.email || session?.user?.email || undefined,
-      streamId: body.streamId,
-      oneTap: Boolean(body.oneTap),
-      lines,
-      shipping,
-      paymentMethods: ["Mobile Money", "Card", "Hubsom Pay"],
-      deliveryEstimate: "Same-day Accra · 1–3 days nationwide",
-    });
-
-    // Notify each seller with product lines + shipping for their items.
-    const bySeller = new Map<string, typeof lines>();
-    for (const line of lines) {
-      const list = bySeller.get(line.sellerId) ?? [];
-      list.push(line);
-      bySeller.set(line.sellerId, list);
+    const buyerName =
+      user?.name || session?.user?.name || shipping.recipientName;
+    const buyerEmail = user?.email || session?.user?.email || undefined;
+    const orders = [];
+    for (const sellerLines of bySeller.values()) {
+      orders.push(
+        await createOrder({
+          currency: "GHS",
+          subtotalGhs: subtotalForLines(sellerLines),
+          status: "pending_payment",
+          userId,
+          buyerName,
+          buyerEmail,
+          streamId: body.streamId,
+          oneTap: Boolean(body.oneTap),
+          lines: sellerLines,
+          shipping,
+          paymentMethods: ["Mobile Money", "Card", "Hubsom Pay"],
+          deliveryEstimate: "Same-day Accra · 1–3 days nationwide",
+        }),
+      );
+    }
+    const order = orders[0];
+    if (!order) {
+      return NextResponse.json({ error: "Checkout failed" }, { status: 400 });
     }
 
     if (userId) {
       const allUsers = await listUsers();
-      for (const [sellerId, sellerLines] of bySeller) {
+      for (const placed of orders) {
+        const sellerId = placed.lines[0]?.sellerId;
+        if (!sellerId) continue;
         const seller = await getSeller(sellerId);
         const ownerId =
           seller?.ownerUserId ??
           allUsers.find((u) => u.sellerId === sellerId)?.id;
         if (!ownerId || ownerId === userId) continue;
 
-        const productBlock = sellerLines
+        const productBlock = placed.lines
           .map(
             (l) =>
               `• ${l.name} ×${l.quantity} — ${formatGhs(l.lineTotalGhs)} (${l.category})`,
           )
           .join("\n");
-        const sellerSubtotal = sellerLines.reduce(
-          (sum, l) => sum + l.lineTotalGhs,
-          0,
-        );
 
         const text = [
-          `New Hubsom order ${order.id}`,
-          `Buyer: ${order.buyerName ?? shipping.recipientName}`,
-          order.buyerEmail ? `Email: ${order.buyerEmail}` : null,
+          `New Hubsom order ${placed.id}`,
+          `Buyer: ${placed.buyerName ?? shipping.recipientName}`,
+          placed.buyerEmail ? `Email: ${placed.buyerEmail}` : null,
           "",
           "Products:",
           productBlock,
-          `Subtotal: ${formatGhs(sellerSubtotal)}`,
+          `Subtotal: ${formatGhs(placed.subtotalGhs)}`,
           "",
           "Ship to:",
           formatShippingBlock(shipping),
           "",
-          `Status: ${order.status.replace("_", " ")}`,
-          order.streamId ? `From live: ${order.streamId}` : null,
+          `Status: ${placed.status.replace("_", " ")}`,
+          placed.streamId ? `From live: ${placed.streamId}` : null,
         ]
           .filter((line) => line !== null)
           .join("\n");
@@ -180,13 +187,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       orderId: order.id,
+      orderIds: orders.map((placed) => placed.id),
       currency: order.currency,
-      subtotalGhs: order.subtotalGhs,
+      subtotalGhs,
       deliveryEstimate: order.deliveryEstimate,
       paymentMethods: order.paymentMethods,
       streamId: order.streamId,
       oneTap: order.oneTap,
-      lines: order.lines,
+      lines,
       shipping: order.shipping,
       status: order.status,
       createdAt: order.createdAt,
