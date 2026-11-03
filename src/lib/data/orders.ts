@@ -10,6 +10,14 @@ import type {
   OrderShipping,
   OrderStatus,
 } from "@/types/orders";
+import { newOrderId } from "@/lib/data/order-scope";
+
+export {
+  groupOrderLinesBySeller,
+  newOrderId,
+  sellerOwnsEntireOrder,
+  subtotalForLines,
+} from "@/lib/data/order-scope";
 
 export type {
   GeoLocation,
@@ -66,7 +74,7 @@ export async function createOrder(
   const order: Order = {
     ...input,
     shipping: normalizeShipping(input.shipping),
-    id: `ord_${Date.now().toString(36)}`,
+    id: newOrderId(),
     createdAt: new Date().toISOString(),
   };
   store.orders.unshift(order);

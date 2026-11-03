@@ -7,6 +7,7 @@ import {
   type OrderShipping,
   type OrderStatus,
 } from "@/lib/data/orders";
+import { sellerOrderMutationAccess } from "@/lib/data/order-scope";
 import { ensureSellerForUser } from "@/lib/data/sellers";
 import { getUserById } from "@/lib/data/users";
 
@@ -50,8 +51,9 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
-  if (!existing.lines.some((l) => l.sellerId === seller.id)) {
-    return NextResponse.json({ error: "Not your order" }, { status: 403 });
+  const access = sellerOrderMutationAccess(existing, seller.id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   try {
