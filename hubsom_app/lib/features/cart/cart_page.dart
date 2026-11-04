@@ -34,12 +34,20 @@ class CartPage extends ConsumerWidget {
                   subtitle: Text('${formatGhs(item.priceGhs)} · ${item.source}'),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     IconButton(
-                      onPressed: () => ref.read(cartProvider.notifier).setQuantity(item.productId, item.quantity - 1),
+                      onPressed: () => ref.read(cartProvider.notifier).setQuantity(
+                            item.productId,
+                            item.quantity - 1,
+                            source: item.source,
+                          ),
                       icon: const Icon(Icons.remove_circle_outline),
                     ),
                     Text('${item.quantity}'),
                     IconButton(
-                      onPressed: () => ref.read(cartProvider.notifier).setQuantity(item.productId, item.quantity + 1),
+                      onPressed: () => ref.read(cartProvider.notifier).setQuantity(
+                            item.productId,
+                            item.quantity + 1,
+                            source: item.source,
+                          ),
                       icon: const Icon(Icons.add_circle_outline),
                     ),
                   ]),
