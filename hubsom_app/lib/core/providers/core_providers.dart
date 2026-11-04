@@ -168,9 +168,12 @@ class CartController extends StateNotifier<List<CartItem>> {
 
   Future<void> _persist() => LocalStore.saveCart(state);
 
+  bool _sameLine(CartItem item, String productId, String source) =>
+      item.productId == productId && item.source == source;
+
   Future<void> add(CartItem item) async {
     final idx =
-        state.indexWhere((e) => e.productId == item.productId && e.source == item.source);
+        state.indexWhere((e) => _sameLine(e, item.productId, item.source));
     if (idx >= 0) {
       final next = [...state];
       next[idx] = next[idx].copyWith(quantity: next[idx].quantity + item.quantity);
@@ -181,20 +184,24 @@ class CartController extends StateNotifier<List<CartItem>> {
     await _persist();
   }
 
-  Future<void> setQuantity(String productId, int qty) async {
+  Future<void> setQuantity(
+    String productId,
+    int qty, {
+    required String source,
+  }) async {
     if (qty <= 0) {
-      state = state.where((e) => e.productId != productId).toList();
+      state = state.where((e) => !_sameLine(e, productId, source)).toList();
     } else {
       state = [
         for (final e in state)
-          if (e.productId == productId) e.copyWith(quantity: qty) else e,
+          if (_sameLine(e, productId, source)) e.copyWith(quantity: qty) else e,
       ];
     }
     await _persist();
   }
 
-  Future<void> remove(String productId) async {
-    state = state.where((e) => e.productId != productId).toList();
+  Future<void> remove(String productId, {required String source}) async {
+    state = state.where((e) => !_sameLine(e, productId, source)).toList();
     await _persist();
   }
 

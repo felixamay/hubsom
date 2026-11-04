@@ -10,6 +10,7 @@ import { sendDirectMessage } from "@/lib/data/messages";
 import { adjustProductStock, getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getUserById, listUsers, upsertAddress } from "@/lib/data/users";
+import { allocateCatalogStock } from "@/lib/checkout-stock";
 import { formatGhs } from "@/lib/currency";
 import { getEffectivePrice } from "@/lib/pricing";
 import type { ProductCategory } from "@/types";
@@ -72,6 +73,17 @@ export async function POST(request: Request) {
     }
 
     const lines = [];
+    const stockByProduct = new Map<string, number>();
+    const requested: Array<{
+      productId: string;
+      quantity: number;
+      name: string;
+      sellerId: string;
+      image: string | undefined;
+      unitPriceGhs: number;
+      category: ProductCategory;
+    }> = [];
+
     for (const item of body.items) {
       const product = await getProduct(item.productId);
       if (!product) {
@@ -80,29 +92,53 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      if (product.stock < item.quantity) {
-        return NextResponse.json(
-          { error: `Insufficient stock for ${product.name}` },
-          { status: 409 },
-        );
-      }
-      const unit = getEffectivePrice(product);
-      lines.push({
+      const quantity = Number(item.quantity);
+      requested.push({
         productId: product.id,
-        sellerId: product.sellerId,
+        quantity,
         name: product.name,
+        sellerId: product.sellerId,
         image: product.images[0],
-        quantity: item.quantity,
-        unitPriceGhs: unit,
-        lineTotalGhs: unit * item.quantity,
+        unitPriceGhs: getEffectivePrice(product),
         category: product.category as ProductCategory,
+      });
+      stockByProduct.set(product.id, product.stock);
+    }
+
+    const allocated = allocateCatalogStock(
+      requested.map((row) => ({
+        productId: row.productId,
+        quantity: row.quantity,
+      })),
+      stockByProduct,
+    );
+    if (!allocated.ok) {
+      const name =
+        requested.find((row) => row.productId === allocated.productId)?.name ??
+        allocated.productId;
+      return NextResponse.json(
+        { error: `Insufficient stock for ${name}` },
+        { status: 409 },
+      );
+    }
+
+    for (const row of requested) {
+      lines.push({
+        productId: row.productId,
+        sellerId: row.sellerId,
+        name: row.name,
+        image: row.image,
+        quantity: row.quantity,
+        unitPriceGhs: row.unitPriceGhs,
+        lineTotalGhs: row.unitPriceGhs * row.quantity,
+        category: row.category,
       });
     }
 
     const subtotalGhs = lines.reduce((sum, l) => sum + l.lineTotalGhs, 0);
 
-    for (const line of lines) {
-      await adjustProductStock(line.productId, -line.quantity);
+    for (const [productId, quantity] of allocated.consumed) {
+      await adjustProductStock(productId, -quantity);
     }
 
     const order = await createOrder({
