@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { SellerOrderActions } from "@/components/seller/SellerOrderActions";
 import { formatGhs } from "@/lib/currency";
+import { occupiedOrderIdsForSeller } from "@/lib/shipment-occupancy";
 import { mapsSearchUrl } from "@/lib/shipping";
 import type { Order, OrderShipping, Shipment } from "@/types/orders";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,11 @@ export function SellerOrdersBoard({
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const shipped = useMemo(() => new Set(shippedOrderIds), [shippedOrderIds]);
+  const shipped = useMemo(() => {
+    const ids = occupiedOrderIdsForSeller(shipments, sellerId);
+    for (const orderId of shippedOrderIds) ids.add(orderId);
+    return ids;
+  }, [sellerId, shipments, shippedOrderIds]);
 
   const views: OrderView[] = useMemo(
     () =>

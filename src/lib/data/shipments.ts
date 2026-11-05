@@ -1,6 +1,10 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
 import { getOrder } from "@/lib/data/orders";
 import {
+  assertOrdersFreeToShip,
+  occupiedOrderIdsForSeller,
+} from "@/lib/shipment-occupancy";
+import {
   normalizeGeoLocation,
   normalizeShipping,
 } from "@/lib/shipping";
@@ -115,6 +119,10 @@ export async function createConsolidatedShipment(input: {
   };
 
   const store = await load();
+  assertOrdersFreeToShip(
+    orderIds,
+    occupiedOrderIdsForSeller(store.shipments, input.sellerId),
+  );
   store.shipments.unshift(shipment);
   await save(store);
   return shipment;
@@ -186,17 +194,10 @@ export async function attachOffersToShipment(
   return store.shipments[idx];
 }
 
-/** Order ids already included in an active (non-cancelled/delivered) shipment. */
+/** Order ids already included in a non-cancelled shipment, including delivered lots. */
 export async function listActiveShippedOrderIds(
   sellerId: string,
 ): Promise<Set<string>> {
   const shipments = await listShipmentsBySeller(sellerId);
-  const ids = new Set<string>();
-  for (const shipment of shipments) {
-    if (shipment.status === "cancelled" || shipment.status === "delivered") {
-      continue;
-    }
-    for (const orderId of shipment.orderIds) ids.add(orderId);
-  }
-  return ids;
+  return occupiedOrderIdsForSeller(shipments, sellerId);
 }
