@@ -55,7 +55,7 @@ class ProductCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (product.flashSale != null)
+                  if (product.isFlashSaleActive)
                     Positioned(
                       left: 8,
                       top: 8,

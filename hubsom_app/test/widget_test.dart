@@ -27,4 +27,21 @@ void main() {
     expect(p.effectivePrice, 80);
     expect(formatGhs(80), contains('80'));
   });
+
+  test('Product effective price ignores an expired flash sale', () {
+    final p = Product(
+      id: '2',
+      slug: 'expired-sale',
+      name: 'Expired',
+      description: '',
+      category: 'fashion',
+      priceGhs: 100,
+      images: const [],
+      sellerId: 's1',
+      stock: 1,
+      flashSale: const FlashSale(endsAt: '2020-01-01T00:00:00.000Z', discountPct: 50),
+    );
+    expect(p.isFlashSaleActive, isFalse);
+    expect(p.effectivePrice, 100);
+  });
 }

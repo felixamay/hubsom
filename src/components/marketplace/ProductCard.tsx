@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SaveProductButton } from "@/components/product/SaveProductButton";
 import { categoryName } from "@/lib/categories";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice } from "@/lib/pricing";
+import { getEffectivePrice, isFlashSaleActive } from "@/lib/pricing";
 import type { Product } from "@/types";
 
 export function ProductCard({
@@ -14,6 +14,7 @@ export function ProductCard({
   initiallySaved?: boolean;
 }) {
   const price = getEffectivePrice(product);
+  const saleOn = isFlashSaleActive(product.flashSale);
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-hubsom-forest/10 bg-white/80 transition active:scale-[0.99]">
@@ -26,11 +27,11 @@ export function ProductCard({
             className="object-cover transition duration-500 group-hover:scale-105"
             sizes="50vw"
           />
-          {product.flashSale && (
+          {saleOn ? (
             <span className="absolute left-2 top-2 rounded-md bg-hubsom-live px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-              −{product.flashSale.discountPct}%
+              −{product.flashSale?.discountPct}%
             </span>
-          )}
+          ) : null}
         </div>
         <div className="space-y-1 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-hubsom-leaf">

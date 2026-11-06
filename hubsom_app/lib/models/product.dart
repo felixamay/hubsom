@@ -57,9 +57,19 @@ class Product extends Equatable {
   /// Remote/demo URL when not stored locally in Hive.
   final String? demoVideoUrl;
 
+  bool get isFlashSaleActive {
+    final sale = flashSale;
+    if (sale == null || sale.discountPct <= 0) return false;
+    final ends = DateTime.tryParse(sale.endsAt);
+    if (ends == null) return false;
+    return ends.toUtc().isAfter(DateTime.now().toUtc());
+  }
+
   double get effectivePrice {
-    if (flashSale == null) return priceGhs;
-    return priceGhs * (1 - flashSale!.discountPct / 100);
+    final sale = flashSale;
+    if (sale == null || !isFlashSaleActive) return priceGhs;
+    final pct = sale.discountPct.clamp(0, 100);
+    return priceGhs * (1 - pct / 100);
   }
 
   bool get showsDemoVideo =>
