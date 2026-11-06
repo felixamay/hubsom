@@ -15,7 +15,10 @@ class FlashSalesPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Flash sales')),
       body: productsAsync.when(
         data: (products) {
-          final list = products.cast<Product>().where((p) => p.flashSale != null).toList();
+          final list = products
+              .cast<Product>()
+              .where((p) => p.isFlashSaleActive)
+              .toList();
           if (list.isEmpty) return const Center(child: Text('No flash sales active'));
           return GridView.builder(
             padding: const EdgeInsets.all(16),

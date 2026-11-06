@@ -1,6 +1,6 @@
 import { ALL_FULFILLMENT_MODES } from "@/lib/categories";
 import { readJsonFile, slugify, writeJsonFile } from "@/lib/data/persist";
-import { getEffectivePrice } from "@/lib/pricing";
+import { getEffectivePrice, isFlashSaleActive } from "@/lib/pricing";
 import type { Product, ProductBundle, ProductCategory } from "@/types";
 
 export { getEffectivePrice };
@@ -43,7 +43,7 @@ export async function getProductsByCategory(category: string): Promise<Product[]
 
 export async function getFlashSaleProducts(): Promise<Product[]> {
   const store = await load();
-  return store.products.filter((p) => p.flashSale);
+  return store.products.filter((p) => isFlashSaleActive(p.flashSale));
 }
 
 export async function listBundles(): Promise<ProductBundle[]> {
