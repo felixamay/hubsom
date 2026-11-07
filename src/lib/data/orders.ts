@@ -1,4 +1,5 @@
-import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
+import { randomBytes } from "crypto";
+import { mutateJsonFile, readJsonFile } from "@/lib/data/persist";
 import {
   formatShippingBlock,
   mapsSearchUrl,
@@ -27,14 +28,17 @@ export {
 };
 
 const FILE = "orders.json";
+const EMPTY: Store = { orders: [] };
 type Store = { orders: Order[] };
 
 async function load(): Promise<Store> {
-  return readJsonFile<Store>(FILE, { orders: [] });
+  return readJsonFile<Store>(FILE, EMPTY);
 }
 
-async function save(store: Store) {
-  await writeJsonFile(FILE, store);
+async function mutateStore(
+  mutate: (store: Store) => void | Store | Promise<void | Store>,
+): Promise<Store> {
+  return mutateJsonFile(FILE, EMPTY, mutate);
 }
 
 export async function listOrders(): Promise<Order[]> {
@@ -62,49 +66,54 @@ export async function getOrder(id: string): Promise<Order | undefined> {
 export async function createOrder(
   input: Omit<Order, "id" | "createdAt">,
 ): Promise<Order> {
-  const store = await load();
-  const order: Order = {
-    ...input,
-    shipping: normalizeShipping(input.shipping),
-    id: `ord_${Date.now().toString(36)}`,
-    createdAt: new Date().toISOString(),
-  };
-  store.orders.unshift(order);
-  await save(store);
-  return order;
+  let order: Order | undefined;
+  await mutateStore((store) => {
+    order = {
+      ...input,
+      shipping: normalizeShipping(input.shipping),
+      id: `ord_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
+      createdAt: new Date().toISOString(),
+    };
+    store.orders.unshift(order);
+  });
+  return order!;
 }
 
 export async function updateOrderStatus(
   orderId: string,
   status: OrderStatus,
 ): Promise<Order | undefined> {
-  const store = await load();
-  const idx = store.orders.findIndex((o) => o.id === orderId);
-  if (idx < 0) return undefined;
-  store.orders[idx] = { ...store.orders[idx], status };
-  await save(store);
-  return store.orders[idx];
+  let updated: Order | undefined;
+  await mutateStore((store) => {
+    const idx = store.orders.findIndex((o) => o.id === orderId);
+    if (idx < 0) return;
+    store.orders[idx] = { ...store.orders[idx], status };
+    updated = store.orders[idx];
+  });
+  return updated;
 }
 
 export async function updateOrderShipping(
   orderId: string,
   shipping: Partial<OrderShipping>,
 ): Promise<Order | undefined> {
-  const store = await load();
-  const idx = store.orders.findIndex((o) => o.id === orderId);
-  if (idx < 0) return undefined;
-  const current = store.orders[idx].shipping;
-  const merged = normalizeShipping({
-    ...current,
-    ...shipping,
-    location:
-      shipping.location !== undefined
-        ? shipping.location
-        : current?.location,
+  let updated: Order | undefined;
+  await mutateStore((store) => {
+    const idx = store.orders.findIndex((o) => o.id === orderId);
+    if (idx < 0) return;
+    const current = store.orders[idx].shipping;
+    const merged = normalizeShipping({
+      ...current,
+      ...shipping,
+      location:
+        shipping.location !== undefined
+          ? shipping.location
+          : current?.location,
+    });
+    store.orders[idx] = { ...store.orders[idx], shipping: merged };
+    updated = store.orders[idx];
   });
-  store.orders[idx] = { ...store.orders[idx], shipping: merged };
-  await save(store);
-  return store.orders[idx];
+  return updated;
 }
 
 export async function getOrderStats() {

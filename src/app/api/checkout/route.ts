@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import {
-  createOrder,
-  formatShippingBlock,
-  normalizeShipping,
-  type OrderShipping,
-} from "@/lib/data/orders";
+import { fulfillCheckout } from "@/lib/checkout";
+import { formatShippingBlock, normalizeShipping } from "@/lib/data/orders";
 import { sendDirectMessage } from "@/lib/data/messages";
-import { adjustProductStock, getProduct } from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getUserById, listUsers, upsertAddress } from "@/lib/data/users";
 import { formatGhs } from "@/lib/currency";
-import { getEffectivePrice } from "@/lib/pricing";
-import type { ProductCategory } from "@/types";
+import type { OrderShipping } from "@/types/orders";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -71,58 +65,22 @@ export async function POST(request: Request) {
       });
     }
 
-    const lines = [];
-    for (const item of body.items) {
-      const product = await getProduct(item.productId);
-      if (!product) {
-        return NextResponse.json(
-          { error: `Unknown product ${item.productId}` },
-          { status: 400 },
-        );
-      }
-      if (product.stock < item.quantity) {
-        return NextResponse.json(
-          { error: `Insufficient stock for ${product.name}` },
-          { status: 409 },
-        );
-      }
-      const unit = getEffectivePrice(product);
-      lines.push({
-        productId: product.id,
-        sellerId: product.sellerId,
-        name: product.name,
-        image: product.images[0],
-        quantity: item.quantity,
-        unitPriceGhs: unit,
-        lineTotalGhs: unit * item.quantity,
-        category: product.category as ProductCategory,
-      });
-    }
-
-    const subtotalGhs = lines.reduce((sum, l) => sum + l.lineTotalGhs, 0);
-
-    for (const line of lines) {
-      await adjustProductStock(line.productId, -line.quantity);
-    }
-
-    const order = await createOrder({
-      currency: "GHS",
-      subtotalGhs,
-      status: "pending_payment",
+    const { order } = await fulfillCheckout({
+      items: body.items,
+      shipping,
       userId,
       buyerName: user?.name || session?.user?.name || shipping.recipientName,
-      buyerEmail: user?.email || session?.user?.email || undefined,
+      buyerEmail: user?.email ?? session?.user?.email ?? undefined,
       streamId: body.streamId,
       oneTap: Boolean(body.oneTap),
-      lines,
-      shipping,
-      paymentMethods: ["Mobile Money", "Card", "Hubsom Pay"],
-      deliveryEstimate: "Same-day Accra · 1–3 days nationwide",
     });
+
+    const lines = order.lines;
 
     // Notify each seller with product lines + shipping for their items.
     const bySeller = new Map<string, typeof lines>();
     for (const line of lines) {
+      if (!line.sellerId) continue;
       const list = bySeller.get(line.sellerId) ?? [];
       list.push(line);
       bySeller.set(line.sellerId, list);
@@ -192,9 +150,11 @@ export async function POST(request: Request) {
       createdAt: order.createdAt,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Checkout failed";
+    const conflict = /insufficient stock/i.test(message);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Checkout failed" },
-      { status: 400 },
+      { error: message },
+      { status: conflict ? 409 : 400 },
     );
   }
 }
