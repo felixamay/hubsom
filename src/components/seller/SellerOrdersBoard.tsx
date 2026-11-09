@@ -616,7 +616,13 @@ function ShipmentCard({
         </a>
         <button
           type="button"
-          disabled={pending}
+          disabled={
+            pending ||
+            shipment.status === "assigned" ||
+            shipment.status === "out_for_delivery" ||
+            shipment.status === "delivered" ||
+            shipment.status === "cancelled"
+          }
           onClick={sendToHubers}
           className={cn(
             "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-bold text-hubsom-ink disabled:opacity-50",

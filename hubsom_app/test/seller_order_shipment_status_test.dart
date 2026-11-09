@@ -90,6 +90,24 @@ void main() {
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'assigned');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'processing');
 
+    await expectLater(
+      LocalHuberStore.dispatchToHubers(
+        LocalHuberStore.getShipment(shipment.id)!,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('already with a rider'),
+        ),
+      ),
+    );
+    expect(LocalHuberStore.getShipment(shipment.id)?.status, 'assigned');
+    expect(
+      LocalHuberStore.getShipment(shipment.id)?.assignedHuberId,
+      profile.id,
+    );
+
     final shipped = await LocalHuberStore.markShipmentShipped(shipment.id);
     expect(shipped.status, 'shipped');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'shipped');

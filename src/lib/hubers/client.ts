@@ -6,6 +6,7 @@ import {
   type DeliveryOffer,
   type Shipment,
 } from "@/lib/data/shipments";
+import { assertShipmentCanAcceptNewOffers } from "@/lib/hubers/offer-dispatch";
 
 const FILE = "hubers.json";
 
@@ -62,9 +63,7 @@ export async function sendHubersDeliveryOffers(input: {
 }> {
   const shipment = await getShipment(input.shipment.id);
   if (!shipment) throw new Error("Shipment not found");
-  if (shipment.status === "cancelled" || shipment.status === "delivered") {
-    throw new Error("This shipment can’t accept new rider offers");
-  }
+  assertShipmentCanAcceptNewOffers(shipment.status);
   if (!shipment.destination.location) {
     throw new Error("Add the buyer location pin before sending to Hubers");
   }
