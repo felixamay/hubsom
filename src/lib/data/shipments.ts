@@ -1,5 +1,6 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
 import { getOrder } from "@/lib/data/orders";
+import { assertShipmentCanAcceptNewOffers } from "@/lib/hubers/offer-dispatch";
 import {
   normalizeGeoLocation,
   normalizeShipping,
@@ -176,6 +177,7 @@ export async function attachOffersToShipment(
   const idx = store.shipments.findIndex((s) => s.id === shipmentId);
   if (idx < 0) return undefined;
   const current = store.shipments[idx];
+  assertShipmentCanAcceptNewOffers(current.status);
   store.shipments[idx] = {
     ...current,
     offers: [...offers, ...current.offers],

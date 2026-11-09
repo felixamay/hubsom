@@ -338,12 +338,23 @@ class LocalHuberStore {
       .where((d) => d.huberId == huberId && d.status == 'delivered')
       .toList();
 
+  static bool _shipmentHasActiveRider(String status) =>
+      status == 'assigned' ||
+      status == 'out_for_delivery' ||
+      status == 'shipped';
+
   /// Fan out a Hubsom shipment to every registered Huber (no demo riders).
   static Future<({Shipment shipment, List<HuberOffer> offers})> dispatchToHubers(
     Shipment shipment, {
     double? preferredFeeGhs,
   }) async {
-    if (shipment.status == 'cancelled' || shipment.status == 'delivered') {
+    final current = getShipment(shipment.id) ?? shipment;
+    if (_shipmentHasActiveRider(current.status)) {
+      throw StateError(
+        'This shipment is already with a rider and cannot be re-offered',
+      );
+    }
+    if (current.status == 'cancelled' || current.status == 'delivered') {
       throw StateError('This shipment can’t accept new rider offers');
     }
     final riders = listProfiles();
@@ -355,8 +366,8 @@ class LocalHuberStore {
     final now = DateTime.now().toUtc();
     final expiresAt = now.add(offerTtl).toIso8601String();
     final fee = preferredFeeGhs ??
-        (defaultFeeGhs + shipment.items.length * 2).clamp(15, 80).toDouble();
-    final dest = shipment.destination;
+        (defaultFeeGhs + current.items.length * 2).clamp(15, 80).toDouble();
+    final dest = current.destination;
     final accra = MapsService.defaultCenter;
     final offers = <HuberOffer>[];
     for (var i = 0; i < riders.length; i++) {
@@ -364,12 +375,12 @@ class LocalHuberStore {
       offers.add(
         HuberOffer(
           id: 'off_${now.millisecondsSinceEpoch.toRadixString(36)}_$i',
-          shipmentId: shipment.id,
+          shipmentId: current.id,
           huberId: rider.id,
           huberName: rider.fullName,
           status: 'sent',
           offeredFeeGhs: fee,
-          providerReference: 'hubsom:${shipment.id}:${rider.id}',
+          providerReference: 'hubsom:${current.id}:${rider.id}',
           createdAt: now.toIso8601String(),
           expiresAt: expiresAt,
           sellerName: 'Hubsom seller',
@@ -378,8 +389,8 @@ class LocalHuberStore {
           recipientName: dest.recipientName,
           dropoffLine1: dest.line1,
           dropoffCity: dest.city,
-          itemCount: shipment.items.fold<int>(0, (s, e) => s + e.quantity),
-          weightLbs: (shipment.items.length * 4).clamp(4, 40).toDouble(),
+          itemCount: current.items.fold<int>(0, (s, e) => s + e.quantity),
+          weightLbs: (current.items.length * 4).clamp(4, 40).toDouble(),
           pickupLatitude: accra.latitude,
           pickupLongitude: accra.longitude,
           dropoffLatitude: dest.location?.latitude,
@@ -389,7 +400,7 @@ class LocalHuberStore {
     }
 
     final existing = listOffers()
-        .where((o) => o.shipmentId != shipment.id)
+        .where((o) => o.shipmentId != current.id)
         .toList();
     await _saveOffers([...offers, ...existing]);
 
@@ -409,9 +420,9 @@ class LocalHuberStore {
         )
         .toList();
     final updated = await saveShipment(
-      shipment.copyWith(
+      current.copyWith(
         status: 'offering',
-        offers: [...shipment.offers, ...contractOffers],
+        offers: [...current.offers, ...contractOffers],
         updatedAt: now.toIso8601String(),
       ),
     );
