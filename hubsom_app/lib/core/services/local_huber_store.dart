@@ -226,6 +226,14 @@ class LocalHuberStore {
     return shipment;
   }
 
+  static List<List<Order>> groupOrdersForShipment(Iterable<Order> orders) {
+    final groups = <String, List<Order>>{};
+    for (final order in orders) {
+      groups.putIfAbsent(order.shipmentGroupKey, () => []).add(order);
+    }
+    return groups.values.toList();
+  }
+
   static Future<Shipment> createShipmentFromOrders({
     required List<String> orderIds,
     required String sellerId,
@@ -234,6 +242,12 @@ class LocalHuberStore {
     final orders = listOrders().where((o) => orderIds.contains(o.id)).toList();
     if (orders.isEmpty) {
       throw StateError('Select paid orders to consolidate');
+    }
+    final destinations = orders.map((o) => o.shipmentGroupKey).toSet();
+    if (destinations.length > 1) {
+      throw StateError(
+        'Cannot pack orders for different buyers or addresses into one shipment',
+      );
     }
     final items = <ShipmentItem>[];
     for (final order in orders) {

@@ -1,5 +1,6 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
-import { getOrder } from "@/lib/data/orders";
+import { getOrder, type Order } from "@/lib/data/orders";
+import { assertSameDeliveryDestination } from "@/lib/shipment-destination";
 import {
   normalizeGeoLocation,
   normalizeShipping,
@@ -60,6 +61,7 @@ export async function createConsolidatedShipment(input: {
 
   const items: ShipmentItem[] = [];
   let destinationBase: OrderShipping | undefined;
+  const loaded: Order[] = [];
 
   for (const orderId of orderIds) {
     const order = await getOrder(orderId);
@@ -71,6 +73,7 @@ export async function createConsolidatedShipment(input: {
     if (!myLines.length) {
       throw new Error(`Order ${orderId} has none of your products`);
     }
+    loaded.push(order);
     for (const line of myLines) {
       items.push({
         orderId,
@@ -85,6 +88,8 @@ export async function createConsolidatedShipment(input: {
       destinationBase = order.shipping;
     }
   }
+
+  assertSameDeliveryDestination(loaded);
 
   if (!destinationBase && !input.destination) {
     throw new Error("Add a shipping destination before consolidating");
