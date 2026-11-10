@@ -101,4 +101,96 @@ void main() {
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'delivered');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'delivered');
   });
+
+  Order _paidOrder({
+    required String id,
+    required OrderShipping shipping,
+    String sellerId = 'seller-1',
+  }) {
+    return Order(
+      id: id,
+      subtotalGhs: 40,
+      status: 'paid',
+      lines: [
+        OrderLine(
+          productId: 'p-$id',
+          sellerId: sellerId,
+          name: 'Item $id',
+          quantity: 1,
+          unitPriceGhs: 40,
+          lineTotalGhs: 40,
+          category: 'fashion',
+        ),
+      ],
+      shipping: shipping,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  test('same buyer address may share one shipment; mixed drop-offs may not', () async {
+    final amaSpintex = const OrderShipping(
+      recipientName: 'Ama Buyer',
+      phone: '024-111-1111',
+      line1: '12 Spintex Rd',
+      city: 'Accra',
+      region: 'Greater Accra',
+      location: GeoLocation(latitude: 5.63, longitude: -0.17),
+    );
+    final amaAgain = const OrderShipping(
+      recipientName: 'AMA BUYER',
+      phone: '0241111111',
+      line1: '12 Spintex Rd',
+      city: 'Accra',
+      region: 'Greater Accra',
+      location: GeoLocation(latitude: 5.64, longitude: -0.18),
+    );
+    final kojoKumasi = const OrderShipping(
+      recipientName: 'Kojo Buyer',
+      phone: '0242222222',
+      line1: '4 Kejetia',
+      city: 'Kumasi',
+      region: 'Ashanti',
+      location: GeoLocation(latitude: 6.69, longitude: -1.62),
+    );
+
+    final first = _paidOrder(id: 'ord_ama_1', shipping: amaSpintex);
+    final second = _paidOrder(id: 'ord_ama_2', shipping: amaAgain);
+    final other = _paidOrder(id: 'ord_kojo', shipping: kojoKumasi);
+    await LocalHuberStore.saveOrder(first);
+    await LocalHuberStore.saveOrder(second);
+    await LocalHuberStore.saveOrder(other);
+
+    final together = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: [first.id, second.id],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+    );
+    expect(together.orderIds, containsAll([first.id, second.id]));
+    expect(together.destination.recipientName, 'Ama Buyer');
+
+    expect(
+      () => LocalHuberStore.createShipmentFromOrders(
+        orderIds: [first.id, other.id],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('different buyers or addresses'),
+        ),
+      ),
+    );
+
+    final groups = LocalHuberStore.groupOrdersForShipment([first, second, other]);
+    expect(groups.length, 2);
+    expect(
+      groups.map((g) => g.map((o) => o.id).toSet()).toList(),
+      unorderedEquals([
+        {first.id, second.id},
+        {other.id},
+      ]),
+    );
+  });
 }

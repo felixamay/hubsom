@@ -100,6 +100,17 @@ class OrderShipping extends Equatable {
 
   @override
   List<Object?> get props => [recipientName, phone, line1, city, region, location];
+
+  /// Recipient + phone + street, ignoring GPS pin jitter.
+  String get deliveryGroupKey {
+    final name = recipientName.trim().toLowerCase();
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    final street = line1.trim().toLowerCase();
+    final town = city.trim().toLowerCase();
+    final area = region.trim().toLowerCase();
+    if (name.isEmpty && digits.isEmpty && street.isEmpty) return '';
+    return '$name|$digits|$street|$town|$area';
+  }
 }
 
 class Order extends Equatable {
@@ -176,6 +187,12 @@ class Order extends Equatable {
 
   @override
   List<Object?> get props => [id, status, subtotalGhs, lines];
+
+  /// Orders that share this key may ride in one Huber shipment.
+  String get shipmentGroupKey {
+    final fingerprint = shipping?.deliveryGroupKey ?? '';
+    return fingerprint.isEmpty ? 'order:$id' : fingerprint;
+  }
 
   Order copyWith({
     String? status,

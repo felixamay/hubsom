@@ -100,8 +100,9 @@ export function SellerOrdersBoard({
               Consolidate purchases
             </p>
             <p className="mt-1 text-sm text-hubsom-ink/65">
-              Select paid/pending orders, create one shipment, pin the buyer
-              location, then Locate or send offers to approved Hubers riders.
+              Select orders that share one delivery address, create a
+              shipment, pin the buyer location, then Locate or send offers to
+              approved Hubers riders. Mixed addresses need separate runs.
             </p>
           </div>
           <button
