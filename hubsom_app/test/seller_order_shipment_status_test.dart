@@ -101,4 +101,89 @@ void main() {
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'delivered');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'delivered');
   });
+
+  test('pin-less Kumasi order is not stamped with an Accra drop-off', () async {
+    final order = Order(
+      id: 'ord_kumasi_1',
+      subtotalGhs: 80,
+      status: 'paid',
+      lines: const [
+        OrderLine(
+          productId: 'p1',
+          sellerId: 'seller-1',
+          name: 'Wax print',
+          quantity: 1,
+          unitPriceGhs: 80,
+          lineTotalGhs: 80,
+          category: 'fashion',
+        ),
+      ],
+      shipping: const OrderShipping(
+        recipientName: 'Kojo Buyer',
+        phone: '0241111111',
+        line1: 'Kejetia Market',
+        city: 'Kumasi',
+        region: 'Ashanti',
+      ),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await LocalHuberStore.saveOrder(order);
+
+    final shipment = await LocalHuberStore.createShipmentFromOrders(
+      orderIds: [order.id],
+      sellerId: 'seller-1',
+      createdByUserId: 'seller-1',
+    );
+    expect(shipment.status, 'draft');
+    expect(shipment.destination.city, 'Kumasi');
+    expect(shipment.destination.line1, 'Kejetia Market');
+    expect(shipment.destination.location, isNull);
+
+    expect(
+      () => LocalHuberStore.dispatchToHubers(shipment),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('buyer location pin'),
+        ),
+      ),
+    );
+  });
+
+  test('orders with no shipping cannot be consolidated', () async {
+    final order = Order(
+      id: 'ord_noship_1',
+      subtotalGhs: 40,
+      status: 'paid',
+      lines: const [
+        OrderLine(
+          productId: 'p1',
+          sellerId: 'seller-1',
+          name: 'Soap',
+          quantity: 1,
+          unitPriceGhs: 40,
+          lineTotalGhs: 40,
+          category: 'beauty',
+        ),
+      ],
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await LocalHuberStore.saveOrder(order);
+
+    expect(
+      () => LocalHuberStore.createShipmentFromOrders(
+        orderIds: [order.id],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('shipping destination'),
+        ),
+      ),
+    );
+  });
 }

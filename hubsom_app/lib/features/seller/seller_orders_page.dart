@@ -390,15 +390,30 @@ class _SellerOrdersPageState extends ConsumerState<SellerOrdersPage>
             return;
           }
           final messenger = ScaffoldMessenger.of(context);
-          await ref
-              .read(orderRepositoryProvider)
-              .createShipment({'orderIds': paid});
-          await _load();
-          if (!mounted) return;
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Shipment created — offer to Hubers')),
-          );
-          _tabs.animateTo(1);
+          try {
+            final shipment = await ref
+                .read(orderRepositoryProvider)
+                .createShipment({'orderIds': paid});
+            await _load();
+            if (!mounted) return;
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  shipment.destination.location == null
+                      ? 'Shipment created — pin the buyer location before Hubers'
+                      : 'Shipment created — offer to Hubers',
+                ),
+              ),
+            );
+            _tabs.animateTo(1);
+          } catch (e) {
+            if (!mounted) return;
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('$e'.replaceFirst('Bad state: ', '')),
+              ),
+            );
+          }
         },
         label: const Text('Consolidate'),
         icon: const Icon(Icons.merge_type),

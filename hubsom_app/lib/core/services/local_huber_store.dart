@@ -251,37 +251,14 @@ class LocalHuberStore {
       }
     }
     final shipping = orders
-            .map((o) => o.shipping)
-            .firstWhere((s) => s != null, orElse: () => null) ??
-        const OrderShipping(
-          recipientName: 'Buyer',
-          phone: '',
-          line1: 'Accra',
-          city: 'Accra',
-          region: 'Greater Accra',
-          location: GeoLocation(
-            latitude: 5.6037,
-            longitude: -0.187,
-            source: 'map-pin',
-          ),
-        );
-    final dest = shipping.location == null
-        ? OrderShipping(
-            recipientName: shipping.recipientName,
-            phone: shipping.phone,
-            line1: shipping.line1,
-            line2: shipping.line2,
-            city: shipping.city,
-            region: shipping.region,
-            notes: shipping.notes,
-            label: shipping.label,
-            location: const GeoLocation(
-              latitude: 5.6037,
-              longitude: -0.187,
-              source: 'map-pin',
-            ),
-          )
-        : shipping;
+        .map((o) => o.shipping)
+        .firstWhere((s) => s != null, orElse: () => null);
+    if (shipping == null) {
+      throw StateError('Add a shipping destination before consolidating');
+    }
+    // Never invent a drop-off pin. Flutter checkout often has city/line1
+    // but no GPS; stamping Accra here dispatched Kumasi (etc.) lots downtown.
+    final dest = shipping;
     final now = DateTime.now().toUtc().toIso8601String();
     final created = await saveShipment(
       Shipment(
@@ -291,7 +268,7 @@ class LocalHuberStore {
         orderIds: orderIds,
         items: items,
         destination: dest,
-        status: 'ready',
+        status: dest.location != null ? 'ready' : 'draft',
         createdAt: now,
         updatedAt: now,
       ),
@@ -345,6 +322,11 @@ class LocalHuberStore {
   }) async {
     if (shipment.status == 'cancelled' || shipment.status == 'delivered') {
       throw StateError('This shipment can’t accept new rider offers');
+    }
+    if (shipment.destination.location == null) {
+      throw StateError(
+        'Add the buyer location pin before sending to Hubers',
+      );
     }
     final riders = listProfiles();
     if (riders.isEmpty) {
