@@ -1,29 +1,18 @@
-import { promises as fs } from "fs";
-import path from "path";
 import type { LiveStream, ProductCategory, StreamHost } from "@/types";
 import { getProduct } from "@/lib/data/products";
 import { ensureDefaultSeller } from "@/lib/data/sellers";
+import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const STORE_FILE = path.join(DATA_DIR, "live-streams.json");
+const FILE = "live-streams.json";
 
 type StoreShape = Record<string, LiveStream>;
 
 async function ensureStore(): Promise<StoreShape> {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const raw = await fs.readFile(STORE_FILE, "utf8");
-    return JSON.parse(raw) as StoreShape;
-  } catch {
-    const empty: StoreShape = {};
-    await fs.writeFile(STORE_FILE, JSON.stringify(empty, null, 2), "utf8");
-    return empty;
-  }
+  return readJsonFile<StoreShape>(FILE, {});
 }
 
 async function writeStore(store: StoreShape) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+  await writeJsonFile(FILE, store);
 }
 
 export async function listAllStreams(): Promise<LiveStream[]> {
