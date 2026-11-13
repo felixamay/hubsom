@@ -135,8 +135,30 @@ class Order extends Equatable {
   final String deliveryEstimate;
   final String createdAt;
 
+  /// Checkout JSON from `/api/checkout` uses `orderId`; local/cloud rows use `id`.
+  static Order? tryFromCheckoutPayload(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    try {
+      return Order.fromCheckoutPayload(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  factory Order.fromCheckoutPayload(Map<String, dynamic> json) {
+    final nested = json['order'];
+    final src = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : Map<String, dynamic>.from(json);
+    final id = src['id'] ?? src['orderId'] ?? json['orderId'] ?? json['id'];
+    if (id is! String || id.isEmpty) {
+      throw FormatException('Checkout payload missing order id');
+    }
+    return Order.fromJson({...src, 'id': id});
+  }
+
   factory Order.fromJson(Map<String, dynamic> json) => Order(
-        id: json['id'] as String,
+        id: (json['id'] ?? json['orderId']) as String,
         currency: json['currency'] as String? ?? 'GHS',
         subtotalGhs: (json['subtotalGhs'] as num?)?.toDouble() ?? 0,
         status: json['status'] as String? ?? 'pending_payment',
