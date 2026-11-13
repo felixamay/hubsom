@@ -29,10 +29,12 @@ class OrderRepository {
   Future<Order> checkout(Map<String, dynamic> body) async {
     try {
       final res = await _api.post('/api/checkout', data: body);
+      final code = res.statusCode ?? 0;
       final data = ApiResponse.asMap(res.data);
-      final order = data?['order'] as Map? ?? data;
-      if (order != null && order['id'] != null) {
-        return Order.fromJson(Map<String, dynamic>.from(order));
+      final order = Order.tryFromCheckoutPayload(data);
+      if (code >= 200 && code < 300 && order != null) {
+        await LocalHuberStore.saveOrder(order);
+        return order;
       }
     } catch (_) {}
     throw StateError('Checkout failed');

@@ -51,7 +51,9 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         paymentMethods: _selected.toList(),
       );
       await ref.read(cartProvider.notifier).clear();
-      setState(() => _result = 'Order placed: ${res['order']?['id'] ?? res['id'] ?? 'ok'}');
+      final orderId =
+          res['order']?['id'] ?? res['id'] ?? res['orderId'] ?? 'ok';
+      setState(() => _result = 'Order placed: $orderId');
     } catch (e) {
       setState(() => _result = 'Checkout failed: $e');
     } finally {

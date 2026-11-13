@@ -47,12 +47,23 @@ class PaymentService {
           'oneTap': oneTap,
         },
       );
+      final code = res.statusCode ?? 0;
       final data = ApiResponse.asMap(res.data);
-      if (data != null && (data['order'] != null || data['id'] != null)) {
-        return data;
+      if (code >= 200 && code < 300) {
+        final accepted = Order.tryFromCheckoutPayload(data);
+        if (accepted != null) {
+          await LocalHuberStore.saveOrder(accepted);
+          return _result(accepted);
+        }
+      } else if (code >= 400 && code < 500 && data?['error'] != null) {
+        throw StateError('${data!['error']}');
       }
-    } catch (_) {}
+    } catch (error) {
+      if (error is StateError) rethrow;
+    }
 
+    // Hosting / offline fallback. Never claim payment succeeded — the API
+    // creates `pending_payment` and no rail (Paystack/MoMo/wallet) is captured here.
     final user = _sessionUser();
     final lines = items.map((e) {
       final qty = (e['quantity'] as num?)?.toInt() ?? 1;
@@ -73,7 +84,7 @@ class PaymentService {
     final order = Order(
       id: 'ord_${const Uuid().v4().replaceAll('-', '').substring(0, 10)}',
       subtotalGhs: subtotal,
-      status: 'paid',
+      status: 'pending_payment',
       userId: user?.id,
       buyerName: dest.recipientName,
       buyerEmail: user?.email,
@@ -85,8 +96,16 @@ class PaymentService {
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
-    return {'ok': true, 'order': order.toJson()};
+    return _result(order);
   }
+
+  Map<String, dynamic> _result(Order order) => {
+        'ok': true,
+        'id': order.id,
+        'orderId': order.id,
+        'status': order.status,
+        'order': order.toJson(),
+      };
 
   HubsomUser? _sessionUser() {
     final raw = LocalStore.userJson;
