@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
 import { authConfig } from "@/auth.config";
+import { sessionEpochRevoked } from "@/lib/auth/oauth-link";
 import { getEnabledSocialProviders } from "@/lib/auth/providers";
 import {
   getUserById,
@@ -116,6 +117,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.name = user.name;
         token.email = user.email;
         token.picture = user.image;
+        token.invalid = false;
       }
 
       if (trigger === "update" && session?.user) {
@@ -130,21 +132,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (typeof token.userId === "string") {
         const fresh = await getUserById(token.userId);
-        if (fresh) {
-          token.name = fresh.name;
-          token.email = fresh.email;
-          token.picture = fresh.image;
-          token.role = fresh.role;
-          token.phone = fresh.phone;
-          token.city = fresh.city;
-          token.region = fresh.region;
-          token.sellerId = fresh.sellerId;
+        if (!fresh) {
+          return { invalid: true };
         }
+        if (
+          sessionEpochRevoked(
+            token.sessionEpoch,
+            fresh.sessionEpoch,
+            Boolean(user?.id),
+          )
+        ) {
+          return { invalid: true };
+        }
+        token.sessionEpoch = fresh.sessionEpoch ?? 0;
+        token.name = fresh.name;
+        token.email = fresh.email;
+        token.picture = fresh.image;
+        token.role = fresh.role;
+        token.phone = fresh.phone;
+        token.city = fresh.city;
+        token.region = fresh.region;
+        token.sellerId = fresh.sellerId;
       }
 
       return token;
     },
     async session({ session, token }) {
+      if (token.invalid || typeof token.userId !== "string") {
+        return { expires: new Date(0).toISOString() } as typeof session;
+      }
       if (session.user) {
         session.user.id = String(token.userId ?? token.sub ?? "");
         session.user.name =

@@ -1,4 +1,8 @@
 import bcrypt from "bcryptjs";
+import {
+  isUnverifiedPasswordSquat,
+  nextSessionEpoch,
+} from "@/lib/auth/oauth-link";
 import { readJsonFile, slugify, writeJsonFile } from "@/lib/data/persist";
 import type {
   AuthProviderId,
@@ -128,13 +132,18 @@ export async function upsertOAuthUser(input: {
     const providers = Array.from(
       new Set([...user.providers, input.provider]),
     ) as AuthProviderId[];
+    const revokePassword = isUnverifiedPasswordSquat(user, input.provider);
+    const { passwordHash: _passwordHash, ...withoutPassword } = user;
     user = {
-      ...user,
+      ...(revokePassword ? withoutPassword : user),
       name: user.name || input.name?.trim() || user.email.split("@")[0],
       image: input.image || user.image,
       providers,
       oauthIds: { ...user.oauthIds, [input.provider]: input.providerAccountId },
       emailVerified: true,
+      sessionEpoch: revokePassword
+        ? nextSessionEpoch(user.sessionEpoch)
+        : user.sessionEpoch,
       updatedAt: now,
     };
     const idx = store.users.findIndex((u) => u.id === user!.id);
