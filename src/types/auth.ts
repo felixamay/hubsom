@@ -41,6 +41,11 @@ export interface HubsomUser {
   providers: AuthProviderId[];
   oauthIds: Partial<Record<"google" | "facebook" | "apple", string>>;
   emailVerified: boolean;
+  /**
+   * Bumped when verified OAuth takes over an unverified password squat so
+   * leftover JWTs from the squatter are rejected.
+   */
+  sessionEpoch?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,5 +81,7 @@ declare module "@auth/core/jwt" {
     city?: string;
     region?: string;
     sellerId?: string;
+    sessionEpoch?: number;
+    invalid?: boolean;
   }
 }
