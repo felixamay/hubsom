@@ -171,6 +171,8 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
       let statsTimer: ReturnType<typeof setInterval> | null = null;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
       let wakeLock: WakeLockSentinel | null = null;
+      // Server decides publisher vs subscriber; never trust the client query/role.
+      let rtcRole: AgoraRole = role === "publisher" ? "publisher" : "subscriber";
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let AgoraRTC: any = null;
 
@@ -182,7 +184,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
 
       /** Viewers with no host video yet see "waiting" instead of a black screen. */
       function settledState(): LiveConnectionState {
-        return role === "subscriber" && remoteVideoUidsRef.current.size === 0
+        return rtcRole === "subscriber" && remoteVideoUidsRef.current.size === 0
           ? "waiting"
           : "connected";
       }
@@ -217,7 +219,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
 
       // Keep the host's phone screen from sleeping mid-show.
       async function acquireWakeLock() {
-        if (role !== "publisher" || !("wakeLock" in navigator)) return;
+        if (rtcRole !== "publisher" || !("wakeLock" in navigator)) return;
         try {
           wakeLock = await navigator.wakeLock.request("screen");
         } catch {
@@ -256,6 +258,8 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
 
           const tokenData = await fetchToken();
           const uid: number = tokenData.uid;
+          rtcRole =
+            tokenData.role === "publisher" ? "publisher" : "subscriber";
           if (disposed) return;
 
           const client = AgoraRTC.createClient({
@@ -267,7 +271,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
           remoteAudioRef.current = [];
           syncRemoteHosts();
 
-          if (role === "publisher") {
+          if (rtcRole === "publisher") {
             await client.setClientRole("host");
           } else {
             // Level 2 = ultra-low latency (~400–800ms) instead of the
@@ -280,7 +284,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
           // "cover" layout doesn't crop away most of the pixels.
           const portrait = window.innerHeight >= window.innerWidth;
           const tracksPromise =
-            role === "publisher"
+            rtcRole === "publisher"
               ? AgoraRTC.createMicrophoneAndCameraTracks(
                   { AEC: true, ANS: true, AGC: true },
                   {
@@ -312,7 +316,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             })
             .catch(() => undefined);
 
-          if (role === "publisher") {
+          if (rtcRole === "publisher") {
             // The SDK's default low stream is 160×120, which looks terrible
             // if a viewer falls back to it.
             client.setLowStreamParameter?.({
@@ -337,7 +341,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
                   .catch(() => undefined);
                 client.setStreamFallbackOption?.(user.uid, 1);
                 const target =
-                  role === "publisher" && guestRef.current
+                  rtcRole === "publisher" && guestRef.current
                     ? guestRef.current
                     : primaryRef.current;
                 if (target) user.videoTrack?.play(target, { fit: "cover" });
@@ -411,7 +415,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             (stats: any) => {
               // 0 unknown, 1–2 good, 3 poor, 4–6 bad/down
               const score =
-                role === "publisher"
+                rtcRole === "publisher"
                   ? stats?.uplinkNetworkQuality ?? 0
                   : stats?.downlinkNetworkQuality ?? 0;
               setQuality(
@@ -476,7 +480,7 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             updateState(settledState(), "Agora RTC connected");
             statsTimer = setInterval(() => {
               try {
-                if (role === "subscriber") {
+                if (rtcRole === "subscriber") {
                   // Real camera-to-screen delay reported by the SDK.
                   const remote = client.getRemoteVideoStats?.() ?? {};
                   const delays = Object.values(remote)

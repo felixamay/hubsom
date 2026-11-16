@@ -33,7 +33,8 @@ function verifySignature(rawBody: string, signatureHeader: string | null) {
   const secret = process.env.HUBERS_WEBHOOK_SECRET;
   if (!secret) {
     // Dev / pre-connect: allow unsigned webhooks so Huber can integrate early.
-    return true;
+    // Fail closed in production so forged delivery events cannot mark orders delivered.
+    return process.env.NODE_ENV !== "production";
   }
   if (!signatureHeader?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");

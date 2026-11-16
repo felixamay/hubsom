@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import {
-  findStreamByAuctionId,
-  patchStream,
-} from "@/lib/data/stream-registry";
+import { placeAuctionBid } from "@/lib/data/stream-registry";
 
 export async function POST(
   request: Request,
@@ -15,81 +12,49 @@ export async function POST(
   }
 
   const { id } = await context.params;
-  const stream = await findStreamByAuctionId(id);
-  if (!stream?.auction) {
-    return NextResponse.json({ error: "Auction not found" }, { status: 404 });
-  }
 
-  let body: { amountGhs?: number; bidder?: string } = {};
+  let body: { amountGhs?: number } = {};
   try {
-    body = (await request.json()) as { amountGhs?: number; bidder?: string };
+    body = (await request.json()) as { amountGhs?: number };
   } catch {
     body = {};
   }
 
-  const auction = stream.auction;
-  if (auction.status !== "open" && auction.status !== "closing") {
-    return NextResponse.json(
-      { error: "This auction is no longer accepting bids" },
-      { status: 400 },
-    );
-  }
-
-  if (new Date(auction.endsAt).getTime() <= Date.now()) {
-    const closed = {
-      ...auction,
-      status: "unsold" as const,
-    };
-    await patchStream(stream.id, { auction: closed });
-    return NextResponse.json(
-      { error: "Auction has ended", auction: closed },
-      { status: 400 },
-    );
-  }
-
-  const minNext =
-    Math.round((auction.currentBidGhs + auction.minIncrementGhs) * 100) / 100;
-  const amount =
-    body.amountGhs != null && Number.isFinite(Number(body.amountGhs))
-      ? Math.round(Number(body.amountGhs) * 100) / 100
-      : minNext;
-
-  if (amount < minNext) {
-    return NextResponse.json(
-      {
-        error: `Bid must be at least GHS ${minNext.toFixed(2)}`,
-        minNextGhs: minNext,
-        currentBidGhs: auction.currentBidGhs,
-      },
-      { status: 400 },
-    );
-  }
-
   const bidderName =
-    body.bidder?.trim() ||
     session.user.name?.trim() ||
     session.user.email?.split("@")[0] ||
     "Bidder";
 
-  const nextAuction = {
-    ...auction,
-    currentBidGhs: amount,
-    bidderCount: auction.bidderCount + 1,
-    highestBidder: bidderName,
-    status: "open" as const,
-  };
+  const result = await placeAuctionBid({
+    auctionId: id,
+    amountGhs: body.amountGhs,
+    bidderName,
+    bidderUserId: session.user.id,
+  });
 
-  const updated = await patchStream(stream.id, { auction: nextAuction });
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error: result.error,
+        auction: result.auction,
+        minNextGhs: result.minNextGhs,
+        currentBidGhs: result.currentBidGhs,
+      },
+      { status: result.status },
+    );
+  }
 
+  const auction = result.auction;
   return NextResponse.json({
     auctionId: id,
-    streamId: stream.id,
-    currentBidGhs: nextAuction.currentBidGhs,
-    bidderCount: nextAuction.bidderCount,
-    highestBidder: nextAuction.highestBidder,
-    endsAt: nextAuction.endsAt,
-    minIncrementGhs: nextAuction.minIncrementGhs,
-    status: nextAuction.status,
-    auction: updated?.auction ?? nextAuction,
+    streamId: result.stream.id,
+    currentBidGhs: auction.currentBidGhs,
+    bidderCount: auction.bidderCount,
+    highestBidder: auction.highestBidder,
+    highestBidderId: auction.highestBidderId,
+    endsAt: auction.endsAt,
+    minIncrementGhs: auction.minIncrementGhs,
+    status: auction.status,
+    auction,
   });
 }

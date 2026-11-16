@@ -1,5 +1,10 @@
 import { ALL_FULFILLMENT_MODES } from "@/lib/categories";
-import { readJsonFile, slugify, writeJsonFile } from "@/lib/data/persist";
+import {
+  readJsonFile,
+  slugify,
+  withFileLock,
+  writeJsonFile,
+} from "@/lib/data/persist";
 import { getEffectivePrice } from "@/lib/pricing";
 import type { Product, ProductBundle, ProductCategory } from "@/types";
 
@@ -102,28 +107,49 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   return product;
 }
 
+export class InsufficientStockError extends Error {
+  constructor(public readonly productId: string) {
+    super("Insufficient stock");
+    this.name = "InsufficientStockError";
+  }
+}
+
 export async function updateProductStock(
   productId: string,
   stock: number,
 ): Promise<Product | undefined> {
-  const store = await load();
-  const idx = store.products.findIndex((p) => p.id === productId);
-  if (idx < 0) return undefined;
-  store.products[idx] = {
-    ...store.products[idx],
-    stock: Math.max(0, Math.floor(stock)),
-  };
-  await save(store);
-  return store.products[idx];
+  return withFileLock(FILE, async () => {
+    const store = await load();
+    const idx = store.products.findIndex((p) => p.id === productId);
+    if (idx < 0) return undefined;
+    store.products[idx] = {
+      ...store.products[idx],
+      stock: Math.max(0, Math.floor(stock)),
+    };
+    await save(store);
+    return store.products[idx];
+  });
 }
 
 export async function adjustProductStock(
   productId: string,
   delta: number,
 ): Promise<Product | undefined> {
-  const product = await getProduct(productId);
-  if (!product) return undefined;
-  return updateProductStock(productId, product.stock + delta);
+  return withFileLock(FILE, async () => {
+    const store = await load();
+    const idx = store.products.findIndex((p) => p.id === productId);
+    if (idx < 0) return undefined;
+    const next = store.products[idx].stock + delta;
+    if (next < 0) {
+      throw new InsufficientStockError(productId);
+    }
+    store.products[idx] = {
+      ...store.products[idx],
+      stock: Math.floor(next),
+    };
+    await save(store);
+    return store.products[idx];
+  });
 }
 
 export async function updateProductRating(

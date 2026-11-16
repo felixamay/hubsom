@@ -51,7 +51,6 @@ export async function createEmailUser(input: {
   name: string;
   email: string;
   password: string;
-  role?: HubsomUser["role"];
   phone?: string;
   city?: string;
 }): Promise<HubsomUser> {
@@ -74,16 +73,9 @@ export async function createEmailUser(input: {
     name: input.name.trim() || email.split("@")[0],
     passwordHash: await bcrypt.hash(input.password, 10),
     image: "/brand/hubsom-logo.png",
-    role:
-      input.role === "huber" ||
-      input.role === "seller" ||
-      input.role === "both"
-        ? input.role
-        : "buyer",
+    role: "buyer",
     phone: input.phone,
     city: input.city,
-    huberId:
-      input.role === "huber" ? `huber-user-${Date.now().toString(36)}` : undefined,
     followingSellerIds: [],
     savedProductIds: [],
     addresses: [],

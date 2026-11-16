@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { parseLineQuantity } from "@/lib/checkout-quantity";
 import {
   createOrder,
   formatShippingBlock,
@@ -7,7 +8,11 @@ import {
   type OrderShipping,
 } from "@/lib/data/orders";
 import { sendDirectMessage } from "@/lib/data/messages";
-import { adjustProductStock, getProduct } from "@/lib/data/products";
+import {
+  adjustProductStock,
+  getProduct,
+  InsufficientStockError,
+} from "@/lib/data/products";
 import { getSeller } from "@/lib/data/sellers";
 import { getUserById, listUsers, upsertAddress } from "@/lib/data/users";
 import { formatGhs } from "@/lib/currency";
@@ -73,6 +78,13 @@ export async function POST(request: Request) {
 
     const lines = [];
     for (const item of body.items) {
+      const quantity = parseLineQuantity(item.quantity);
+      if (quantity == null) {
+        return NextResponse.json(
+          { error: "Quantity must be a positive integer" },
+          { status: 400 },
+        );
+      }
       const product = await getProduct(item.productId);
       if (!product) {
         return NextResponse.json(
@@ -80,7 +92,7 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
-      if (product.stock < item.quantity) {
+      if (product.stock < quantity) {
         return NextResponse.json(
           { error: `Insufficient stock for ${product.name}` },
           { status: 409 },
@@ -92,33 +104,60 @@ export async function POST(request: Request) {
         sellerId: product.sellerId,
         name: product.name,
         image: product.images[0],
-        quantity: item.quantity,
+        quantity,
         unitPriceGhs: unit,
-        lineTotalGhs: unit * item.quantity,
+        lineTotalGhs: unit * quantity,
         category: product.category as ProductCategory,
       });
     }
 
     const subtotalGhs = lines.reduce((sum, l) => sum + l.lineTotalGhs, 0);
 
-    for (const line of lines) {
-      await adjustProductStock(line.productId, -line.quantity);
+    const taken: Array<{ productId: string; quantity: number }> = [];
+    try {
+      for (const line of lines) {
+        await adjustProductStock(line.productId, -line.quantity);
+        taken.push({ productId: line.productId, quantity: line.quantity });
+      }
+    } catch (error) {
+      for (const item of taken) {
+        await adjustProductStock(item.productId, item.quantity).catch(
+          () => undefined,
+        );
+      }
+      if (error instanceof InsufficientStockError) {
+        return NextResponse.json(
+          { error: "Insufficient stock" },
+          { status: 409 },
+        );
+      }
+      throw error;
     }
 
-    const order = await createOrder({
-      currency: "GHS",
-      subtotalGhs,
-      status: "pending_payment",
-      userId,
-      buyerName: user?.name || session?.user?.name || shipping.recipientName,
-      buyerEmail: user?.email || session?.user?.email || undefined,
-      streamId: body.streamId,
-      oneTap: Boolean(body.oneTap),
-      lines,
-      shipping,
-      paymentMethods: ["Mobile Money", "Card", "Hubsom Pay"],
-      deliveryEstimate: "Same-day Accra · 1–3 days nationwide",
-    });
+    let order;
+    try {
+      order = await createOrder({
+        currency: "GHS",
+        subtotalGhs,
+        status: "pending_payment",
+        userId,
+        buyerName: user?.name || session?.user?.name || shipping.recipientName,
+        buyerEmail: user?.email || session?.user?.email || undefined,
+        streamId: body.streamId,
+        oneTap: Boolean(body.oneTap),
+        lines,
+        shipping,
+        paymentMethods: ["Mobile Money", "Card", "Hubsom Pay"],
+        deliveryEstimate: "Same-day Accra · 1–3 days nationwide",
+      });
+    } catch (error) {
+      for (const item of taken) {
+        await adjustProductStock(item.productId, item.quantity).catch(
+          () => undefined,
+        );
+      }
+      throw error;
+    }
 
     // Notify each seller with product lines + shipping for their items.
     const bySeller = new Map<string, typeof lines>();

@@ -1,11 +1,14 @@
 import { promises as fs } from "fs";
 import path from "path";
-import type { LiveStream, ProductCategory, StreamHost } from "@/types";
+import type { LiveAuction, LiveStream, ProductCategory, StreamHost } from "@/types";
 import { getProduct } from "@/lib/data/products";
 import { ensureDefaultSeller } from "@/lib/data/sellers";
+import { withFileLock } from "@/lib/data/persist";
+import { decideAuctionBid } from "@/lib/live/auction-bid";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_FILE = path.join(DATA_DIR, "live-streams.json");
+const LOCK_KEY = "live-streams.json";
 
 type StoreShape = Record<string, LiveStream>;
 
@@ -16,14 +19,27 @@ async function ensureStore(): Promise<StoreShape> {
     return JSON.parse(raw) as StoreShape;
   } catch {
     const empty: StoreShape = {};
-    await fs.writeFile(STORE_FILE, JSON.stringify(empty, null, 2), "utf8");
+    await writeStore(empty);
     return empty;
   }
 }
 
 async function writeStore(store: StoreShape) {
   await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+  const tmp = `${STORE_FILE}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(store, null, 2), "utf8");
+  await fs.rename(tmp, STORE_FILE);
+}
+
+async function mutateStore<T>(
+  fn: (store: StoreShape) => T | Promise<T>,
+): Promise<T> {
+  return withFileLock(LOCK_KEY, async () => {
+    const store = await ensureStore();
+    const result = await fn(store);
+    await writeStore(store);
+    return result;
+  });
 }
 
 export async function listAllStreams(): Promise<LiveStream[]> {
@@ -45,47 +61,55 @@ export async function getStreamById(
 }
 
 export async function upsertStream(stream: LiveStream): Promise<LiveStream> {
-  const store = await ensureStore();
-  store[stream.id] = stream;
-  await writeStore(store);
-  return stream;
+  return mutateStore((store) => {
+    store[stream.id] = stream;
+    return stream;
+  });
 }
 
 export async function patchStream(
   id: string,
   patch: Partial<LiveStream>,
 ): Promise<LiveStream | undefined> {
-  const current = await getStreamById(id);
-  if (!current) return undefined;
-  const next = { ...current, ...patch };
-  return upsertStream(next);
+  return mutateStore((store) => {
+    const current = store[id];
+    if (!current) return undefined;
+    const next = { ...current, ...patch };
+    store[id] = next;
+    return next;
+  });
 }
 
 export async function endLiveStream(id: string): Promise<LiveStream | undefined> {
-  const current = await getStreamById(id);
-  if (!current) return undefined;
-  if (current.status === "ended" || current.status === "replay") {
-    return current;
-  }
+  return mutateStore((store) => {
+    const current = store[id];
+    if (!current) return undefined;
+    if (current.status === "ended" || current.status === "replay") {
+      return current;
+    }
 
-  const auction =
-    current.auction &&
-    (current.auction.status === "open" || current.auction.status === "closing")
-      ? {
-          ...current.auction,
-          status:
-            current.auction.bidderCount > 0
-              ? ("sold" as const)
-              : ("unsold" as const),
-        }
-      : current.auction;
+    const auction =
+      current.auction &&
+      (current.auction.status === "open" || current.auction.status === "closing")
+        ? {
+            ...current.auction,
+            status:
+              current.auction.bidderCount > 0 ||
+              Boolean(current.auction.highestBidderId)
+                ? ("sold" as const)
+                : ("unsold" as const),
+          }
+        : current.auction;
 
-  return upsertStream({
-    ...current,
-    status: "ended",
-    endedAt: new Date().toISOString(),
-    auction,
-    replayAvailable: current.replayAvailable || Boolean(current.recordingUrl),
+    const next: LiveStream = {
+      ...current,
+      status: "ended",
+      endedAt: new Date().toISOString(),
+      auction,
+      replayAvailable: current.replayAvailable || Boolean(current.recordingUrl),
+    };
+    store[id] = next;
+    return next;
   });
 }
 
@@ -203,4 +227,78 @@ export async function createLiveStream(
 export async function findStreamByAuctionId(auctionId: string) {
   const streams = await listAllStreams();
   return streams.find((s) => s.auction?.id === auctionId);
+}
+
+export async function findStreamByChannelName(channelName: string) {
+  const streams = await listAllStreams();
+  return streams.find((s) => s.channelName === channelName);
+}
+
+export type PlaceAuctionBidInput = {
+  auctionId: string;
+  amountGhs?: number;
+  bidderName: string;
+  bidderUserId: string;
+};
+
+export type PlaceAuctionBidResult =
+  | { ok: true; stream: LiveStream; auction: LiveAuction }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      auction?: LiveAuction;
+      minNextGhs?: number;
+      currentBidGhs?: number;
+    };
+
+export async function placeAuctionBid(
+  input: PlaceAuctionBidInput,
+): Promise<PlaceAuctionBidResult> {
+  return withFileLock(LOCK_KEY, async () => {
+    const store = await ensureStore();
+    const stream = Object.values(store).find(
+      (s) => s.auction?.id === input.auctionId,
+    );
+    if (!stream?.auction) {
+      return { ok: false, status: 404, error: "Auction not found" };
+    }
+
+    const decision = decideAuctionBid({
+      auction: stream.auction,
+      amountGhs: input.amountGhs,
+      bidderName: input.bidderName,
+      bidderUserId: input.bidderUserId,
+    });
+
+    if (decision.kind === "closed") {
+      return { ok: false, status: 400, error: decision.error };
+    }
+
+    if (decision.kind === "too_low") {
+      return {
+        ok: false,
+        status: 400,
+        error: decision.error,
+        minNextGhs: decision.minNextGhs,
+        currentBidGhs: decision.currentBidGhs,
+        auction: stream.auction,
+      };
+    }
+
+    const next: LiveStream = { ...stream, auction: decision.auction };
+    store[stream.id] = next;
+    await writeStore(store);
+
+    if (decision.kind === "expired") {
+      return {
+        ok: false,
+        status: 400,
+        error: decision.error,
+        auction: decision.auction,
+      };
+    }
+
+    return { ok: true, stream: next, auction: decision.auction };
+  });
 }

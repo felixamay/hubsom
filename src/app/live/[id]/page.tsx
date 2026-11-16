@@ -26,13 +26,10 @@ export async function generateMetadata({
 
 export default async function LiveShowPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ host?: string }>;
 }) {
   const { id } = await params;
-  const { host } = await searchParams;
   const stream = await getStreamById(id);
   if (!stream) notFound();
 
@@ -48,7 +45,9 @@ export default async function LiveShowPage({
   const isOwnStore = Boolean(
     userId &&
       seller &&
-      (seller.ownerUserId === userId || session?.user?.sellerId === seller.id),
+      (seller.ownerUserId === userId ||
+        user?.sellerId === seller.id ||
+        session?.user?.sellerId === seller.id),
   );
   const initialFollowing =
     userId && seller ? await isFollowingSeller(userId, seller.id) : false;
@@ -60,7 +59,7 @@ export default async function LiveShowPage({
       seller={seller}
       products={products}
       initialChat={chat}
-      hostMode={host === "1"}
+      hostMode={isOwnStore}
       initialFollowing={initialFollowing}
       isOwnStore={isOwnStore}
       savedProductIds={savedProductIds}
