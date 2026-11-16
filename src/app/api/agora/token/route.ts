@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { RtcRole, RtcTokenBuilder } from "agora-token";
-import type { AgoraTokenRequest, AgoraTokenResponse } from "@/lib/streaming/agora";
+import { auth } from "@/auth";
+import { findStreamByChannelName } from "@/lib/data/stream-registry";
+import { isStreamHost } from "@/lib/live/host-auth";
+import type { AgoraRole, AgoraTokenRequest, AgoraTokenResponse } from "@/lib/streaming/agora";
 
 export const runtime = "nodejs";
 
@@ -12,17 +15,28 @@ function numericUid(uid: string | number | undefined): number {
 }
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   const body = (await request.json()) as AgoraTokenRequest;
   const appId = (process.env.NEXT_PUBLIC_AGORA_APP_ID ?? "").trim();
   const certificate = (process.env.AGORA_APP_CERTIFICATE ?? "").trim();
   const channelName = body.channelName?.trim();
   const expireSeconds = body.expireSeconds ?? 3600;
-  const role =
-    body.role === "publisher" ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
   const uid = numericUid(body.uid);
 
   if (!channelName) {
     return NextResponse.json({ error: "channelName required" }, { status: 400 });
+  }
+
+  let role: AgoraRole = "subscriber";
+  if (body.role === "publisher") {
+    const stream = await findStreamByChannelName(channelName);
+    if (stream && (await isStreamHost(session.user.id, stream))) {
+      role = "publisher";
+    }
   }
 
   const expiresAt = Math.floor(Date.now() / 1000) + expireSeconds;
@@ -45,7 +59,7 @@ export async function POST(request: Request) {
       channelName,
       token: null,
       uid,
-      role: body.role,
+      role,
       demoMode: false,
       certificateRequired: false,
       expiresAt,
@@ -58,7 +72,7 @@ export async function POST(request: Request) {
     certificate,
     channelName,
     uid,
-    role,
+    role === "publisher" ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER,
     expireSeconds,
     expireSeconds,
   );
@@ -68,7 +82,7 @@ export async function POST(request: Request) {
     channelName,
     token,
     uid,
-    role: body.role,
+    role,
     demoMode: false,
     certificateRequired: true,
     expiresAt,

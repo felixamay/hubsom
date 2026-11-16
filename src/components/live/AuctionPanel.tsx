@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import { Gavel } from "lucide-react";
 import { SaveProductButton } from "@/components/product/SaveProductButton";
 import { Countdown } from "@/components/ui/Countdown";
@@ -19,7 +18,6 @@ export function AuctionPanel({
   onAuctionChange?: (auction: LiveAuction) => void;
   initiallySaved?: boolean;
 }) {
-  const { data: session } = useSession();
   const [current, setCurrent] = useState(auction);
   const [bidding, setBidding] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -42,7 +40,6 @@ export function AuctionPanel({
         credentials: "same-origin",
         body: JSON.stringify({
           amountGhs: amount,
-          bidder: session?.user?.name || undefined,
         }),
       });
       const data = (await res.json()) as {
