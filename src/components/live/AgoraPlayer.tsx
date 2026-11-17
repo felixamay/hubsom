@@ -12,6 +12,10 @@ import {
   isAgoraConfigured,
   type AgoraRole,
 } from "@/lib/streaming/agora";
+import {
+  dropRefIfOwned,
+  takeSessionResource,
+} from "@/lib/streaming/agora-session";
 
 export type LiveConnectionState =
   | "idle"
@@ -173,6 +177,16 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
       let wakeLock: WakeLockSentinel | null = null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let AgoraRTC: any = null;
+      // Own this effect's RTC objects. Cleanup must close *these*, not
+      // whatever a newer reconnect attempt stored on the shared refs.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let ownedClient: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let ownedMic: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let ownedCam: any = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let ownedDenoiser: any = null;
 
       function syncRemoteHosts() {
         const count = remoteVideoUidsRef.current.size;
@@ -262,7 +276,10 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             mode: "live",
             codec: "vp8",
           });
-          clientRef.current = client;
+          ownedClient = takeSessionResource(disposed, client, clientRef, (c) => {
+            void Promise.resolve(c.leave?.()).catch(() => undefined);
+          });
+          if (!ownedClient) return;
           remoteVideoUidsRef.current.clear();
           remoteAudioRef.current = [];
           syncRemoteHosts();
@@ -302,13 +319,12 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
           tracksPromise
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ?.then(([mic, cam]: any[]) => {
-              if (disposed) {
-                mic.close();
-                cam.close();
-                return;
-              }
-              micRef.current = mic;
-              camRef.current = cam;
+              ownedMic = takeSessionResource(disposed, mic, micRef, (t) =>
+                t.close(),
+              );
+              ownedCam = takeSessionResource(disposed, cam, camRef, (t) =>
+                t.close(),
+              );
             })
             .catch(() => undefined);
 
@@ -427,22 +443,36 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
             tokenData.token ?? null,
             uid ?? null,
           );
+          if (disposed) {
+            await client.leave?.();
+            return;
+          }
 
           if (tracksPromise) {
             const [mic, cam] = await tracksPromise;
-            micRef.current = mic;
-            camRef.current = cam;
+            ownedMic = takeSessionResource(disposed, mic, micRef, (t) => t.close());
+            ownedCam = takeSessionResource(disposed, cam, camRef, (t) => t.close());
+            if (!ownedMic || !ownedCam) return;
             // Camera/mic can be killed by the OS (e.g. app backgrounded on iOS).
             cam.on("track-ended", () => scheduleRetry("Camera stopped — restarting…"));
             mic.on("track-ended", () => scheduleRetry("Microphone stopped — restarting…"));
             if (primaryRef.current) cam.play(primaryRef.current, { fit: "cover" });
             await client.publish([mic, cam]);
+            if (disposed) return;
 
             // Don't hold up going live on the ~3MB wasm download.
             void enableAiDenoiser(AgoraRTC, mic)
               .then((processor) => {
-                if (disposed) void processor?.destroy();
-                else denoiserRef.current = processor;
+                if (!processor) return;
+                ownedDenoiser = takeSessionResource(
+                  disposed,
+                  processor,
+                  denoiserRef,
+                  (p) => {
+                    p.unpipe?.();
+                    void p.destroy?.();
+                  },
+                );
               })
               .catch((err) => console.warn("AI noise suppression unavailable", err));
 
@@ -523,20 +553,25 @@ export const AgoraPlayer = forwardRef<AgoraPlayerHandle, Props>(
           AgoraRTC.onCameraChanged = undefined;
           AgoraRTC.onMicrophoneChanged = undefined;
         }
+        // Capture this attempt's objects *before* any await so a newer
+        // reconnect cannot have its client/tracks closed by this teardown.
+        const client = ownedClient;
+        const mic = ownedMic;
+        const cam = ownedCam;
+        const denoiser = ownedDenoiser;
         void (async () => {
           try {
-            const denoiser = denoiserRef.current;
-            denoiserRef.current = null;
             if (denoiser) {
-              denoiser.unpipe();
+              denoiser.unpipe?.();
               await denoiser.destroy().catch(() => undefined);
             }
-            micRef.current?.close?.();
-            camRef.current?.close?.();
-            micRef.current = null;
-            camRef.current = null;
-            await clientRef.current?.leave?.();
-            clientRef.current = null;
+            mic?.close?.();
+            cam?.close?.();
+            await client?.leave?.();
+            dropRefIfOwned(denoiserRef, denoiser);
+            dropRefIfOwned(micRef, mic);
+            dropRefIfOwned(camRef, cam);
+            dropRefIfOwned(clientRef, client);
           } catch {
             /* ignore */
           }
