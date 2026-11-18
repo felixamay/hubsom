@@ -32,6 +32,14 @@ class LiveRepository {
     } catch (_) {}
   }
 
+  void _requireHost(LiveStream stream) {
+    final user = _user;
+    if (user == null) throw AuthException('Sign in required');
+    if (!LocalCommerceStore.userIsHost(user, stream)) {
+      throw AuthException('Only the host can manage this live show');
+    }
+  }
+
   Future<List<LiveStream>> listStreams({String? status}) async {
     try {
       final res = await _api.get(
@@ -161,6 +169,10 @@ class LiveRepository {
   }
 
   Future<LiveStream> endStream(String id) async {
+    final current = await getStream(id);
+    if (current == null) throw StateError('Stream not found');
+    _requireHost(current);
+
     try {
       final res = await _api.post('/api/streams/$id/end');
       final data = ApiResponse.asMap(res.data);
@@ -178,6 +190,10 @@ class LiveRepository {
   }
 
   Future<LiveStream> pinProduct(String streamId, String productId) async {
+    final current = await getStream(streamId);
+    if (current == null) throw StateError('Stream not found');
+    _requireHost(current);
+
     try {
       final res = await _api.patch(
         '/api/streams/$streamId',
@@ -214,6 +230,9 @@ class LiveRepository {
   }
 
   Future<LiveAuction> extendAuction(String streamId, {int seconds = 30}) async {
+    final current = await getStream(streamId);
+    if (current == null) throw StateError('Stream not found');
+    _requireHost(current);
     final next = await LocalCommerceStore.extendAuction(
       streamId: streamId,
       seconds: seconds,
