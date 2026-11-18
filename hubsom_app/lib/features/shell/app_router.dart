@@ -182,7 +182,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/live/:id',
         builder: (_, state) => LiveRoomPage(
           streamId: state.pathParameters['id']!,
-          hostMode: state.uri.queryParameters['host'] == '1',
         ),
       ),
       GoRoute(path: '/timeline', builder: (_, __) => const TimelinePage()),

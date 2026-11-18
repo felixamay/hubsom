@@ -13,6 +13,7 @@ import '../../core/auth/require_auth.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/services/agora_service.dart';
 import '../../core/services/live_webrtc_signal_store.dart';
+import '../../core/services/local_commerce_store.dart';
 import '../../core/services/local_store.dart';
 import '../../core/theme/hubsom_colors.dart';
 import '../../core/utils/money.dart';
@@ -24,9 +25,8 @@ import '../../widgets/live_host_camera.dart';
 import '../../widgets/live_viewer_video.dart';
 
 class LiveRoomPage extends ConsumerStatefulWidget {
-  const LiveRoomPage({super.key, required this.streamId, this.hostMode = false});
+  const LiveRoomPage({super.key, required this.streamId});
   final String streamId;
-  final bool hostMode;
 
   @override
   ConsumerState<LiveRoomPage> createState() => _LiveRoomPageState();
@@ -59,11 +59,8 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
   late final AnimationController _pulse;
 
   bool get _isHost {
-    if (widget.hostMode) return true;
     final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || stream == null) return false;
-    return user.sellerId == stream!.sellerId ||
-        stream!.hosts.any((h) => h.id == user.id);
+    return LocalCommerceStore.userIsHost(user, stream);
   }
 
   String get _hostName {
@@ -181,7 +178,7 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       }
 
       List<Product> catalog = _catalog;
-      if (_isHost || widget.hostMode) {
+      if (_isHost) {
         try {
           catalog = await ref.read(sellerRepositoryProvider).myProducts();
         } catch (_) {}
@@ -198,22 +195,22 @@ class _LiveRoomPageState extends ConsumerState<LiveRoomPage>
       if (join) {
         // Non-blocking: web uses a stub so this must never freeze the UI.
         // ignore: unawaited_futures
-        _joinAgora(s);
+        _joinAgora(s, asHost: _isHost);
       }
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     }
   }
 
-  Future<void> _joinAgora(LiveStream s) async {
+  Future<void> _joinAgora(LiveStream s, {required bool asHost}) async {
     try {
       _agora = ref.read(agoraServiceProvider);
       final token = await _agora!.fetchToken(
         channelName: s.channelName,
-        uid: widget.hostMode ? 1 : 0,
-        role: widget.hostMode ? 'publisher' : 'subscriber',
+        uid: asHost ? 1 : 0,
+        role: asHost ? 'publisher' : 'subscriber',
       );
-      if (widget.hostMode) {
+      if (asHost) {
         await _agora!.joinAsHost(
           channelName: s.channelName,
           token: token ?? '',

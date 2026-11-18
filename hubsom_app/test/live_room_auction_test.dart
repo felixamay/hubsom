@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hubsom_app/core/config/app_config.dart';
+import 'package:hubsom_app/core/repositories/auth_repository.dart';
 import 'package:hubsom_app/core/repositories/catalog_repository.dart';
 import 'package:hubsom_app/core/repositories/live_repository.dart';
 import 'package:hubsom_app/core/repositories/seller_repository.dart';
@@ -307,5 +308,54 @@ void main() {
     expect(endedShow.auction?.status, 'closed');
     expect(endedShow.auction?.remainsOnAuctions, isTrue);
     expect(LocalCommerceStore.getProduct(open.productId), isNotNull);
+  });
+
+  test('?host=1 is not host proof — only the owner can end/pin/extend', () async {
+    final stream = await goLive();
+    expect(LocalCommerceStore.userIsHost(seller, stream), isTrue);
+    expect(LocalCommerceStore.userIsHost(bidder, stream), isFalse);
+
+    await LocalStore.setUserJson(jsonEncode(bidder.toJson()));
+    final live = LiveRepository(ApiClient());
+
+    await expectLater(
+      live.endStream(stream.id),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('Only the host'),
+        ),
+      ),
+    );
+    expect(LocalCommerceStore.getStream(stream.id)!.isLive, isTrue);
+
+    await expectLater(
+      live.pinProduct(stream.id, stream.productIds.first),
+      throwsA(isA<AuthException>()),
+    );
+    expect(
+      LocalCommerceStore.getStream(stream.id)!.pinnedProductId,
+      stream.pinnedProductId,
+    );
+
+    await expectLater(
+      live.extendAuction(stream.id),
+      throwsA(isA<AuthException>()),
+    );
+    await expectLater(
+      live.addProducts(stream.id, stream.productIds),
+      throwsA(isA<StateError>()),
+    );
+    expect(LocalCommerceStore.getStream(stream.id)!.isLive, isTrue);
+  });
+
+  test('the real host can still end their own live show', () async {
+    final stream = await goLive();
+    // goLive patches sellerId onto the session user.
+    final live = LiveRepository(ApiClient());
+    final ended = await live.endStream(stream.id);
+    expect(ended.isLive, isFalse);
+    expect(ended.status, 'ended');
   });
 }

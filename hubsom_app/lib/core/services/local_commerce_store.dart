@@ -250,6 +250,18 @@ class LocalCommerceStore {
     return null;
   }
 
+  /// True only when [user] owns the show. The `/live/:id?host=1` query
+  /// param is a navigation hint and must not be treated as proof of host.
+  static bool userIsHost(HubsomUser? user, LiveStream? stream) {
+    if (user == null || stream == null) return false;
+    if (user.sellerId != null &&
+        user.sellerId!.isNotEmpty &&
+        user.sellerId == stream.sellerId) {
+      return true;
+    }
+    return stream.hosts.any((h) => h.id == user.id);
+  }
+
   static Future<LiveStream> upsertStream(LiveStream stream) async {
     final streams = listStreams();
     final idx = streams.indexWhere((s) => s.id == stream.id);
