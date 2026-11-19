@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
+import { applyOAuthLink } from "@/lib/auth/oauth-link";
 import { readJsonFile, slugify, writeJsonFile } from "@/lib/data/persist";
 import type {
-  AuthProviderId,
   HubsomUser,
   PublicUser,
   UserAddress,
@@ -125,18 +125,7 @@ export async function upsertOAuthUser(input: {
     store.users.find((u) => u.email === email);
 
   if (user) {
-    const providers = Array.from(
-      new Set([...user.providers, input.provider]),
-    ) as AuthProviderId[];
-    user = {
-      ...user,
-      name: user.name || input.name?.trim() || user.email.split("@")[0],
-      image: input.image || user.image,
-      providers,
-      oauthIds: { ...user.oauthIds, [input.provider]: input.providerAccountId },
-      emailVerified: true,
-      updatedAt: now,
-    };
+    user = applyOAuthLink(user, input, now);
     const idx = store.users.findIndex((u) => u.id === user!.id);
     store.users[idx] = user;
     await save(store);
