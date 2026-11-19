@@ -2,9 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Shared Hubsom account vault (password stored as salt+sha256, never plaintext).
+    // Create-only: the web API key is public, so updates would let anyone
+    // overwrite another user's salt/hash and take over the account.
     match /accounts/{email} {
-      allow read, create, update: if true;
-      allow delete: if false;
+      allow read, create: if true;
+      allow update, delete: if false;
     }
 
     match /hubers/{id} {

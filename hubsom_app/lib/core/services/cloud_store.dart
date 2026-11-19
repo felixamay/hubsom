@@ -171,7 +171,16 @@ class CloudStore {
     return null;
   }
 
-  /// Writes an account and refuses to return until the server can read it back.
+  /// Firestore REST query that creates an account and refuses to overwrite one.
+  static Map<String, String> accountCreateQueryParameters() => {
+        'key': _apiKey,
+        'currentDocument.exists': 'false',
+      };
+
+  /// Writes a new account and refuses to return until the server can read it back.
+  ///
+  /// Existing documents are not patched: the public API key must not be able
+  /// to replace another user's salt/hash.
   static Future<void> putAccount(String email, Map<String, dynamic> data) async {
     if (!useNetwork) {
       throw StateError('Account database is disabled in this environment');
@@ -185,7 +194,7 @@ class CloudStore {
 
     final res = await _rest.patch<dynamic>(
       '$_root/$accounts/${Uri.encodeComponent(id)}',
-      queryParameters: {'key': _apiKey},
+      queryParameters: accountCreateQueryParameters(),
       data: {'fields': encodeFields(payload)},
     );
     if (res.statusCode == null || res.statusCode! < 200 || res.statusCode! >= 300) {
