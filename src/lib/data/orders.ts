@@ -1,4 +1,5 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
+import { adjustProductStock } from "@/lib/data/products";
 import {
   formatShippingBlock,
   mapsSearchUrl,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/shipping";
 import type {
   Order,
+  OrderLine,
   OrderShipping,
   OrderStatus,
 } from "@/types/orders";
@@ -74,16 +76,61 @@ export async function createOrder(
   return order;
 }
 
-export async function updateOrderStatus(
+/** Checkout reserves stock; reversing an unpaid/unshipped sale must put it back. */
+const RESTOCK_FROM: ReadonlySet<OrderStatus> = new Set([
+  "pending_payment",
+  "paid",
+]);
+
+let statusQueue: Promise<unknown> = Promise.resolve();
+
+function restockQuantities(lines: OrderLine[]): Map<string, number> {
+  const quantities = new Map<string, number>();
+  for (const line of lines) {
+    const qty = Math.max(0, Math.floor(Number(line.quantity) || 0));
+    if (!line.productId || qty === 0) continue;
+    quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + qty);
+  }
+  return quantities;
+}
+
+async function applyOrderStatus(
   orderId: string,
   status: OrderStatus,
 ): Promise<Order | undefined> {
   const store = await load();
   const idx = store.orders.findIndex((o) => o.id === orderId);
   if (idx < 0) return undefined;
-  store.orders[idx] = { ...store.orders[idx], status };
+
+  const previous = store.orders[idx];
+  if (previous.status === status) return previous;
+
+  store.orders[idx] = { ...previous, status };
   await save(store);
+
+  if (
+    status === "cancelled" &&
+    previous.status !== "cancelled" &&
+    RESTOCK_FROM.has(previous.status)
+  ) {
+    for (const [productId, qty] of restockQuantities(previous.lines)) {
+      await adjustProductStock(productId, qty);
+    }
+  }
+
   return store.orders[idx];
+}
+
+export async function updateOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+): Promise<Order | undefined> {
+  const done = statusQueue.then(() => applyOrderStatus(orderId, status));
+  statusQueue = done.then(
+    () => undefined,
+    () => undefined,
+  );
+  return done;
 }
 
 export async function updateOrderShipping(

@@ -61,6 +61,16 @@ export function SellerOrderActions({
           Mark paid
         </button>
       ) : null}
+      {status === "pending_payment" || status === "paid" ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => mark("cancelled")}
+          className="rounded-xl border border-hubsom-live/20 bg-white px-3 py-2 text-xs font-bold text-hubsom-live disabled:opacity-50"
+        >
+          Cancel order
+        </button>
+      ) : null}
       {buyerUserId ? (
         <Link
           href={`/messages/${buyerUserId}`}
