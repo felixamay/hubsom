@@ -613,6 +613,17 @@ class LocalCommerceStore {
     }
 
     final product = getProduct(auction.productId);
+    if (product != null && product.stock < 1) {
+      // Cannot promise a unit that is already gone — do not mint a sale.
+      if (auction.status != 'closed') {
+        await updateStream(
+          streamId,
+          auction: auction.copyWith(status: 'closed'),
+        );
+      }
+      return null;
+    }
+
     final orderId = 'ord_auc_${auction.id}';
     // Idempotent if another device already saved this order id.
     for (final o in LocalHuberStore.listOrders()) {
@@ -629,7 +640,10 @@ class LocalCommerceStore {
     final order = Order(
       id: orderId,
       subtotalGhs: price,
-      status: 'paid',
+      // Same as shop checkout: the lot is reserved, not collected.
+      // Marking this paid let sellers ship and Hubers pick up goods
+      // the winner never paid for.
+      status: 'pending_payment',
       userId: auction.highestBidderId,
       buyerName: auction.highestBidder,
       buyerEmail: auction.highestBidderEmail,
@@ -660,6 +674,11 @@ class LocalCommerceStore {
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await LocalHuberStore.saveOrder(order);
+    // Reserve the won unit after the order exists so a retry cannot
+    // decrement stock twice (the orderId check above returns first).
+    if (product != null && product.stock >= 1) {
+      await updateProduct(product.copyWith(stock: product.stock - 1));
+    }
     await updateStream(
       streamId,
       auction: auction.copyWith(status: 'sold', orderId: orderId),
