@@ -10,6 +10,7 @@ import 'package:hubsom_app/core/repositories/seller_repository.dart';
 import 'package:hubsom_app/core/services/api_client.dart';
 import 'package:hubsom_app/core/services/cloud_store.dart';
 import 'package:hubsom_app/core/services/local_commerce_store.dart';
+import 'package:hubsom_app/core/services/local_huber_store.dart';
 import 'package:hubsom_app/core/services/local_store.dart';
 import 'package:hubsom_app/models/stream.dart';
 import 'package:hubsom_app/models/user.dart';
@@ -143,21 +144,60 @@ void main() {
         );
     await LocalCommerceStore.updateStream(stream.id, auction: ended);
 
+    final productId = auction.productId;
+    expect(LocalCommerceStore.getProduct(productId)!.stock, 3);
+
     final order = await LocalCommerceStore.finalizeAuction(stream.id);
     expect(order, isNotNull);
     expect(order!.buyerName, 'Kojo Bidder');
     expect(order.userId, 'buyer-1');
     expect(order.streamId, stream.id);
     expect(order.lines.first.sellerId, stream.sellerId);
-    expect(order.status, 'paid');
+    expect(order.status, 'pending_payment');
+    expect(LocalCommerceStore.getProduct(productId)!.stock, 2);
 
     final sold = LocalCommerceStore.getStream(stream.id)!.auction!;
     expect(sold.status, 'sold');
     expect(sold.orderId, order.id);
 
-    // Idempotent.
+    // Idempotent — does not restock-steal a second unit.
     final again = await LocalCommerceStore.finalizeAuction(stream.id);
     expect(again?.id, order.id);
+    expect(again?.status, 'pending_payment');
+    expect(LocalCommerceStore.getProduct(productId)!.stock, 2);
+  });
+
+  test('sold-out auction does not mint a paid order or go negative on stock',
+      () async {
+    final stream = await goLive();
+    final auction = stream.auction!;
+    await LocalCommerceStore.placeBid(
+      auctionId: auction.id,
+      amountGhs: 150,
+      bidder: bidder,
+    );
+    final product = LocalCommerceStore.getProduct(auction.productId)!;
+    await LocalCommerceStore.updateProduct(product.copyWith(stock: 0));
+
+    final ended = LocalCommerceStore.getStream(stream.id)!.auction!.copyWith(
+          endsAt: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(seconds: 1))
+              .toIso8601String(),
+        );
+    await LocalCommerceStore.updateStream(stream.id, auction: ended);
+
+    final order = await LocalCommerceStore.finalizeAuction(stream.id);
+    expect(order, isNull);
+    expect(LocalCommerceStore.getProduct(auction.productId)!.stock, 0);
+    expect(
+      LocalCommerceStore.getStream(stream.id)!.auction!.status,
+      'closed',
+    );
+    expect(
+      LocalHuberStore.listOrders().where((o) => o.streamId == stream.id),
+      isEmpty,
+    );
   });
 
   test('unmet asking price does not sell — seller can extend', () async {
