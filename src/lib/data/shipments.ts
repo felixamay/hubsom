@@ -1,6 +1,10 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
 import { getOrder } from "@/lib/data/orders";
 import {
+  isShippableOrderStatus,
+  unpaidShipmentError,
+} from "@/lib/orders/shippable-status";
+import {
   normalizeGeoLocation,
   normalizeShipping,
 } from "@/lib/shipping";
@@ -66,6 +70,9 @@ export async function createConsolidatedShipment(input: {
     if (!order) throw new Error(`Order ${orderId} not found`);
     if (order.status === "cancelled") {
       throw new Error(`Order ${orderId} is cancelled`);
+    }
+    if (!isShippableOrderStatus(order.status)) {
+      throw new Error(unpaidShipmentError(orderId, order.status));
     }
     const myLines = order.lines.filter((l) => l.sellerId === input.sellerId);
     if (!myLines.length) {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { SellerOrderActions } from "@/components/seller/SellerOrderActions";
 import { formatGhs } from "@/lib/currency";
+import { isShippableOrderStatus } from "@/lib/orders/shippable-status";
 import { mapsSearchUrl } from "@/lib/shipping";
 import type { Order, OrderShipping, Shipment } from "@/types/orders";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,7 @@ export function SellerOrdersBoard({
               Consolidate purchases
             </p>
             <p className="mt-1 text-sm text-hubsom-ink/65">
-              Select paid/pending orders, create one shipment, pin the buyer
+              Select paid orders, create one shipment, pin the buyer
               location, then Locate or send offers to approved Hubers riders.
             </p>
           </div>
@@ -164,8 +165,7 @@ export function SellerOrdersBoard({
                   checked={selected.includes(order.id)}
                   disabled={
                     alreadyShipped ||
-                    order.status === "cancelled" ||
-                    order.status === "fulfilled"
+                    !isShippableOrderStatus(order.status)
                   }
                   onChange={() => toggle(order.id)}
                   className="mt-1.5 h-4 w-4 rounded border-hubsom-forest/30"
