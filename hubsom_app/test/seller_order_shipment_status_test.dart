@@ -101,4 +101,49 @@ void main() {
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'delivered');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'delivered');
   });
+
+  test('createShipmentFromOrders rejects unpaid pending_payment orders', () async {
+    final unpaid = Order(
+      id: 'ord_unpaid_1',
+      subtotalGhs: 80,
+      status: 'pending_payment',
+      lines: const [
+        OrderLine(
+          productId: 'p1',
+          sellerId: 'seller-1',
+          name: 'Wax print',
+          quantity: 1,
+          unitPriceGhs: 80,
+          lineTotalGhs: 80,
+          category: 'fashion',
+        ),
+      ],
+      shipping: const OrderShipping(
+        recipientName: 'Kojo Buyer',
+        phone: '0241111111',
+        line1: '12 Spintex Rd',
+        city: 'Accra',
+        region: 'Greater Accra',
+        location: GeoLocation(latitude: 5.63, longitude: -0.17),
+      ),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await LocalHuberStore.saveOrder(unpaid);
+
+    await expectLater(
+      LocalHuberStore.createShipmentFromOrders(
+        orderIds: [unpaid.id],
+        sellerId: 'seller-1',
+        createdByUserId: 'seller-1',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('mark it paid before shipping'),
+        ),
+      ),
+    );
+    expect(LocalHuberStore.listShipments(), isEmpty);
+  });
 }

@@ -226,6 +226,10 @@ class LocalHuberStore {
     return shipment;
   }
 
+  static bool _isShippableOrderStatus(String status) {
+    return status == 'paid' || status == 'processing';
+  }
+
   static Future<Shipment> createShipmentFromOrders({
     required List<String> orderIds,
     required String sellerId,
@@ -234,6 +238,13 @@ class LocalHuberStore {
     final orders = listOrders().where((o) => orderIds.contains(o.id)).toList();
     if (orders.isEmpty) {
       throw StateError('Select paid orders to consolidate');
+    }
+    for (final order in orders) {
+      if (!_isShippableOrderStatus(order.status)) {
+        throw StateError(
+          'Order ${order.id} is ${order.status.replaceAll('_', ' ')}; mark it paid before shipping',
+        );
+      }
     }
     final items = <ShipmentItem>[];
     for (final order in orders) {
