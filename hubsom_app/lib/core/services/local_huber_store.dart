@@ -530,11 +530,32 @@ class LocalHuberStore {
     );
   }
 
-  static Future<HuberDelivery> advanceDelivery(String deliveryId) async {
+  /// Coalesce overlapping advances (double-tap Complete) onto one in-flight
+  /// step, and claim wallet credit at most once per delivery.
+  static final Map<String, Future<HuberDelivery>> _advanceInFlight = {};
+  static final Set<String> _creditedDeliveryIds = {};
+
+  static Future<HuberDelivery> advanceDelivery(String deliveryId) {
+    final pending = _advanceInFlight[deliveryId];
+    if (pending != null) return pending;
+    late final Future<HuberDelivery> future;
+    future = _advanceDeliveryOnce(deliveryId).whenComplete(() {
+      if (identical(_advanceInFlight[deliveryId], future)) {
+        _advanceInFlight.remove(deliveryId);
+      }
+    });
+    _advanceInFlight[deliveryId] = future;
+    return future;
+  }
+
+  static Future<HuberDelivery> _advanceDeliveryOnce(String deliveryId) async {
     final rows = listDeliveries();
     final idx = rows.indexWhere((d) => d.id == deliveryId);
     if (idx < 0) throw StateError('Delivery not found');
     final current = rows[idx];
+    if (current.status == 'delivered') {
+      return current;
+    }
     final nextStatus = switch (current.status) {
       'accepted' => 'en_route_pickup',
       'en_route_pickup' => 'arrived_pickup',
@@ -542,8 +563,15 @@ class LocalHuberStore {
       'picked_up' => 'en_route_dropoff',
       'en_route_dropoff' => 'arrived_dropoff',
       'arrived_dropoff' => 'delivered',
-      _ => current.status,
+      _ => throw StateError(
+          'Cannot advance delivery from ${current.status}',
+        ),
     };
+    // Claim payout synchronously before any await so a second Complete tap
+    // that still sees arrived_dropoff cannot credit the wallet again.
+    final creditNow = current.status == 'arrived_dropoff' &&
+        nextStatus == 'delivered' &&
+        _creditedDeliveryIds.add(current.id);
     final now = DateTime.now().toUtc().toIso8601String();
     final updated = current.copyWith(status: nextStatus, updatedAt: now);
     rows[idx] = updated;
@@ -566,7 +594,7 @@ class LocalHuberStore {
       }
     }
 
-    if (nextStatus == 'delivered') {
+    if (creditNow) {
       final driver = profileById(current.huberId);
       if (driver != null) {
         final completed = driver.completedCount + 1;
@@ -590,6 +618,7 @@ class LocalHuberStore {
   static Future<HuberDelivery> completeWithPod(String deliveryId) async {
     var delivery = deliveryById(deliveryId);
     if (delivery == null) throw StateError('Delivery not found');
+    if (delivery.status == 'delivered') return delivery;
     while (delivery!.status != 'delivered') {
       delivery = await advanceDelivery(delivery.id);
       if (delivery.status == 'arrived_dropoff') {
