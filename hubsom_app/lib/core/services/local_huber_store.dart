@@ -185,9 +185,54 @@ class LocalHuberStore {
     }
   }
 
-  static Future<Shipment> markShipmentShipped(String shipmentId) async {
+  /// True when this signed-in seller owns the shipment (store id or creator).
+  static bool actorOwnsShipment(
+    Shipment shipment, {
+    String? sellerId,
+    String? actorUserId,
+  }) {
+    if (sellerId != null &&
+        sellerId.isNotEmpty &&
+        shipment.sellerId == sellerId) {
+      return true;
+    }
+    if (actorUserId != null &&
+        actorUserId.isNotEmpty &&
+        shipment.createdByUserId == actorUserId) {
+      return true;
+    }
+    return false;
+  }
+
+  static void _assertActorOwnsShipment(
+    Shipment shipment, {
+    String? sellerId,
+    String? actorUserId,
+  }) {
+    final checking = (sellerId != null && sellerId.isNotEmpty) ||
+        (actorUserId != null && actorUserId.isNotEmpty);
+    if (!checking) return;
+    if (!actorOwnsShipment(
+      shipment,
+      sellerId: sellerId,
+      actorUserId: actorUserId,
+    )) {
+      throw StateError('Not your shipment');
+    }
+  }
+
+  static Future<Shipment> markShipmentShipped(
+    String shipmentId, {
+    String? sellerId,
+    String? actorUserId,
+  }) async {
     final shipment = getShipment(shipmentId);
     if (shipment == null) throw StateError('Shipment not found');
+    _assertActorOwnsShipment(
+      shipment,
+      sellerId: sellerId,
+      actorUserId: actorUserId,
+    );
     if (shipment.status != 'assigned') {
       throw StateError(
         'Wait for a Huber to accept, then ship. Current status: ${shipment.status}',
@@ -342,7 +387,14 @@ class LocalHuberStore {
   static Future<({Shipment shipment, List<HuberOffer> offers})> dispatchToHubers(
     Shipment shipment, {
     double? preferredFeeGhs,
+    String? sellerId,
+    String? actorUserId,
   }) async {
+    _assertActorOwnsShipment(
+      shipment,
+      sellerId: sellerId,
+      actorUserId: actorUserId,
+    );
     if (shipment.status == 'cancelled' || shipment.status == 'delivered') {
       throw StateError('This shipment can’t accept new rider offers');
     }

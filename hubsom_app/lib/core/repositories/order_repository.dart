@@ -99,6 +99,30 @@ class OrderRepository {
     return LocalHuberStore.updateOrderStatus(orderId, status);
   }
 
+  bool _ownsShipment(Shipment shipment) {
+    final user = _sessionUser;
+    if (user == null) return false;
+    return LocalHuberStore.actorOwnsShipment(
+      shipment,
+      sellerId: user.sellerId,
+      actorUserId: user.id,
+    );
+  }
+
+  Shipment _requireOwnedShipment(String shipmentId) {
+    if (_sessionUser == null) {
+      throw StateError('Sign in required');
+    }
+    final shipment = LocalHuberStore.getShipment(shipmentId);
+    if (shipment == null) {
+      throw StateError('Shipment not found');
+    }
+    if (!_ownsShipment(shipment)) {
+      throw StateError('Not your shipment');
+    }
+    return shipment;
+  }
+
   Future<Shipment> markShipmentShipped(String shipmentId) async {
     try {
       final res = await _api.post(
@@ -112,7 +136,13 @@ class OrderRepository {
         return remote;
       }
     } catch (_) {}
-    return LocalHuberStore.markShipmentShipped(shipmentId);
+    final user = _sessionUser;
+    _requireOwnedShipment(shipmentId);
+    return LocalHuberStore.markShipmentShipped(
+      shipmentId,
+      sellerId: user?.sellerId,
+      actorUserId: user?.id,
+    );
   }
 
   Future<List<Shipment>> listShipments() async {
@@ -128,7 +158,17 @@ class OrderRepository {
         return const [];
       }
     } catch (_) {}
-    return LocalHuberStore.listShipments();
+    final user = _sessionUser;
+    if (user == null) return const [];
+    return LocalHuberStore.listShipments()
+        .where(
+          (s) => LocalHuberStore.actorOwnsShipment(
+            s,
+            sellerId: user.sellerId,
+            actorUserId: user.id,
+          ),
+        )
+        .toList();
   }
 
   Future<Shipment> createShipment(Map<String, dynamic> body) async {
@@ -156,6 +196,7 @@ class OrderRepository {
         return Shipment.fromJson(data);
       }
     } catch (_) {}
+    _requireOwnedShipment(id);
     final current = LocalHuberStore.getShipment(id);
     if (current == null) throw StateError('Shipment update failed');
     return LocalHuberStore.saveShipment(
@@ -179,13 +220,13 @@ class OrderRepository {
         return Shipment.fromJson(Map<String, dynamic>.from(shipment));
       }
     } catch (_) {}
-    final local = LocalHuberStore.getShipment(shipmentId);
-    if (local == null) {
-      throw StateError(
-        'Shipment not found. Consolidate paid orders first, then tap Hubers.',
-      );
-    }
-    final result = await LocalHuberStore.dispatchToHubers(local);
+    final local = _requireOwnedShipment(shipmentId);
+    final user = _sessionUser;
+    final result = await LocalHuberStore.dispatchToHubers(
+      local,
+      sellerId: user?.sellerId,
+      actorUserId: user?.id,
+    );
     return result.shipment;
   }
 }
