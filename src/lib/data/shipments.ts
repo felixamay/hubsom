@@ -1,6 +1,10 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
 import { getOrder } from "@/lib/data/orders";
 import {
+  assertNotSellerDeviceGpsPin,
+  assertShipmentDropoffMutable,
+} from "@/lib/dropoff-guard";
+import {
   normalizeGeoLocation,
   normalizeShipping,
 } from "@/lib/shipping";
@@ -90,6 +94,10 @@ export async function createConsolidatedShipment(input: {
     throw new Error("Add a shipping destination before consolidating");
   }
 
+  if (input.destination?.location !== undefined) {
+    assertNotSellerDeviceGpsPin(input.destination.location);
+  }
+
   const destination = normalizeShipping({
     ...destinationBase,
     ...input.destination,
@@ -134,6 +142,13 @@ export async function updateShipmentDestination(
   if (idx < 0) return undefined;
 
   const current = store.shipments[idx];
+  assertShipmentDropoffMutable(current.status, patch);
+  if (patch.location !== undefined) {
+    assertNotSellerDeviceGpsPin(patch.location);
+  } else if (patch.destination?.location !== undefined) {
+    assertNotSellerDeviceGpsPin(patch.destination.location);
+  }
+
   let location = current.destination.location;
   if (patch.location === null) location = undefined;
   else if (patch.location !== undefined) {

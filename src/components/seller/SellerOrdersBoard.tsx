@@ -3,15 +3,10 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import {
-  Bike,
-  MapPin,
-  Navigation,
-  Package,
-  Truck,
-} from "lucide-react";
+import { Bike, MapPin, Package, Truck } from "lucide-react";
 import { SellerOrderActions } from "@/components/seller/SellerOrderActions";
 import { formatGhs } from "@/lib/currency";
+import { shipmentDropoffIsLocked } from "@/lib/dropoff-guard";
 import { mapsSearchUrl } from "@/lib/shipping";
 import type { Order, OrderShipping, Shipment } from "@/types/orders";
 import { cn } from "@/lib/utils";
@@ -272,9 +267,9 @@ function ShippingBlock({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  function saveLocation(next?: { latitude: number; longitude: number }) {
-    const latitude = next?.latitude ?? Number(lat);
-    const longitude = next?.longitude ?? Number(lng);
+  function saveLocation() {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
     setError(null);
     setNote(null);
     startTransition(async () => {
@@ -286,7 +281,7 @@ function ShippingBlock({
             location: {
               latitude,
               longitude,
-              source: next ? "gps" : "manual",
+              source: "manual",
             },
           }),
         });
@@ -303,24 +298,6 @@ function ShippingBlock({
         setError("Network error");
       }
     });
-  }
-
-  function useDeviceLocation() {
-    if (!navigator.geolocation) {
-      setError("Location is not available in this browser");
-      return;
-    }
-    setError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        saveLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-      },
-      () => setError("Could not read current location"),
-      { enableHighAccuracy: true, timeout: 12000 },
-    );
   }
 
   return (
@@ -369,6 +346,10 @@ function ShippingBlock({
           <p className="text-[11px] font-semibold uppercase tracking-wide text-hubsom-ink/45">
             Buyer location for riders
           </p>
+          <p className="text-[11px] text-hubsom-ink/55">
+            Use the buyer&apos;s checkout pin or enter their coordinates. This
+            device&apos;s GPS is the shop, not the drop-off.
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <input
               value={lat}
@@ -391,15 +372,6 @@ function ShippingBlock({
               className="rounded-xl bg-hubsom-forest px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"
             >
               Save pin
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={useDeviceLocation}
-              className="inline-flex items-center gap-1 rounded-xl border border-hubsom-forest/15 bg-white px-3 py-2 text-[11px] font-bold text-hubsom-forest disabled:opacity-50"
-            >
-              <Navigation className="h-3.5 w-3.5" />
-              Use GPS
             </button>
             <a
               href={mapsSearchUrl(shipping)}
@@ -440,9 +412,11 @@ function ShipmentCard({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  function savePin(next?: { latitude: number; longitude: number }) {
-    const latitude = next?.latitude ?? Number(lat);
-    const longitude = next?.longitude ?? Number(lng);
+  const dropoffLocked = shipmentDropoffIsLocked(shipment.status);
+
+  function savePin() {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
     setError(null);
     setNote(null);
     startTransition(async () => {
@@ -454,7 +428,7 @@ function ShipmentCard({
             location: {
               latitude,
               longitude,
-              source: next ? "gps" : "manual",
+              source: "manual",
             },
           }),
         });
@@ -471,22 +445,6 @@ function ShipmentCard({
         setError("Network error");
       }
     });
-  }
-
-  function useDeviceLocation() {
-    if (!navigator.geolocation) {
-      setError("Location is not available in this browser");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        savePin({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }),
-      () => setError("Could not read current location"),
-      { enableHighAccuracy: true, timeout: 12000 },
-    );
   }
 
   function sendToHubers() {
@@ -572,38 +530,41 @@ function ShipmentCard({
         )}
       </div>
 
+      {dropoffLocked ? (
+        <p className="mt-3 text-[11px] font-medium text-hubsom-ink/55">
+          Drop-off is locked after a rider is assigned.
+        </p>
+      ) : (
+        <p className="mt-3 text-[11px] text-hubsom-ink/55">
+          Pin the buyer&apos;s address, not this device&apos;s GPS.
+        </p>
+      )}
+
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input
           value={lat}
           onChange={(e) => setLat(e.target.value)}
           placeholder="Latitude"
-          className="rounded-xl border border-hubsom-forest/12 bg-white px-3 py-2 text-xs outline-none focus:border-hubsom-gold"
+          disabled={dropoffLocked}
+          className="rounded-xl border border-hubsom-forest/12 bg-white px-3 py-2 text-xs outline-none focus:border-hubsom-gold disabled:opacity-50"
         />
         <input
           value={lng}
           onChange={(e) => setLng(e.target.value)}
           placeholder="Longitude"
-          className="rounded-xl border border-hubsom-forest/12 bg-white px-3 py-2 text-xs outline-none focus:border-hubsom-gold"
+          disabled={dropoffLocked}
+          className="rounded-xl border border-hubsom-forest/12 bg-white px-3 py-2 text-xs outline-none focus:border-hubsom-gold disabled:opacity-50"
         />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || dropoffLocked}
           onClick={() => savePin()}
           className="rounded-xl border border-hubsom-forest/15 bg-white px-3 py-2 text-[11px] font-bold text-hubsom-forest disabled:opacity-50"
         >
           Save pin
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={useDeviceLocation}
-          className="inline-flex items-center gap-1 rounded-xl border border-hubsom-forest/15 bg-white px-3 py-2 text-[11px] font-bold text-hubsom-forest disabled:opacity-50"
-        >
-          <Navigation className="h-3.5 w-3.5" />
-          Use GPS
         </button>
         <a
           href={mapsSearchUrl(shipment.destination)}

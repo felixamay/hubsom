@@ -1,4 +1,5 @@
 import { readJsonFile, writeJsonFile } from "@/lib/data/persist";
+import { assertNotSellerDeviceGpsPin } from "@/lib/dropoff-guard";
 import {
   formatShippingBlock,
   mapsSearchUrl,
@@ -94,6 +95,9 @@ export async function updateOrderShipping(
   const idx = store.orders.findIndex((o) => o.id === orderId);
   if (idx < 0) return undefined;
   const current = store.orders[idx].shipping;
+  if (shipping.location !== undefined) {
+    assertNotSellerDeviceGpsPin(shipping.location);
+  }
   const merged = normalizeShipping({
     ...current,
     ...shipping,
