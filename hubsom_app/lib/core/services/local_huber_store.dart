@@ -530,9 +530,24 @@ class LocalHuberStore {
     );
   }
 
-  static Future<HuberDelivery> advanceDelivery(String deliveryId) async {
+  static void _assertActorOwnsDelivery(
+    HuberDelivery delivery, {
+    required String actorHuberId,
+  }) {
+    if (delivery.huberId != actorHuberId) {
+      throw StateError('This delivery is assigned to another rider');
+    }
+  }
+
+  static Future<HuberDelivery> advanceDelivery(
+    String deliveryId, {
+    required String actorHuberId,
+  }) async {
+    final resolved = deliveryById(deliveryId);
+    if (resolved == null) throw StateError('Delivery not found');
+    _assertActorOwnsDelivery(resolved, actorHuberId: actorHuberId);
     final rows = listDeliveries();
-    final idx = rows.indexWhere((d) => d.id == deliveryId);
+    final idx = rows.indexWhere((d) => d.id == resolved.id);
     if (idx < 0) throw StateError('Delivery not found');
     final current = rows[idx];
     final nextStatus = switch (current.status) {
@@ -587,13 +602,23 @@ class LocalHuberStore {
     return updated;
   }
 
-  static Future<HuberDelivery> completeWithPod(String deliveryId) async {
+  static Future<HuberDelivery> completeWithPod(
+    String deliveryId, {
+    required String actorHuberId,
+  }) async {
     var delivery = deliveryById(deliveryId);
     if (delivery == null) throw StateError('Delivery not found');
+    _assertActorOwnsDelivery(delivery, actorHuberId: actorHuberId);
     while (delivery!.status != 'delivered') {
-      delivery = await advanceDelivery(delivery.id);
+      delivery = await advanceDelivery(
+        delivery.id,
+        actorHuberId: actorHuberId,
+      );
       if (delivery.status == 'arrived_dropoff') {
-        delivery = await advanceDelivery(delivery.id);
+        delivery = await advanceDelivery(
+          delivery.id,
+          actorHuberId: actorHuberId,
+        );
         break;
       }
     }

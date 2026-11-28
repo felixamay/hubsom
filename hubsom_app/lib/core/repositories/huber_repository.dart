@@ -42,11 +42,23 @@ class HuberRepository {
   Future<void> declineOffer(String offerId, HuberProfile driver) =>
       LocalHuberStore.declineOffer(offerId: offerId, driver: driver);
 
-  Future<HuberDelivery> advanceDelivery(String deliveryId) =>
-      LocalHuberStore.advanceDelivery(deliveryId);
+  Future<HuberDelivery> advanceDelivery(
+    String deliveryId,
+    HuberProfile driver,
+  ) =>
+      LocalHuberStore.advanceDelivery(
+        deliveryId,
+        actorHuberId: driver.id,
+      );
 
-  Future<HuberDelivery> completeDelivery(String deliveryId) =>
-      LocalHuberStore.completeWithPod(deliveryId);
+  Future<HuberDelivery> completeDelivery(
+    String deliveryId,
+    HuberProfile driver,
+  ) =>
+      LocalHuberStore.completeWithPod(
+        deliveryId,
+        actorHuberId: driver.id,
+      );
 
   Future<({Shipment shipment, List<HuberOffer> offers})> dispatch(
     Shipment shipment, {

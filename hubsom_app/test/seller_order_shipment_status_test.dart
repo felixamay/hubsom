@@ -96,7 +96,10 @@ void main() {
 
     final delivery = LocalHuberStore.listDeliveries()
         .firstWhere((d) => d.shipmentId == shipment.id);
-    final done = await LocalHuberStore.completeWithPod(delivery.id);
+    final done = await LocalHuberStore.completeWithPod(
+      delivery.id,
+      actorHuberId: profile.id,
+    );
     expect(done.status, 'delivered');
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'delivered');
     expect(LocalHuberStore.getOrder(order.id)?.status, 'delivered');

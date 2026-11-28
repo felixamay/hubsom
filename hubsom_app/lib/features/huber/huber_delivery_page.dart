@@ -21,15 +21,44 @@ class HuberDeliveryPage extends ConsumerStatefulWidget {
 
 class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
   HuberDelivery? _delivery;
+  HuberProfile? _driver;
   String _podType = 'pin';
   final _pod = TextEditingController();
   bool _busy = false;
   String? _error;
+  bool _forbidden = false;
 
   @override
   void initState() {
     super.initState();
-    _delivery = ref.read(huberRepositoryProvider).deliveryById(widget.deliveryId);
+    _resolveDelivery();
+  }
+
+  HuberProfile? _actor() {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null) return null;
+    return ref.read(huberRepositoryProvider).profileFor(user);
+  }
+
+  void _resolveDelivery() {
+    final repo = ref.read(huberRepositoryProvider);
+    final driver = _actor();
+    final found = repo.deliveryById(widget.deliveryId);
+    if (found == null) {
+      _delivery = null;
+      _driver = driver;
+      _forbidden = false;
+      return;
+    }
+    if (driver == null || found.huberId != driver.id) {
+      _delivery = null;
+      _driver = driver;
+      _forbidden = true;
+      return;
+    }
+    _delivery = found;
+    _driver = driver;
+    _forbidden = false;
   }
 
   @override
@@ -39,13 +68,19 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
   }
 
   Future<void> _advance() async {
+    final driver = _driver ?? _actor();
+    if (driver == null) {
+      setState(() => _error = 'Sign in as the assigned Huber to update this job');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final next =
-          await ref.read(huberRepositoryProvider).advanceDelivery(widget.deliveryId);
+      final next = await ref
+          .read(huberRepositoryProvider)
+          .advanceDelivery(widget.deliveryId, driver);
       if (!mounted) return;
       setState(() => _delivery = next);
     } catch (e) {
@@ -60,13 +95,19 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
       setState(() => _error = 'Enter at least 4 digits for proof of delivery');
       return;
     }
+    final driver = _driver ?? _actor();
+    if (driver == null) {
+      setState(() => _error = 'Sign in as the assigned Huber to complete this job');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final next =
-          await ref.read(huberRepositoryProvider).completeDelivery(widget.deliveryId);
+      final next = await ref
+          .read(huberRepositoryProvider)
+          .completeDelivery(widget.deliveryId, driver);
       if (!mounted) return;
       setState(() => _delivery = next);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,7 +127,13 @@ class _HuberDeliveryPageState extends ConsumerState<HuberDeliveryPage> {
     if (d == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Active delivery')),
-        body: const Center(child: Text('Delivery not found')),
+        body: Center(
+          child: Text(
+            _forbidden
+                ? 'This delivery is assigned to another rider'
+                : 'Delivery not found',
+          ),
+        ),
       );
     }
 
