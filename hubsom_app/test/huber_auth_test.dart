@@ -101,7 +101,10 @@ void main() {
     expect(delivery.shipmentId, shipment.id);
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'assigned');
 
-    final done = await LocalHuberStore.completeWithPod(delivery.id);
+    final done = await LocalHuberStore.completeWithPod(
+      delivery.id,
+      actorHuberId: profile.id,
+    );
     expect(done.status, 'delivered');
     expect(LocalHuberStore.getShipment(shipment.id)?.status, 'delivered');
     expect(LocalHuberStore.profileById(profile.id)!.walletBalanceGhs, greaterThan(0));
